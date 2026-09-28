@@ -20,6 +20,11 @@ namespace Apache.Calcite.Extensions.Prepare
     /// <summary>
     /// Takes a statement from a parse tree to a compiled plan.
     /// </summary>
+    /// <remarks>
+    /// The counterpart of Calcite's <c>Prepare</c>: conversion to relational algebra, <c>EXPLAIN</c>
+    /// handling, flattening, decorrelation, field trimming, optimization and implementation, in Calcite's
+    /// order. A subclass supplies the validator, converter and implementation.
+    /// </remarks>
     public abstract class ClrPrepare
     {
 
@@ -34,8 +39,9 @@ namespace Apache.Calcite.Extensions.Prepare
         /// Initializes a new instance.
         /// </summary>
         /// <param name="context">The schema, type factory and configuration to plan against.</param>
-        /// <param name="catalogReader">How a name in the statement is resolved to a table.</param>
-        /// <param name="resultConvention">The convention a plan must end in.</param>
+        /// <param name="catalogReader">Resolves the names in the statement.</param>
+        /// <param name="resultConvention">The convention the root of the plan must be in.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         protected ClrPrepare(CalcitePrepare.Context context, CalciteCatalogReader catalogReader, Convention resultConvention)
         {
             this.context = context ?? throw new ArgumentNullException(nameof(context));
@@ -49,18 +55,19 @@ namespace Apache.Calcite.Extensions.Prepare
         protected CalcitePrepare.Context Context => context;
 
         /// <summary>
-        /// Gets how a name in the statement is resolved to a table.
+        /// Gets the catalog reader that resolves the names in the statement.
         /// </summary>
         protected CalciteCatalogReader CatalogReader => catalogReader;
 
         /// <summary>
-        /// Gets the convention a plan must end in.
+        /// Gets the convention the root of the plan must be in.
         /// </summary>
         protected Convention ResultConvention => resultConvention;
 
         /// <summary>
         /// Prepares this object for a statement whose runtime context is <paramref name="runtimeContextClass"/>.
         /// </summary>
+        /// <param name="runtimeContextClass">The class of the runtime context.</param>
         protected abstract void Init(java.lang.Class runtimeContextClass);
 
         /// <summary>
@@ -71,6 +78,7 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Gets or sets the row type of the statement's dynamic parameters.
         /// </summary>
+        /// <exception cref="InvalidOperationException">Read before the statement was validated.</exception>
         protected RelDataType ParameterRowType
         {
             get => parameterRowType ?? throw new InvalidOperationException("The statement has not been validated.");
@@ -78,8 +86,9 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Gets or sets, per field, the name it originates from.
+        /// Gets or sets the origin of each result field.
         /// </summary>
+        /// <exception cref="InvalidOperationException">Read before the statement was validated.</exception>
         protected java.util.List FieldOrigins
         {
             get => fieldOrigins ?? throw new InvalidOperationException("The statement has not been validated.");
@@ -89,33 +98,25 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the program that takes a logical plan to <see cref="ResultConvention"/>.
         /// </summary>
+        /// <returns>The program set by <c>Hook.PROGRAM</c> if there is one; otherwise
+        /// <c>Programs.standard</c> followed by a hep pass of <c>ClrCursorRules.CalcRules()</c>.</returns>
         /// <remarks>
-        /// <c>Prepare.getProgram</c> — <c>Programs.standard()</c> with one pass appended, and nothing of
-        /// <c>standard</c>'s taken away, replaced or reordered. Every rule list <c>standard</c> holds is
-        /// Calcite's, so the one thing it cannot do is a pass whose rules name a convention it has never
-        /// heard of: its calc pass is <c>RelOptRules.CALC_RULES</c>, three of whose nine name
-        /// <c>EnumerableConvention</c>'s nodes. The appended pass is the cursor convention's list, which is
-        /// Calcite's with those three swapped for its own.
+        /// The counterpart of <c>Prepare.getProgram</c>. <c>Programs.standard</c> runs unchanged, including its
+        /// own calc pass of <c>RelOptRules.CALC_RULES</c>, which names <c>EnumerableConvention</c>'s nodes; the
+        /// appended pass is the same list with the cursor convention's nodes in their place. The calc rules
+        /// cannot be planner rules: <c>VolcanoCost.isLt</c> compares row counts only, so a calc is never
+        /// cheaper than the project it came from, and <c>VolcanoPlanner.addRule</c> does not register a
+        /// <c>TransformationRule</c>'s operand against a <c>PhysicalNode</c>.
         ///
-        /// <para>These cannot be planner rules instead. A calc and the project it came from have the same
-        /// row count and <c>VolcanoCost.isLt</c> compares nothing else, cpu and io being dead code behind
-        /// <c>if (true)</c>, so neither is ever cheaper and the planner keeps whichever it saw first. Nor
-        /// would most of the list match: <c>VolcanoPlanner.addRule</c> does not register a
-        /// <c>TransformationRule</c>'s operand against a <c>PhysicalNode</c>, and every node of the cursor
-        /// convention is one.</para>
-        ///
-        /// <para>The one argument that differs is the metadata provider, which is
-        /// <see cref="Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider"/> where Calcite's is
-        /// <c>DefaultRelMetadataProvider.INSTANCE</c>: Calcite's own, with the handlers it keys on an
-        /// <c>Enumerable*</c> class answered for this convention's node too. It is not only for the passes that
-        /// take it. <c>RelOptCluster.setMetadataProvider</c>, which each hep pass calls, sets
-        /// <c>RelMetadataQueryBase.THREAD_PROVIDERS</c>, and that is what a cluster built with Calcite's default
-        /// query supplier answers from — so the provider <c>standard</c>'s sub-query pass is given is the one
-        /// the Volcano pass after it costs with.</para>
+        /// <para>Both passes are given
+        /// <see cref="Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider"/> rather than
+        /// <c>DefaultRelMetadataProvider.INSTANCE</c>. Each hep pass installs its provider as the thread's
+        /// metadata provider, so the provider given to <c>standard</c> is also the one its Volcano pass costs
+        /// with.</para>
         /// </remarks>
         protected virtual Program GetProgram()
         {
-            // allow a test to override the default program
+            // Hook.PROGRAM lets a caller replace the whole program
             var holder = Holder.empty();
             org.apache.calcite.runtime.Hook.PROGRAM.run(holder);
             if (holder.get() is Program holderValue)
@@ -133,6 +134,8 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns the traits the root of the plan must satisfy.
         /// </summary>
+        /// <param name="root">The logical plan.</param>
+        /// <returns>The root's traits with <see cref="ResultConvention"/> and the root's collation.</returns>
         protected virtual RelTraitSet GetDesiredRootTraitSet(RelRoot root)
         {
             return root.rel.getTraitSet()
@@ -144,12 +147,19 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Compiles the chosen plan.
         /// </summary>
-        /// <param name="root">The root of the plan, which is of <see cref="ResultConvention"/>.</param>
+        /// <param name="root">The root of the chosen plan, in <see cref="ResultConvention"/>.</param>
+        /// <returns>The prepared result.</returns>
         protected abstract IPreparedResult Implement(RelRoot root);
 
         /// <summary>
-        /// Renders a plan or a type, for an <c>EXPLAIN</c>.
+        /// Creates the result of an <c>EXPLAIN</c>, which renders a plan or a type.
         /// </summary>
+        /// <param name="resultType">The type to render, or <see langword="null"/> to render a plan.</param>
+        /// <param name="parameterRowType">The statement's dynamic parameters.</param>
+        /// <param name="root">The plan to render, or <see langword="null"/> to render a type.</param>
+        /// <param name="format">The output format.</param>
+        /// <param name="detailLevel">How much detail to render.</param>
+        /// <returns>The prepared explanation.</returns>
         protected abstract IPreparedResult CreatePreparedExplanation(
             RelDataType? resultType,
             RelDataType parameterRowType,
@@ -158,8 +168,12 @@ namespace Apache.Calcite.Extensions.Prepare
             SqlExplainLevel detailLevel);
 
         /// <summary>
-        /// Builds the converter from SQL to relational algebra.
+        /// Creates the converter from SQL to relational algebra.
         /// </summary>
+        /// <param name="validator">The validator.</param>
+        /// <param name="catalogReader">The catalog reader.</param>
+        /// <param name="config">The converter configuration.</param>
+        /// <returns>The converter.</returns>
         protected abstract SqlToRelConverter GetSqlToRelConverter(
             SqlValidator validator,
             org.apache.calcite.prepare.Prepare.CatalogReader catalogReader,
@@ -168,29 +182,41 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Flattens structured types.
         /// </summary>
+        /// <param name="rootRel">The plan.</param>
+        /// <param name="restructure">Whether to restructure the result into its original structured type.</param>
+        /// <returns>The flattened plan.</returns>
         public abstract RelNode FlattenTypes(RelNode rootRel, bool restructure);
 
         /// <summary>
         /// Removes correlation from a plan.
         /// </summary>
+        /// <param name="sqlToRelConverter">The converter that produced the plan.</param>
+        /// <param name="query">The statement.</param>
+        /// <param name="rootRel">The plan.</param>
+        /// <returns>The decorrelated plan.</returns>
         protected abstract RelNode Decorrelate(SqlToRelConverter sqlToRelConverter, SqlNode query, RelNode rootRel);
 
         /// <summary>
-        /// Returns the materialized views the planner may substitute.
+        /// Returns the materializations the planner may substitute.
         /// </summary>
+        /// <returns>A list of <c>Prepare.Materialization</c>.</returns>
         protected abstract java.util.List GetMaterializations();
 
         /// <summary>
-        /// Returns the lattices the planner may use, as <c>CalciteSchema.LatticeEntry</c>.
+        /// Returns the lattices the planner may use.
         /// </summary>
+        /// <returns>A list of <c>CalciteSchema.LatticeEntry</c>.</returns>
         protected abstract java.util.List GetLattices();
 
         /// <summary>
         /// Prepares a parsed statement that was not rewritten before it arrived.
         /// </summary>
-        /// <param name="sqlQuery">The statement, which an <c>EXPLAIN</c> is unwrapped from.</param>
+        /// <param name="sqlQuery">The statement. An <c>EXPLAIN</c> is prepared as an explanation of the
+        /// statement it wraps.</param>
+        /// <param name="runtimeContextClass">The class of the runtime context.</param>
+        /// <param name="validator">The validator.</param>
         /// <param name="needsValidation">Whether the statement still has to be validated.</param>
-        /// <returns>The compiled statement, or the rendered plan where it was an <c>EXPLAIN</c>.</returns>
+        /// <returns>The compiled statement, or the explanation for an <c>EXPLAIN</c>.</returns>
         public IPreparedResult PrepareSql(SqlNode sqlQuery, java.lang.Class runtimeContextClass, SqlValidator validator, bool needsValidation)
         {
             return PrepareSql(sqlQuery, sqlQuery, runtimeContextClass, validator, needsValidation);
@@ -199,10 +225,14 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Prepares a parsed statement.
         /// </summary>
-        /// <param name="sqlQuery">The statement, which an <c>EXPLAIN</c> is unwrapped from.</param>
-        /// <param name="sqlNodeOriginal">The statement as parsed, before that unwrapping.</param>
+        /// <param name="sqlQuery">The statement, possibly rewritten. An <c>EXPLAIN</c> is prepared as an
+        /// explanation of the statement it wraps.</param>
+        /// <param name="sqlNodeOriginal">The statement as parsed. A non-DML result takes its kind from it.</param>
+        /// <param name="runtimeContextClass">The class of the runtime context.</param>
+        /// <param name="validator">The validator.</param>
         /// <param name="needsValidation">Whether the statement still has to be validated.</param>
-        /// <returns>The compiled statement, or the rendered plan where it was an <c>EXPLAIN</c>.</returns>
+        /// <returns>The compiled statement, or the explanation for an <c>EXPLAIN</c>.</returns>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         public IPreparedResult PrepareSql(SqlNode sqlQuery, SqlNode sqlNodeOriginal, java.lang.Class runtimeContextClass, SqlValidator validator, bool needsValidation)
         {
             ArgumentNullException.ThrowIfNull(sqlQuery);
@@ -234,8 +264,8 @@ namespace Apache.Calcite.Extensions.Prepare
 
             var root = sqlToRelConverter.convertQuery(sqlQuery, needsValidation, true);
 
-            // all arithmetic on exact types where the conformance asks for it, and all arithmetic producing
-            // an INTERVAL whatever the conformance says
+            // checked arithmetic on exact types where the conformance asks for it, and always for arithmetic
+            // producing an INTERVAL
             var convertToChecked = context.config().conformance().checkedArithmetic();
             var checkedConv = new ConvertToChecked(root.rel.getCluster().getRexBuilder(), convertToChecked);
             root = root.withRel(checkedConv.visit(root.rel));
@@ -245,7 +275,7 @@ namespace Apache.Calcite.Extensions.Prepare
             FieldOrigins = validator.getFieldOrigins(sqlQuery);
             ParameterRowType = validator.getParameterRowType(sqlQuery);
 
-            // the logical plan, before view expansion, physical storage and decorrelation
+            // EXPLAIN of the type, or of the logical plan before flattening and decorrelation
             if (sqlExplain != null)
             {
                 switch (sqlExplain.getDepth().name())
@@ -259,7 +289,7 @@ namespace Apache.Calcite.Extensions.Prepare
 
             root = root.withRel(FlattenTypes(root.rel, true));
 
-            // TopDownGeneralDecorrelator cannot run until the sub-queries are gone
+            // TopDownGeneralDecorrelator runs inside the program, after sub-queries are removed
             if (context.config().forceDecorrelate() && context.config().topDownGeneralDecorrelationEnabled() == false)
                 root = root.withRel(Decorrelate(sqlToRelConverter, sqlQuery, root.rel));
 
@@ -269,7 +299,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 org.apache.calcite.runtime.Hook.TRIMMED.run(root.rel);
             }
 
-            // the physical plan, after decorrelation
+            // EXPLAIN of the physical plan
             if (sqlExplain != null)
             {
                 root = Optimize(root, GetMaterializations(), GetLattices());
@@ -278,8 +308,8 @@ namespace Apache.Calcite.Extensions.Prepare
 
             root = Optimize(root, GetMaterializations(), GetLattices());
 
-            // a DML rewritten to other DML — UPDATE to MERGE — keeps the rewrite's kind; anything else —
-            // CALL to SELECT — keeps the kind it was parsed as
+            // DML rewritten to other DML (UPDATE to MERGE) keeps the rewritten kind; anything else (CALL to
+            // SELECT) keeps the kind it was parsed as
             if (root.kind.belongsTo(SqlKind.DML) == false)
                 root = root.withKind(sqlNodeOriginal.getKind());
 
@@ -287,8 +317,17 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Runs the program, which is what chooses a plan.
+        /// Runs the program from <see cref="GetProgram"/> to choose the physical plan.
         /// </summary>
+        /// <param name="root">The logical plan.</param>
+        /// <param name="materializations">The materializations; see the remarks.</param>
+        /// <param name="lattices">The lattices, as <c>CalciteSchema.LatticeEntry</c>.</param>
+        /// <returns>The chosen plan.</returns>
+        /// <remarks>
+        /// Sets a <c>RexExecutorImpl</c> on the planner first, as Calcite does, so that constant reduction
+        /// works. No materializations are passed to the program: <c>Prepare.Materialization</c>'s fields are
+        /// not accessible through IKVM, so they cannot be converted.
+        /// </remarks>
         protected RelRoot Optimize(RelRoot root, java.util.List materializations, java.util.List lattices)
         {
             ArgumentNullException.ThrowIfNull(materializations);
@@ -297,10 +336,8 @@ namespace Apache.Calcite.Extensions.Prepare
             var planner = root.rel.getCluster().getPlanner();
             planner.setExecutor(new RexExecutorImpl(context.getDataContext()));
 
-            // Calcite converts each Materialization to a RelOptMaterialization here, and that loop cannot be
-            // written: Prepare.Materialization's fields are package private and starRelOptTable is private,
-            // so IKVM makes every one of them unreachable. Nothing is lost, because GetMaterializations
-            // answers an empty list for a reason of its own — CalciteMaterializer cannot be reached either.
+            // Calcite converts each Materialization to a RelOptMaterialization here; Materialization's fields
+            // are package private or private and unreachable, so the list stays empty
             var materializationList = new java.util.ArrayList(materializations.size());
 
             var latticeList = new java.util.ArrayList(lattices.size());
@@ -325,8 +362,10 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Trims the fields no one reads.
+        /// Removes fields that nothing reads.
         /// </summary>
+        /// <param name="root">The plan.</param>
+        /// <returns>The trimmed plan.</returns>
         protected RelRoot TrimUnusedFields(RelRoot root)
         {
             var config = SqlToRelConverter.config()
@@ -342,7 +381,8 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Returns whether a plan is worth trimming.
+        /// Returns whether to trim a plan: always when <c>Prepare.THREAD_TRIM</c> is set, and otherwise when it
+        /// has fewer than two joins.
         /// </summary>
         static bool ShouldTrim(RelNode rootRel)
         {
@@ -353,6 +393,10 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <summary>
         /// Returns which modification a DML statement performs.
         /// </summary>
+        /// <param name="isDml">Whether the statement is DML.</param>
+        /// <param name="sqlKind">The statement's kind.</param>
+        /// <returns>The operation, or <see langword="null"/> if the statement is not DML or not a kind that
+        /// maps to one.</returns>
         protected static TableModify.Operation? MapTableModOp(bool isDml, SqlKind sqlKind)
         {
             if (isDml == false)
@@ -376,7 +420,7 @@ namespace Apache.Calcite.Extensions.Prepare
         {
 
             /// <summary>
-            /// Gets the code preparation generated.
+            /// Gets the code preparation generated, or for an explanation the rendered plan or type.
             /// </summary>
             string Code { get; }
 
@@ -387,7 +431,7 @@ namespace Apache.Calcite.Extensions.Prepare
             bool IsDml { get; }
 
             /// <summary>
-            /// Gets which modification a DML statement performs, or <see langword="null"/> where it is not one.
+            /// Gets which modification a DML statement performs, or <see langword="null"/> if it is not DML.
             /// </summary>
             TableModify.Operation? TableModOp { get; }
 
@@ -406,12 +450,13 @@ namespace Apache.Calcite.Extensions.Prepare
             /// Returns the plan that produces the rows.
             /// </summary>
             /// <param name="cursorFactory">How a row is read back.</param>
+            /// <returns>The compiled plan.</returns>
             Apache.Calcite.Extensions.Runtime.IClrCursorFactory GetBindable(Meta.CursorFactory cursorFactory);
 
         }
 
         /// <summary>
-        /// A prepared result that came from a plan: the storage every such result has.
+        /// Base class of a prepared result that came from a plan.
         /// </summary>
         public abstract class PreparedResultImpl : IPreparedResult
         {
@@ -419,6 +464,15 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Initializes a new instance.
             /// </summary>
+            /// <param name="rowType">The result's row type.</param>
+            /// <param name="parameterRowType">The row type of the dynamic parameters.</param>
+            /// <param name="fieldOrigins">The origin of each result field.</param>
+            /// <param name="collations">The collations the result is known to carry.</param>
+            /// <param name="rootRel">The root of the plan.</param>
+            /// <param name="tableModOp">The DML operation, or <see langword="null"/>.</param>
+            /// <param name="isDml">Whether the statement is DML.</param>
+            /// <exception cref="ArgumentNullException">An argument other than <paramref name="tableModOp"/> is
+            /// <see langword="null"/>.</exception>
             protected PreparedResultImpl(
                 RelDataType rowType,
                 RelDataType parameterRowType,
@@ -445,8 +499,7 @@ namespace Apache.Calcite.Extensions.Prepare
             public RelDataType RowType { get; }
 
             /// <summary>
-            /// Gets the physical row type of the prepared statement, which the validator's need not be
-            /// identical to — its field names may have been made unique.
+            /// Gets the physical row type of the result, which is <see cref="RowType"/>.
             /// </summary>
             public RelDataType PhysicalRowType => RowType;
 
@@ -479,18 +532,18 @@ namespace Apache.Calcite.Extensions.Prepare
             public abstract Apache.Calcite.Extensions.Runtime.IClrCursorFactory GetBindable(Meta.CursorFactory cursorFactory);
 
             /// <summary>
-            /// Gets the type of one row, which decides how a row is read back.
+            /// Gets the CLR type of one row, which decides how a row is read back.
             /// </summary>
             /// <remarks>
-            /// <c>Typed.getElementType</c>, which <c>PreparedResultImpl</c> declares abstract and the
-            /// interface does not carry.
+            /// The counterpart of <c>Typed.getElementType</c>, which Calcite's <c>PreparedResultImpl</c>
+            /// implements.
             /// </remarks>
             public abstract System.Type ElementType { get; }
 
         }
 
         /// <summary>
-        /// An <c>EXPLAIN PLAN</c> statement, prepared. It is always good to have an explanation prepared.
+        /// Base class of a prepared <c>EXPLAIN</c> statement.
         /// </summary>
         public abstract class PreparedExplain : IPreparedResult
         {
@@ -503,11 +556,13 @@ namespace Apache.Calcite.Extensions.Prepare
             /// <summary>
             /// Initializes a new instance.
             /// </summary>
-            /// <param name="rowType">The type to render, where the <c>EXPLAIN</c> is of a type.</param>
+            /// <param name="rowType">The type to render, if the <c>EXPLAIN</c> is of a type.</param>
             /// <param name="parameterRowType">The statement's dynamic parameters.</param>
-            /// <param name="root">The plan to render, where the <c>EXPLAIN</c> is of a plan.</param>
+            /// <param name="root">The plan to render, if the <c>EXPLAIN</c> is of a plan.</param>
             /// <param name="format">How the plan is rendered.</param>
             /// <param name="detailLevel">How much of the plan is rendered.</param>
+            /// <exception cref="ArgumentNullException"><paramref name="parameterRowType"/>,
+            /// <paramref name="format"/> or <paramref name="detailLevel"/> is <see langword="null"/>.</exception>
             protected PreparedExplain(
                 RelDataType? rowType,
                 RelDataType parameterRowType,

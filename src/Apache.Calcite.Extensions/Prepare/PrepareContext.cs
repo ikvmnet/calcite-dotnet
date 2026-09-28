@@ -14,7 +14,7 @@ namespace Apache.Calcite.Extensions.Prepare
 {
 
     /// <summary>
-    /// A native implementation of <see cref="CalcitePrepare.Context"/>.
+    /// The <see cref="CalcitePrepare.Context"/> a statement is prepared in.
     /// </summary>
     internal sealed class PrepareContext : CalcitePrepare.Context
     {
@@ -30,12 +30,13 @@ namespace Apache.Calcite.Extensions.Prepare
         /// Initializes a new instance.
         /// </summary>
         /// <param name="typeFactory">The type factory.</param>
-        /// <param name="rootSchema">The root, of which a snapshot is taken here — so a caller sharing the root
-        /// between connections holds <paramref name="rootLock"/>'s read lock across this constructor.</param>
+        /// <param name="rootSchema">The mutable root schema. The constructor takes a snapshot of it, so a
+        /// caller that shares the root between connections holds <paramref name="rootLock"/>'s read lock
+        /// across the call.</param>
         /// <param name="config">The connection configuration.</param>
         /// <param name="defaultSchemaPath">The default schema path.</param>
-        /// <param name="rootLock">The lock the root is read and altered under, where it is shared, or
-        /// <see langword="null"/> where one connection has the root to itself, as Calcite's does.</param>
+        /// <param name="rootLock">The lock under which a shared root is read and altered, or
+        /// <see langword="null"/> if one connection owns the root.</param>
         public PrepareContext(
             JavaTypeFactory typeFactory,
             CalciteSchema rootSchema,
@@ -52,7 +53,7 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Gets the lock the root is read and altered under, or <see langword="null"/> where there is none.
+        /// Gets the lock under which the root is read and altered, or <see langword="null"/> if there is none.
         /// </summary>
         public System.Threading.ReaderWriterLockSlim? RootLock => _rootLock;
 
@@ -95,10 +96,12 @@ namespace Apache.Calcite.Extensions.Prepare
             return CalcitePrepare.Dummy.getSparkHandler(false);
         }
 
+        /// <summary>
+        /// Returns a data context over the snapshot root for use during planning.
+        /// </summary>
         /// <remarks>
-        /// <c>CalcitePrepare.Context.getDataContext</c>, which is what planning reads a value out of rather
-        /// than what a statement executes against — so there is no cancellation to give it, and no timeout
-        /// or parameters either. A statement's own context is built by <c>CalciteSession.Bind</c>.
+        /// The context carries no cancellation, timeout or parameter values; the context a statement executes
+        /// against is created separately, when it is bound.
         /// </remarks>
         public DataContext getDataContext()
         {
@@ -106,7 +109,8 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Refuses to run a plan Calcite built itself.
+        /// Throws: running a plan through a <see cref="RelRunner"/> is not supported, so neither is
+        /// <c>CREATE MATERIALIZED VIEW</c> nor <c>CREATE TABLE ... AS SELECT</c>.
         /// </summary>
         public RelRunner getRelRunner()
         {

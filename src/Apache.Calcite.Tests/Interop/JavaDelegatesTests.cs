@@ -79,8 +79,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// The case a name search cannot answer and this exists for: java.lang.Object is remapped onto
-        /// System.Object, and its Java methods have no CLR method of that name on that type at all.
+        /// IKVM maps <c>java.lang.Object</c> onto <see cref="object"/>, which has no CLR method of the Java
+        /// method's name, so only a delegate over the Java method can call it.
         /// </summary>
         [Fact]
         public void ShouldCallMethodOnRemappedType()
@@ -93,8 +93,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// The other half of it: String is remapped onto System.String, and toUpperCase lands on
-        /// java.lang.StringHelper taking the receiver first. The delegate hides that the receiver moved.
+        /// IKVM maps <c>java.lang.String</c> onto <see cref="string"/> and implements <c>toUpperCase</c> as a
+        /// static helper taking the receiver first; the delegate still takes the receiver as its first argument.
         /// </summary>
         [Fact]
         public void ShouldCallMethodMovedToAHelperClass()
@@ -106,8 +106,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// A ghost interface declares nothing the CLR type system can see, and a cast to one throws. The
-        /// handle does not cast.
+        /// <c>java.lang.Comparable</c> is an IKVM ghost interface that the CLR does not see on a string, so a
+        /// cast to it throws; the delegate calls the method without casting.
         /// </summary>
         [Fact]
         public void ShouldCallMethodOnGhostInterface()
@@ -119,9 +119,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// A method of Calcite's own, reached the way the convention reaches one — and its primitive
-        /// parameter kept primitive, which is what keeps a java.lang.Integer from crossing where a CLR int
-        /// belongs.
+        /// A method from Calcite's <c>BuiltInMethod</c> table; its primitive parameter stays a CLR
+        /// <see cref="int"/> in the delegate's signature rather than being erased to <see cref="object"/>.
         /// </summary>
         [Fact]
         public void ShouldCallACalciteBuiltInMethod()
@@ -136,8 +135,8 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// Access is checked as Lookup.unreflect checks it, and marking the member accessible is the caller's
-        /// to do. java.lang.Runtime's constructor is private.
+        /// Java access checks apply: <c>java.lang.Runtime</c>'s private constructor is refused until the caller
+        /// calls <c>setAccessible(true)</c> on it.
         /// </summary>
         [Fact]
         public void ShouldRefuseAnInaccessibleMemberUntilMarkedAccessible()

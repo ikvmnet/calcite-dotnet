@@ -12,23 +12,28 @@ namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
-    /// Reads a value arriving as an object at the type an adapter was made for.
+    /// Converts values between Java's boxed primitives and the CLR's where they cross between the two
+    /// runtimes.
     /// </summary>
     /// <remarks>
-    /// An adapter implements one of Calcite's functional interfaces, whose arguments are erased to
-    /// <see cref="object"/>, and calls a delegate that is typed. Where that type is a primitive the value
-    /// arriving is a <c>java.lang.Integer</c> rather than a boxed CLR int, and casting one to the other fails.
-    /// The same unboxing every conversion in this port does is what is wanted.
+    /// A Java primitive boxed as an object is a <c>java.lang.Integer</c> (and so on), not a CLR-boxed
+    /// <see cref="int"/>, and a cast between the two fails. Calcite's comparators and accessors expect the
+    /// Java box, so a value handed to Calcite is boxed the Java way and a value read from Calcite is unboxed
+    /// through the box's accessor.
     /// </remarks>
     static class JavaValues
     {
 
         /// <summary>
-        /// Returns a value as <typeparamref name="T"/>.
+        /// Returns a value as <typeparamref name="T"/>, converting between Java and CLR boxing where needed.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <remarks>
+        /// A Java box read as a CLR primitive is unboxed with <see cref="Unwrap"/>; a CLR value type read as
+        /// a Java box type is boxed with <see cref="Box"/>. Anything else is cast.
+        /// </remarks>
+        /// <typeparam name="T">The type the caller reads the value as.</typeparam>
+        /// <param name="value">The value, boxed either the Java or the CLR way, or <see langword="null"/>.</param>
+        /// <returns><paramref name="value"/> as <typeparamref name="T"/>.</returns>
         public static T As<T>(object? value)
         {
             if (value is T typed)
@@ -37,9 +42,7 @@ namespace Apache.Calcite.Extensions.Interop
             if (value != null && typeof(T).IsValueType)
                 return (T)JavaValues.Unwrap(value, typeof(T));
 
-            // the other way round, and the case a table of this runtime makes: its rows hold a CLR int where
-            // the plan's row type is java.lang.Integer, and a cast between those two is not a conversion any
-            // more than the one above is
+            // a CLR value where the type is a Java box, such as an int where java.lang.Integer is expected
             if (value != null && value.GetType().IsValueType && ClrPrimitive.PrimitiveClass(typeof(T)) is Type primitive)
                 return (T)JavaValues.Box(value, primitive);
 
@@ -47,30 +50,25 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Returns a value as the object Calcite expects to receive.
+        /// Returns a value as the object Calcite expects: a CLR primitive boxed as Java boxes it, and anything
+        /// else unchanged.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="value"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The other direction, and the one that matters more: handing back a boxed CLR int where the type
-        /// factory says java.lang.Integer leaves two representations of one value loose in a plan, and whatever
-        /// compares them fails.
-        ///
-        /// <para>Null is the one value it passes through, so a caller that has already ruled null out keeps
-        /// that knowledge across the call.</para>
+        /// Handing Calcite a CLR-boxed <see cref="int"/> where the type factory declares
+        /// <c>java.lang.Integer</c> leaves two representations of one value in a plan, and comparisons between
+        /// them fail. Returns <see langword="null"/> only for <see langword="null"/>.
         /// </remarks>
+        /// <typeparam name="T">The static type of the value at the call site.</typeparam>
+        /// <param name="value">The value to hand to Calcite.</param>
+        /// <returns><paramref name="value"/>, boxed the Java way if it is a CLR primitive.</returns>
         [return: NotNullIfNotNull(nameof(value))]
         public static object? From<T>(T value)
         {
             if (value == null)
                 return null;
 
-            // the value's own type, not typeof(T). A boundary is crossed by a value, and the static type
-            // parameter at these sites is nearly always object or a PhysType.RowType -- and a RowType is
-            // ClrPrimitive.Box(...), a Java class -- so testing typeof(T) compiled the guard away at exactly
-            // the sites that had something to guard. Box returns what it was given where the type is not one
-            // of linq4j's primitives, so a struct of our own still passes through untouched.
+            // tests the runtime type rather than typeof(T), which at most call sites is object or a Java box
+            // type and would say nothing. Box returns a value type that is not a Java primitive unchanged.
             var type = value.GetType();
 
             return type.IsValueType ? JavaValues.Box(value, type) : value;
@@ -79,22 +77,18 @@ namespace Apache.Calcite.Extensions.Interop
 
 
         /// <summary>
-        /// Returns <paramref name="value"/> as the CLR primitive <paramref name="type"/>.
+        /// Returns <paramref name="value"/> as the CLR primitive <paramref name="type"/>, as Java unboxing
+        /// would.
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="value">The boxed value.</param>
+        /// <param name="type">A CLR type that corresponds to a Java primitive.</param>
+        /// <returns>The primitive value, boxed by the CLR.</returns>
+        /// <exception cref="NotSupportedException"><paramref name="type"/> is not a Java primitive, or the
+        /// value has no accessor for it.</exception>
         /// <remarks>
-        /// A linq4j constant holds its value boxed even where its type is a primitive, because Java has
-        /// nowhere else to put it, and an adapter's argument arrives as Java boxed it. What reads it is the
-        /// primitive's own accessor — <c>intValue()</c> for an <c>int</c> — called on the value, as javac's
-        /// unboxing calls it: on any <c>java.lang.Number</c> for the six numeric primitives, and on the
-        /// <c>Character</c> or <c>Boolean</c> for the other two.
-        ///
-        /// <para>A value that is none of those is asked by name for the accessor, which is what this did for
-        /// every value once; the method found is kept per type, because this is on the path of every value
-        /// an adapter reads.</para>
+        /// Calls the primitive's accessor, such as <c>intValue()</c>, on the value: on any
+        /// <c>java.lang.Number</c> for the numeric primitives, and on a <c>Character</c> or <c>Boolean</c> for
+        /// the other two. Any other value is asked for the accessor by reflection, cached per type.
         /// </remarks>
         public static object Unwrap(object value, Type type)
         {
@@ -137,26 +131,19 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Returns <paramref name="value"/> boxed as Java boxes it.
+        /// Returns <paramref name="value"/> boxed as Java boxes the primitive <paramref name="type"/>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="value">The CLR value.</param>
+        /// <param name="type">The CLR type of the Java primitive to box as.</param>
+        /// <returns>The Java box, or <paramref name="value"/> itself if <paramref name="type"/> is not a Java
+        /// primitive.</returns>
+        /// <exception cref="NotSupportedException">The box type has no <c>valueOf</c> for
+        /// <paramref name="type"/>.</exception>
         /// <remarks>
-        /// The counterpart of <see cref="Unwrap"/>, and needed for the same reason: a value handed back to
-        /// Calcite as an object has to be a java.lang.Integer rather than a boxed CLR int, because that is what
-        /// the type factory says the value is and what everything reading it expects.
-        ///
-        /// <para>A value of the primitive it is boxed as — every call <see cref="From"/> makes, and nearly
-        /// every one <see cref="As"/> does — is boxed by that primitive's own <c>valueOf</c>, as javac's
-        /// autoboxing boxes it. A value type that is not one of Java's primitives, a struct of our own, is
-        /// returned as it is.</para>
-        ///
-        /// <para>A value of another type than <paramref name="type"/> — a CLR <c>int</c> read where the row
-        /// type says <c>java.lang.Long</c> — goes through <c>valueOf</c> by reflection, because what gives
-        /// the answer there is <see cref="MethodBase.Invoke(object, object[])"/>'s widening of the argument,
-        /// and a direct call cannot reproduce it without restating it. The method found is kept per type.</para>
+        /// A value whose type is <paramref name="type"/> is boxed by that box's <c>valueOf</c>, as Java
+        /// autoboxing does. A value of another type, such as an <see cref="int"/> where the type is
+        /// <see cref="long"/>, is passed to <c>valueOf</c> by reflection, which widens it; the method is cached
+        /// per type.
         /// </remarks>
         public static object Box(object value, Type type)
         {
@@ -197,13 +184,12 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// The <c>valueOf</c> of each primitive's box, by the primitive's CLR type, for <see cref="Box"/>'s
-        /// reflective case.
+        /// The <c>valueOf</c> of each primitive's box, keyed by the primitive's CLR type.
         /// </summary>
         static readonly ConcurrentDictionary<Type, MethodInfo?> valueOfs = new();
 
         /// <summary>
-        /// The accessor a type answers for each primitive's name, for <see cref="Unwrap"/>'s reflective case.
+        /// The primitive accessor methods found by reflection, keyed by value type and method name.
         /// </summary>
         static readonly ConcurrentDictionary<(Type Type, string Name), MethodInfo?> accessors = new();
 

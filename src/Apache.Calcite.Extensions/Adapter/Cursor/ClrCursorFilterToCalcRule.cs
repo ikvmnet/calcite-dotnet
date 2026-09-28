@@ -11,8 +11,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Variant of <c>FilterToCalcRule</c> for the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrCursorFilter"/> cannot implement itself, exactly as <c>EnumerableFilter</c> cannot: a
-    /// calc is always better, because it carries the filter and the projection together.
+    /// Mirrors <c>EnumerableFilterToCalcRule</c>: replaces a <see cref="ClrCursorFilter"/>, which cannot be
+    /// implemented, with a <see cref="ClrCursorCalc"/> that applies the condition to an identity projection.
+    /// Part of <see cref="ClrCursorRules.CalcRules"/>.
     /// </remarks>
     public class ClrCursorFilterToCalcRule : RelRule
     {
@@ -20,7 +21,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorFilterToCalcRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorFilterToCalcRule Create()
         {
             var config = EnumerableFilterToCalcRule.Config.DEFAULT
@@ -33,7 +34,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorFilterToCalcRule(RelRule.Config config) :
             base(config)
         {
@@ -46,7 +47,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var filter = (ClrCursorFilter)call.rel(0);
             var input = filter.getInput();
 
-            // a program that is the identity projection with the condition on it
             var rexBuilder = filter.getCluster().getRexBuilder();
             var programBuilder = new RexProgramBuilder(input.getRowType(), rexBuilder);
             programBuilder.addIdentity();

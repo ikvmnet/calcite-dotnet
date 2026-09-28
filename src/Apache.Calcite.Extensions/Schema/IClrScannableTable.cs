@@ -12,46 +12,24 @@ namespace Apache.Calcite.Extensions.Schema
     /// A table that produces its rows as a .NET sequence, pulled or awaited.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <see cref="ScannableTable"/>, member for member, with the sequence swapped.
+    /// The counterpart of <see cref="ScannableTable"/>, returning a .NET sequence instead of a linq4j
+    /// <c>Enumerable</c>, so a table written in .NET does not have to implement Calcite's
+    /// <c>Enumerator</c>. Implementing <see cref="ScannableTable"/> still works and suits a table that
+    /// already has a linq4j sequence.
     ///
-    /// <para>It exists because a <see cref="ScannableTable"/> written in .NET has to hand back a linq4j
-    /// <c>Enumerable</c>, which means building one of Calcite's <c>Enumerator</c>s by hand, and then
-    /// <c>ClrCursorTableScan</c> reads it straight back out through <c>FromJava</c>. The rows make a
-    /// round trip through a runtime neither end of it belongs to. A table that implements this is read
-    /// directly.</para>
+    /// <para><see cref="Scan"/> is required and <see cref="ScanAsync"/> defaults to it. A table whose rows are
+    /// already in memory implements <see cref="Scan"/> only. A table whose rows arrive over I/O implements
+    /// both. A table whose rows can only be produced asynchronously implements <see cref="ScanAsync"/> and
+    /// writes <see cref="Scan"/> by draining it; it should not leave <see cref="ScanAsync"/> to the default,
+    /// which would then block a thread for an asynchronous caller.</para>
     ///
-    /// <para><b><see cref="Scan"/> is required and <see cref="ScanAsync"/> is optional</b>, which is the
-    /// shape the nodes of this convention use and the shape .NET itself uses wherever a type does both.
-    /// There was a second interface for the awaiting half for a while, and two interfaces could not say
-    /// which member a table that implemented both actually wanted: the scan asked whether the table was of
-    /// the <em>other</em> kind before asking whether it was of its own, in each of its two bodies, so a
-    /// table implementing both sent the two into mutual recursion and overflowed the stack while the plan
-    /// was being built. Measured. One interface makes that unrepresentable.</para>
+    /// <para>The values in each row must be Java values of the types Calcite's type factory uses for the
+    /// columns — <c>java.lang.Integer</c>, <c>java.lang.String</c>, <c>java.math.BigDecimal</c> and so
+    /// on — as for a <see cref="ScannableTable"/>. They are not converted or checked; a value of the wrong
+    /// type makes the query fail when the field is read.</para>
     ///
-    /// <para><b>A table chooses which halves it writes.</b> Rows that are already in hand: write
-    /// <see cref="Scan"/> and take the default. Rows that arrive over a wire: write both, so that neither
-    /// caller pays for the other. Rows that can <em>only</em> be awaited: write <see cref="ScanAsync"/>, and
-    /// write <see cref="Scan"/> by draining it, with whatever the target framework offers. Leaving
-    /// <see cref="ScanAsync"/> to the default in that last case is the one arrangement to avoid: the default
-    /// would wrap a blocking drain, and a caller who asked to await would get a thread blocked per row for
-    /// nothing.</para>
-    ///
-    /// <para>The other half of Calcite's table SPI is <see cref="QueryableTable"/>, whose counterpart here
-    /// is <see cref="IClrQueryableTable"/>: a table states an element type of its own and hands back an
-    /// expression rather than being called. A table implements whichever suits it.</para>
-    ///
-    /// <para>Implementing Calcite's <see cref="ScannableTable"/> still works and is still the right thing
-    /// for a table that has a linq4j sequence to give — an adapter over a Java source, say. This is for the
-    /// ordinary case of a table whose rows are already .NET's.</para>
-    ///
-    /// <para>The values in each row are Java's — <c>java.lang.Integer</c>, <c>java.lang.String</c>,
-    /// <c>BigDecimal</c> — exactly as a <see cref="ScannableTable"/>'s are. What is avoided is the hop the
-    /// <em>sequence</em> makes, not the conversion each value needs: everything downstream is Calcite's, and
-    /// every boundary where a value crosses between the two runtimes is an adapter. The rows go on
-    /// unconverted, exactly as Calcite passes on a <see cref="ScannableTable"/>'s, and nothing checks them.
-    /// Nothing needs to: what reads a field is <c>SqlFunctions.toInt</c> or a cast to the boxed type the row
-    /// type declares, so a table that gets this wrong stops on its first row rather than going quietly wrong.
-    /// <c>ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys</c> holds that.</para>
+    /// <para>See also <see cref="IClrQueryableTable"/>, which returns an expression instead of being
+    /// called, and <see cref="IClrCursorTable"/>, which returns a cursor.</para>
     /// </remarks>
     public interface IClrScannableTable : Table
     {
@@ -59,43 +37,28 @@ namespace Apache.Calcite.Extensions.Schema
         /// <summary>
         /// Returns this table's rows.
         /// </summary>
-        /// <param name="root">The context the query is being run against, which is where a table reaches
-        /// the schema, the query's parameters and its cancel flag.</param>
-        /// <returns>The rows, one <c>object?[]</c> per row, produced as the sequence is enumerated.</returns>
+        /// <param name="root">The context the query is being run against, through which a table reaches the
+        /// schema, the query's parameter values and its cancel flag.</param>
+        /// <returns>The rows, one <c>object?[]</c> per row.</returns>
         /// <remarks>
-        /// <c>ScannableTable.scan</c>. A row is an array whatever the table's row type is; a one column
-        /// table still yields a one element array, and the convention's scan is what turns that into the
-        /// value.
-        ///
-        /// <para>The elements are nullable, as Calcite declares them —
-        /// <c>Enumerable&lt;@Nullable Object[]&gt;</c> — because a field of a row is null wherever its
-        /// column is.</para>
+        /// The counterpart of <c>ScannableTable.scan</c>. Every row is an array, including the rows of a
+        /// one-column table. A field is <see langword="null"/> where its column's value is null.
         /// </remarks>
         IEnumerable<object?[]> Scan(DataContext root);
 
         /// <summary>
-        /// Returns this table's rows, as a sequence the reader awaits.
+        /// Returns this table's rows as an asynchronous sequence.
         /// </summary>
-        /// <param name="root">The context the query is being run against, which is where a table reaches
-        /// the schema, the query's parameters and its cancel flag.</param>
-        /// <returns>The rows, one <c>object?[]</c> per row, produced as the sequence is enumerated.</returns>
+        /// <param name="root">The context the query is being run against, through which a table reaches the
+        /// schema, the query's parameter values and its cancel flag.</param>
+        /// <returns>The rows, one <c>object?[]</c> per row.</returns>
         /// <remarks>
-        /// What a plan compiled to an <see cref="IAsyncEnumerable{T}"/> calls, and the only leaf such a plan
-        /// scans <em>itself</em>. A query touching a <see cref="ScannableTable"/>, a
-        /// <see cref="QueryableTable"/> or a <see cref="FilterableTable"/> is still planned, Calcite reading
-        /// it and a converter carrying the rows across, but that part of it is not asynchronous and cannot
-        /// be.
+        /// Called when the plan is opened asynchronously. By default reads <see cref="Scan"/> as an
+        /// asynchronous sequence that never suspends; override it when the rows arrive asynchronously.
         ///
-        /// <para>By default <see cref="Scan"/> read across, which costs a state machine and no thread and
-        /// suspends nowhere. Override it wherever the rows genuinely arrive asynchronously; the default is
-        /// correct for a table whose rows are already in hand and is the wrong thing to leave in place for a
-        /// table whose <see cref="Scan"/> blocks.</para>
-        ///
-        /// <para>There is no cancellation parameter, and that is not an omission. A token enters an
-        /// <see cref="IAsyncEnumerable{T}"/> at <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, which
-        /// is where .NET puts it and what lets a plan carry no token of its own — an implementation declares
-        /// <c>[EnumeratorCancellation]</c> on an iterator's token parameter and the language threads
-        /// it.</para>
+        /// <para>The cancellation token of the asynchronous open is passed to
+        /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>; an iterator method receives it through a
+        /// parameter marked <c>[EnumeratorCancellation]</c>.</para>
         /// </remarks>
         IAsyncEnumerable<object?[]> ScanAsync(DataContext root) => ClrSequences.ToAsyncEnumerable(Scan(root));
 

@@ -14,15 +14,15 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// A type system with a distinctive <c>DECIMAL</c> precision, for proving the <c>TypeSystem</c>
-    /// connection string option reaches the session's type factory. Public with a public default
-    /// constructor, which is what the plugin machinery requires of a plain class name.
+    /// A type system with a distinctive <c>DECIMAL</c> precision, for showing that the <c>TypeSystem</c>
+    /// connection string option reaches the session's type factory. Public with a public parameterless
+    /// constructor, which is what a type named without a member requires.
     /// </summary>
     public class TestTypeSystem : RelDataTypeSystemImpl
     {
 
         /// <summary>
-        /// A public static field, which is upstream's only <c>#Member</c> form.
+        /// A public static field, the only member kind Avatica's <c>#MEMBER</c> form reads.
         /// </summary>
         public static readonly TestTypeSystem Handle = new TestTypeSystem();
 
@@ -36,7 +36,7 @@ namespace Apache.Calcite.Data.Tests
     /// <summary>
     /// A type system that widens <c>SUM</c> over an exact integer to <c>BIGINT</c>. Calcite's default
     /// <c>deriveSumType</c> answers the argument type, so <c>SUM</c> of an <c>INTEGER</c> column is an
-    /// <c>INTEGER</c>; this is the shape of type system that changes which Java class a row carries.
+    /// <c>INTEGER</c>; this one changes which Java class a row carries.
     /// </summary>
     public class WideSumTypeSystem : RelDataTypeSystemImpl
     {
@@ -50,8 +50,8 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// A type system handed out by a public static field named <c>INSTANCE</c>, which the plugin machinery
-    /// reads in preference to the default constructor when no member is named.
+    /// A type system handed out by a public static field named <c>INSTANCE</c>, which plugin resolution
+    /// reads in preference to the parameterless constructor when no member is named.
     /// </summary>
     public class InstanceTypeSystem : RelDataTypeSystemImpl
     {
@@ -69,8 +69,8 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// A type system handed out by a public static parameterless method, which is the .NET form of the
-    /// <c>#Member</c> suffix and the one upstream's field-only lookup does not reach.
+    /// A type system handed out by a public static parameterless method, a member kind Avatica's
+    /// field-only lookup does not reach.
     /// </summary>
     public class MethodTypeSystem : RelDataTypeSystemImpl
     {
@@ -78,6 +78,7 @@ namespace Apache.Calcite.Data.Tests
         /// <summary>
         /// Answers the instance.
         /// </summary>
+        /// <returns>A new instance, whose <c>DECIMAL</c> precision is 23.</returns>
         public static MethodTypeSystem Create()
         {
             return new MethodTypeSystem();
@@ -91,8 +92,8 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// A type system behind a <see cref="ThreadLocal{T}"/>, which is the CLR spelling of the holder
-    /// Avatica unwraps a <c>java.lang.ThreadLocal</c> for.
+    /// A type system behind a <see cref="ThreadLocal{T}"/>, the CLR counterpart of the
+    /// <c>java.lang.ThreadLocal</c> Avatica unwraps.
     /// </summary>
     public class ThreadLocalTypeSystem : RelDataTypeSystemImpl
     {
@@ -110,11 +111,11 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// Holds the constructor region <c>CalciteSession</c> ports from <c>CalciteConnectionImpl</c>: the
-    /// <c>typeSystem</c> property, the conformance-driven ragged-union wrapper, the conformance-gated
-    /// <c>DUAL</c> view, and the root schema and type factory injection seam. None of it is visible to the
-    /// differential tests, because every convention inside one session shares the session's type factory
-    /// and so agrees with the divergence.
+    /// Covers what <c>CalciteSession</c> and <c>CalciteDataSourceRoot</c> port from
+    /// <c>CalciteConnectionImpl</c>'s constructor: the <c>typeSystem</c> property, the conformance-driven
+    /// ragged-union wrapper, the conformance-gated <c>DUAL</c> view, and injection of the root schema and
+    /// type factory. The differential tests cannot see any of this, because every convention inside one
+    /// session shares the session's type factory.
     /// </summary>
     public class CalciteSessionConstructionTests
     {
@@ -122,6 +123,9 @@ namespace Apache.Calcite.Data.Tests
         /// <summary>
         /// Reads all rows of the first column as strings.
         /// </summary>
+        /// <param name="c">An open connection.</param>
+        /// <param name="sql">The query to run.</param>
+        /// <returns>The first column of each row, with <see langword="null"/> for a SQL null.</returns>
         static List<string?> ReadStrings(CalciteConnection c, string sql)
         {
             using var cmd = c.CreateCommand();
@@ -137,6 +141,9 @@ namespace Apache.Calcite.Data.Tests
         /// A connection string naming a type system. The name is quoted because an assembly-qualified one
         /// carries a comma, which the connection string would otherwise read as a separator.
         /// </summary>
+        /// <param name="typeSystem">The <c>TypeSystem</c> option's value: a type name, optionally with a
+        /// member.</param>
+        /// <returns>The inline empty-model connection string with the option appended.</returns>
         static string Cs(string typeSystem)
         {
             return TestModels.InlineEmptyModelConnectionString + ";TypeSystem=\"" + typeSystem + "\"";
@@ -166,8 +173,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A type named by itself is constructed, which is the plain case and the only one a .NET user
-        /// writing their own type system needs.
+        /// An assembly-qualified type name with no member is constructed through its public constructor.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_construct_a_type_named_by_itself()
@@ -188,9 +194,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The point of the member form. Calcite ships its type systems as anonymous classes behind
-        /// public static fields, so they have no type to name and a type-only syntax cannot reach any of
-        /// them at all.
+        /// Calcite ships its type systems as anonymous classes behind public static fields, so they have no
+        /// type to name and only the member form reaches them.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_reach_a_type_system_calcite_ships()
@@ -201,8 +206,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A Java <c>static final</c> is a CLR property under IKVM rather than a field, so the member
-        /// lookup has to try both.
+        /// IKVM exposes a Java <c>static final</c> field as a CLR property, so the member lookup tries
+        /// properties as well as fields.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_read_a_member_that_ikvm_surfaces_as_a_property()
@@ -229,7 +234,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The thread-local holder Avatica unwraps, in its CLR spelling.
+        /// A member holding a <see cref="ThreadLocal{T}"/> is unwrapped to the calling thread's value.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_unwrap_a_thread_local_member()
@@ -248,8 +253,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Calcite writes a plugin member with a <c>#</c>, and a connection string copied out of its
-        /// documentation should resolve rather than read as a missing type.
+        /// Calcite writes a plugin member with a <c>#</c>, and that form is accepted too.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_read_calcites_own_member_spelling()
@@ -260,9 +264,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The name is resolved by <c>Type.GetType</c>, which searches the provider assembly and the core
-        /// library and nowhere else, so a name without its assembly does not resolve however well formed.
-        /// The message has to say so, this being the mistake a .NET user will actually make.
+        /// The name is resolved by <c>Type.GetType</c>, which searches only the provider assembly and the core
+        /// library, so a name without its assembly does not resolve; the message says to add it.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_say_so_when_the_name_omits_its_assembly()
@@ -297,7 +300,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A type that resolves but is not a type system is refused, rather than answered as one.
+        /// A type that resolves but is not a <c>RelDataTypeSystem</c> fails the open, naming the interface expected.
         /// </summary>
         [Fact]
         public void TypeSystem_option_should_refuse_a_type_that_is_not_a_type_system()
@@ -308,11 +311,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The invariant the conventions rest on: a row carries Java boxed values, and which Java class
-        /// it carries is <c>JavaTypeFactoryImpl.getJavaClass</c>, which reads the <c>SqlTypeName</c> and
-        /// the nullability and nothing else. A type system cannot introduce a class outside that closed
-        /// set, but it decides which member of it a query derives — so this is the half of the option
-        /// that reaches the runtime, and the reader has to follow it.
+        /// A row carries Java boxed values whose class <c>JavaTypeFactoryImpl.getJavaClass</c> chooses from
+        /// the <c>SqlTypeName</c> and nullability. A type system cannot add a class to that set, but it
+        /// decides which type a query derives, and so which class the reader returns.
         /// </summary>
         [Fact]
         public void A_derived_type_should_change_the_runtime_type_the_reader_answers()
@@ -338,10 +339,10 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And the plan runs on the widened type rather than merely reporting it: the same query under
-        /// the same type system agrees whichever way the plan is opened, both opens sharing the session's
-        /// type factory.
+        /// The synchronous and awaiting opens share the session's type factory, so both return the widened
+        /// type and the same value.
         /// </summary>
+        /// <returns>A task that completes when both opens have been checked.</returns>
         [Fact]
         public async System.Threading.Tasks.Task A_derived_type_should_hold_across_both_opens()
         {
@@ -423,8 +424,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The session is the connection's half and the root the data source's, so a session over a root it
-        /// does not own leaves the root alone when it goes, and one over a root of its own takes it along.
+        /// A session disposes its root, and the schemas in it, only when it was created as the root's owner.
         /// </summary>
         [Fact]
         public void Session_should_dispose_the_root_only_where_it_owns_it()

@@ -10,25 +10,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// cursor advanced synchronously or with await, as the reader chooses on each advance.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableConvention</c>, differing from it in what a plan is compiled
-    /// <em>to</em> and in nothing about a row. A plan is a <see cref="ClrCursorFactory"/>, which opens a
-    /// cursor synchronously or with await, and the cursor it opens has both <c>Read</c> and
-    /// <c>ReadAsync(token)</c> over one position. That is the shape <c>DbDataReader</c> has, rather than a
-    /// sequence's: a sequence states once, at <c>GetEnumerator</c> or <c>GetAsyncEnumerator</c>, whether it
-    /// will be pulled or awaited and takes its cancellation at that moment, where a reader over a cursor
-    /// never has to choose a mode in advance and never has to throw a per-call token away.
+    /// The counterpart of <c>EnumerableConvention</c>. Rows are represented as Calcite represents them; what
+    /// differs is the compiled plan, which is a <see cref="ClrCursorFactory"/> built from
+    /// <c>System.Linq.Expressions</c>. The factory opens a cursor synchronously or with await, and the cursor
+    /// offers both <c>Read</c> and <c>ReadAsync(token)</c> over one position, as <c>DbDataReader</c> does, so
+    /// the reader chooses on each advance and may pass a different token each time.
     ///
-    /// <para>Register <see cref="ClrCursorRules.Rules"/> with the planner and ask for this convention
-    /// on the root, then run <see cref="ClrCursorRules.CalcRules"/> as a second pass, which is what
-    /// <c>Programs.standard</c> does with Calcite's own. The root of the plan that comes out is a
-    /// <see cref="ClrCursorRel"/>, and <see cref="ClrCursorRelImplementor.ImplementRoot"/> turns it
-    /// into the factory. A plan may hold nodes of this convention and of <c>EnumerableConvention</c> —
-    /// converters exist in each direction and rows cross untouched — so a statement this convention has
-    /// no node for is still planned.</para>
-    ///
-    /// <para>Everything about a <em>row</em> — the physical type, the row formats, the Rex translation,
-    /// and the preference a consumer states for how a row is represented — lives beside the nodes, as
-    /// Calcite's lives beside <c>EnumerableConvention</c> in <c>adapter.enumerable</c>.</para>
+    /// <para>To plan into this convention, register <see cref="ClrCursorRules.Rules"/> with the planner,
+    /// request this convention on the root, and then run <see cref="ClrCursorRules.CalcRules"/> as a separate
+    /// hep pass, as <c>Programs.standard</c> does for Calcite's calc rules. The resulting root is a
+    /// <see cref="ClrCursorRel"/>; <see cref="ClrCursorRelImplementor.ImplementRoot"/> turns it into the
+    /// factory. A plan may mix nodes of this convention and of <c>EnumerableConvention</c>, with converters in
+    /// each direction, so a statement with no node in this convention can still be planned.</para>
     /// </remarks>
     public sealed class ClrCursorConvention : Convention.Impl
     {
@@ -39,8 +32,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public static readonly ClrCursorConvention Instance = new();
 
         /// <summary>
-        /// Cost of a node of this convention versus implementing an equivalent node in a typical calling
-        /// convention.
+        /// Cost of a node of this convention relative to an equivalent node in a typical calling convention.
         /// </summary>
         public const double CostMultiplier = 1.0d;
 

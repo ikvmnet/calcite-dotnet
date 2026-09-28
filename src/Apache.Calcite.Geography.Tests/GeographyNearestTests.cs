@@ -14,18 +14,14 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The nearest and furthest family, which answers a point rather than a number and chooses it by
-    /// distance.
+    /// Tests <c>CLR_ST_GEOG_CLOSESTCOORDINATE</c>, <c>CLR_ST_GEOG_FURTHESTCOORDINATE</c>,
+    /// <c>CLR_ST_GEOG_CLOSESTPOINT</c> and <c>CLR_ST_GEOG_LONGESTLINE</c>, which return geometry chosen by
+    /// distance on the ellipsoid.
     /// </summary>
     /// <remarks>
-    /// <see href="https://github.com/ikvmnet/calcite-dotnet/issues/90">#90</see> named these as measurements
-    /// in disguise: each ranks candidates by how far away they are, so each is wrong in the same way a
-    /// distance is wrong if the ranking is planar. They rank on the ellipsoid.
-    ///
-    /// <para>That is not a difference in the last digits. A degree of longitude at the equator is 111319.49
-    /// metres and a degree of latitude is 110574.39, so two candidates that a planar reading calls
-    /// equidistant are 745 metres apart in fact — and the two disagree about which is nearer whenever the
-    /// candidates lie in different directions.</para>
+    /// A degree of longitude at the equator is 111319.49 m and a degree of latitude is 110574.39 m, so
+    /// candidates a planar reading calls equidistant can differ by 745 m, and the two readings can disagree
+    /// about which is nearer.
     /// </remarks>
     public class GeographyNearestTests
     {
@@ -41,12 +37,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The case the whole family exists for: a tie in degrees that is not a tie in metres.
+        /// A tie in degrees that is not a tie in metres is broken.
         /// </summary>
         /// <remarks>
-        /// One degree east and one degree north of the origin are the same distance on a plane, so Calcite
-        /// answers both. On the Earth the northern one is 745 metres nearer, so there is nothing to tie and
-        /// this answers it alone. Neither is a rounding difference; they are different answers.
+        /// One degree east and one degree north of the origin are equidistant on a plane, so Calcite returns
+        /// both. On the ellipsoid the northern one is 745 m nearer and is returned alone.
         /// </remarks>
         [Fact]
         public void ShouldBreakATieThatOnlyExistsOnAPlane()
@@ -62,7 +57,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// And the furthest of the same two is the other one.
+        /// Of the same two candidates, the furthest is the eastern one.
         /// </summary>
         [Fact]
         public void ShouldChooseTheFurthestOnTheEllipsoidToo()
@@ -74,7 +69,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A genuine tie is still answered with every coordinate that ties, as Calcite does.
+        /// A tie on the ellipsoid returns every tied coordinate, as Calcite does.
         /// </summary>
         [Fact]
         public void ShouldAnswerARealTieWithEveryCoordinate()
@@ -85,21 +80,21 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A coordinate of the geography, not a point on it — which is what makes this a different function
-        /// from <c>CLR_ST_GEOG_CLOSESTPOINT</c>.
+        /// <c>CLR_ST_GEOG_CLOSESTCOORDINATE</c> returns vertices of the geometry, where
+        /// <c>CLR_ST_GEOG_CLOSESTPOINT</c> may return a point along an edge.
         /// </summary>
         [Fact]
         public void ShouldAnswerACoordinateRatherThanAPointOnAnEdge()
         {
             var line = Wkt("LINESTRING(1 -1, 1 1)");
 
-            // the two ends are symmetric about the equator, so as coordinates they genuinely tie
+            // the two ends are symmetric about the equator, so they tie
             Text(GeographyFunctions.ClosestCoordinate(Wkt("POINT(0 0)"), line)).Should().Be("MULTIPOINT ((1 -1), (1 1))");
             Text(GeographyFunctions.ClosestPoint(line, Wkt("POINT(0 0)"))).Should().Be("POINT (1 0)");
         }
 
         /// <summary>
-        /// The closest point may fall part way along an edge, and the edge is a geodesic.
+        /// The closest point may fall part way along an edge, which is a geodesic.
         /// </summary>
         [Fact]
         public void ShouldAnswerAPointOnAnEdge()
@@ -132,7 +127,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Null in, null out, as everywhere else here.
+        /// <c>ClosestCoordinate</c>, <c>FurthestCoordinate</c>, <c>ClosestPoint</c> and <c>LongestLine</c> return
+        /// <c>null</c> when either argument is <c>null</c>.
         /// </summary>
         [Fact]
         public void ShouldAnswerNullForANullArgument()
@@ -144,7 +140,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every one of the four stamped with WGS84, as every other constructor and editor is.
+        /// Each of the four functions stamps its result with SRID 4326.
         /// </summary>
         [Fact]
         public void ShouldStampEveryAnswerWithWgs84()
@@ -159,7 +155,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// All four run as operators, which is what says the declarations bind to these bodies.
+        /// All four run as SQL operators, which checks that each is bound to the right method.
         /// </summary>
         [Fact]
         public void ShouldRunEachAsAnOperator()

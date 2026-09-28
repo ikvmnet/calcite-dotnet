@@ -6,24 +6,30 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Pairs a Calcite <see cref="Hook"/> with the value to supply to it.
+    /// A Calcite <see cref="Hook"/> and the consumer to attach to it while a statement executes.
     /// </summary>
     internal readonly struct CalciteHookEntry
     {
 
         /// <summary>
-        /// Adds a hook that is a consumer.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="hook"></param>
-        /// <param name="consumer"></param>
+        /// <param name="hook">The hook to attach to.</param>
+        /// <param name="consumer">The consumer the hook invokes.</param>
         internal CalciteHookEntry(Hook hook, Consumer consumer)
         {
             Hook = hook;
             Consumer = consumer;
         }
 
+        /// <summary>
+        /// Gets the hook to attach to.
+        /// </summary>
         public Hook Hook { get; }
 
+        /// <summary>
+        /// Gets the consumer the hook invokes.
+        /// </summary>
         public Consumer Consumer { get; }
 
     }

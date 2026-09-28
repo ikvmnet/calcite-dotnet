@@ -11,10 +11,9 @@ namespace Apache.Calcite.Extensions.Interop
     /// Reads an <see cref="IEnumerable{T}"/> as a linq4j <see cref="Enumerable"/>.
     /// </summary>
     /// <remarks>
-    /// What a generator of Calcite's is handed where it reads a sequence — the table function scan's window
-    /// reads its input this way. The rows are not touched: both sides ask the same <c>JavaTypeFactory</c>
-    /// what a field is, so a row that crossed the boundary is the row that arrived. Reading the other way,
-    /// a linq4j sequence as this project's rows, is <see cref="JavaCursors"/>'.
+    /// Used where Calcite-generated code reads a sequence, such as the input of a windowing table function.
+    /// Rows pass through unchanged; both sides already use the type factory's Java values.
+    /// <see cref="JavaCursors"/> converts in the other direction.
     /// </remarks>
     static class JavaSequences
     {
@@ -22,9 +21,10 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Reads a .NET sequence as a linq4j one.
         /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <returns></returns>
+        /// <typeparam name="TSource">The type of the sequence's elements.</typeparam>
+        /// <param name="source">The .NET sequence; each linq4j enumerator enumerates it afresh.</param>
+        /// <returns>A linq4j <c>Enumerable</c> over <paramref name="source"/>, whose elements are passed through unconverted.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
         public static org.apache.calcite.linq4j.Enumerable ToJava<TSource>(IEnumerable<TSource> source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -35,8 +35,8 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// A linq4j <see cref="Enumerable"/> reading a .NET sequence.
         /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
+        /// <typeparam name="TSource">The type of the sequence's elements.</typeparam>
+        /// <param name="source">The .NET sequence each enumerator reads.</param>
         sealed class JavaEnumerable<TSource>(IEnumerable<TSource> source) : AbstractEnumerable
         {
 
@@ -49,22 +49,16 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// A linq4j <see cref="Enumerator"/> reading a .NET one.
+        /// A linq4j <see cref="Enumerator"/> reading a .NET sequence.
         /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
         /// <remarks>
-        /// linq4j positions before the first row and advances on <c>moveNext</c>, which is what
-        /// <see cref="IEnumerator"/> does, so the two agree except over <c>reset</c>.
-        ///
-        /// <para><c>reset</c> means "be positioned before the first row again", and it is live: linq4j's
-        /// <c>CartesianProductEnumerator.moveNext</c> calls it to rewind the inner side once per row of the
-        /// outer, so a sequence of ours reaching a cartesian product of Calcite's is asked for it. A .NET
-        /// iterator refuses <see cref="IEnumerator.Reset"/> -- the compiler generates a throw -- so the
-        /// sequence is enumerated afresh instead. That is what the linq4j enumerable it stands for would do
-        /// when asked for a second enumerator, and it is why this holds the sequence rather than one
-        /// enumerator of it.</para>
+        /// <c>reset</c> is called in practice: linq4j's <c>CartesianProductEnumerator</c> rewinds its inner
+        /// side once per outer row. An iterator method's <see cref="IEnumerator.Reset"/> throws, so
+        /// <c>reset</c> enumerates the sequence afresh, which is why this holds the sequence rather than one
+        /// enumerator.
         /// </remarks>
+        /// <typeparam name="TSource">The type of the sequence's elements.</typeparam>
+        /// <param name="source">The .NET sequence, enumerated once at construction and again at each <c>reset</c>.</param>
         sealed class JavaEnumerator<TSource>(IEnumerable<TSource> source) : Enumerator
         {
 
@@ -88,8 +82,8 @@ namespace Apache.Calcite.Extensions.Interop
 
             /// <inheritdoc />
             /// <remarks>
-            /// IKVM maps <c>java.lang.AutoCloseable</c>, which a linq4j Enumerator extends, onto
-            /// <see cref="IDisposable"/>, so closing one from Java arrives here.
+            /// IKVM maps <c>java.lang.AutoCloseable</c>, which a linq4j <c>Enumerator</c> extends, onto
+            /// <see cref="IDisposable"/>.
             /// </remarks>
             public void Dispose() => enumerator.Dispose();
 

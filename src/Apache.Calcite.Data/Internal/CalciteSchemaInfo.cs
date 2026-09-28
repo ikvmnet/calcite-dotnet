@@ -15,13 +15,13 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Builds the standard ADO.NET metadata <see cref="DataTable"/>s served by
-    /// <see cref="CalciteConnection.GetSchema()"/> overloads.
+    /// Builds the metadata <see cref="DataTable"/>s returned by <see cref="CalciteConnection.GetSchema()"/>.
     /// </summary>
     /// <remarks>
-    /// Only the metadata collections defined by ADO.NET (<see cref="DbMetaDataCollectionNames"/>)
-    /// are exposed at this time. Provider-specific collections may be reintroduced once
-    /// standardized names and shapes have been agreed upon.
+    /// The collections are the five common ones named by <see cref="DbMetaDataCollectionNames"/>, plus
+    /// <c>Tables</c> and <c>Columns</c>. <c>Tables</c> and <c>Columns</c> list the tables and views of the
+    /// root schema's immediate sub-schemas; tables on the root itself and in nested sub-schemas are not
+    /// listed. Restrictions match names exactly, ignoring case, and the catalog restriction is ignored.
     /// </remarks>
     internal static class CalciteSchemaInfo
     {
@@ -35,7 +35,8 @@ namespace Apache.Calcite.Data.Internal
         public static readonly string Columns = "Columns";
 
         /// <summary>
-        /// Returns the names and shapes of every metadata collection supported by the provider.
+        /// Returns the <c>MetaDataCollections</c> collection: every collection's name, number of restrictions
+        /// and number of identifier parts.
         /// </summary>
         public static DataTable BuildMetaDataCollections()
         {
@@ -56,7 +57,8 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the restriction descriptors that may be supplied to <c>GetSchema(string, string?[])</c>.
+        /// Returns the <c>Restrictions</c> collection: the restrictions <c>Tables</c> and <c>Columns</c> accept,
+        /// in order.
         /// </summary>
         public static DataTable BuildRestrictions()
         {
@@ -81,8 +83,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns metadata describing the data source itself.
+        /// Returns the <c>DataSourceInformation</c> collection, with the identifier casing and quoting taken
+        /// from the connection's configuration.
         /// </summary>
+        /// <param name="connection">The open connection.</param>
         public static DataTable BuildDataSourceInformation(CalciteConnection connection)
         {
             var t = new DataTable(DataSourceInformation);
@@ -133,9 +137,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the SQL data types supported by Calcite.
+        /// Returns the <c>DataTypes</c> collection: Calcite's scalar SQL types, with precision and scale
+        /// limits from the connection's type system.
         /// </summary>
-        /// <param name="connection">The open connection whose <see cref="RelDataTypeSystem"/> dictates precision and scale limits.</param>
+        /// <param name="connection">The open connection whose <see cref="RelDataTypeSystem"/> gives the limits.</param>
         public static DataTable BuildDataTypes(CalciteConnection connection)
         {
             var typeSystem = connection.TypeFactory.getTypeSystem();
@@ -217,12 +222,16 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the tables visible through the root schema of the connection.
+        /// Returns the <c>Tables</c> collection: the tables and views of the root schema's immediate
+        /// sub-schemas, under the root's read lock.
         /// </summary>
         /// <param name="connection">The open connection whose root schema is enumerated.</param>
         /// <param name="restrictionValues">
         /// Optional restrictions in ADO.NET order: [0] catalog (ignored), [1] schema name, [2] table name, [3] table type.
         /// </param>
+        /// <remarks>
+        /// A table whose type Calcite does not report is listed as <c>TABLE</c>.
+        /// </remarks>
         public static DataTable BuildTables(CalciteConnection connection, string?[]? restrictionValues)
         {
             var t = new DataTable(Tables);
@@ -268,37 +277,26 @@ namespace Apache.Calcite.Data.Internal
         /// <paramref name="nameFilter"/>, views included.
         /// </summary>
         /// <remarks>
-        /// Two sequences rather than one, and it has to be: <b>a view is not a table.</b> Both routes to
-        /// one register it as a <c>TableMacro</c> taking no arguments — <c>ModelHandler.visit(JsonView)</c>
-        /// calls <c>schema.add(name, ViewTable.viewMacro(...))</c> for a model's <c>"type":"view"</c>, and
-        /// <c>ServerDdlExecutor.execute(SqlCreateView, ...)</c> does the same for <c>CREATE VIEW</c> — so a
-        /// view lands in the schema's function map. <c>getTableNames()</c> reads the table map and the
-        /// underlying schema, so it never sees one, whatever its own javadoc says.
-        ///
-        /// <para><b>A view is expanded to answer anything about it, so the filter is applied before the
-        /// expansion rather than after.</b> Turning a macro into a table is
-        /// <c>ViewTableMacro.apply(ImmutableList.of())</c>, which opens the materialization connection and
-        /// parses, validates and converts the view's SQL — the whole front end, per view. Calcite's
-        /// <c>CalciteMetaImpl.tables</c> concatenates <c>getTablesBasedOnNullaryFunctions()</c>, which
-        /// builds that map eagerly for the entire schema; this asks
-        /// <c>getTableBasedOnNullaryFunction</c> for the ones a caller actually named. That is a
-        /// divergence, and a deliberate one: <c>CalciteMetaImpl</c> is Avatica's JDBC metadata and this is
-        /// not a port of it, so there is no behaviour to reproduce — only a schema SPI to read correctly.
-        /// Expanding every view in a schema to answer <c>GetSchema("Columns", …, "ONE_TABLE", …)</c> made
-        /// one unresolvable view break every metadata call that touched its schema.</para>
-        ///
-        /// <para><b>Only the name restriction is applied before expansion; the table-type one cannot be.</b>
-        /// <c>TABLE_TYPE</c> comes from <c>Table.getJdbcTableType()</c>, so a view has to be expanded
-        /// before it can be typed, and <c>BuildTables</c> therefore filters on the type afterwards. A
-        /// listing not restricted by name expands every view in the schema — including
-        /// <c>GetSchema("Tables", …, "TABLE")</c>, which wants no views at all and expands them anyway,
-        /// and fails if one of them no longer resolves.
-        ///
-        /// <para>Short-cutting the type from the macro's class would fix that and is not done, because it
-        /// would be a guess: <c>ViewTableMacro.apply</c> is overridable and
-        /// <c>MaterializedViewTable.MaterializedViewTableMacro</c> overrides it, so a macro is not obliged
-        /// to produce a <c>VIEW</c>. A wrong <c>TABLE_TYPE</c> is worse than a slow one, and Calcite's own
-        /// metadata filters on the type after building every row too.</para></para>
+        /// <para>
+        /// Tables and views are read separately. Calcite registers a view, from a model or from
+        /// <c>CREATE VIEW</c>, as a <c>TableMacro</c> of no arguments in the schema's function map
+        /// (<c>ModelHandler.visit(JsonView)</c> and <c>ServerDdlExecutor.execute(SqlCreateView, ...)</c> both
+        /// call <c>schema.add(name, ViewTable.viewMacro(...))</c>), so <c>getTableNames()</c> does not return
+        /// it.
+        /// </para>
+        /// <para>
+        /// Describing a view means expanding it with <c>ViewTableMacro.apply</c>, which parses, validates and
+        /// converts the view's SQL. The name restriction is therefore applied before expansion, and only the
+        /// views that pass it are expanded, through <c>getTableBasedOnNullaryFunction</c>. Calcite's own JDBC
+        /// metadata (<c>CalciteMetaImpl.tables</c>) expands every view in the schema; this is not a port of it,
+        /// and restricting first keeps one unresolvable view from breaking metadata calls about other tables.
+        /// </para>
+        /// <para>
+        /// The table-type restriction cannot be applied before expansion, because <c>TABLE_TYPE</c> comes from
+        /// <c>Table.getJdbcTableType()</c> and a macro's class does not reliably say what it produces
+        /// (<c>MaterializedViewTable.MaterializedViewTableMacro</c> overrides <c>apply</c>). A listing without a
+        /// name restriction therefore expands every view, and fails if one no longer resolves.
+        /// </para>
         /// </remarks>
         static IEnumerable<(string Name, Table? Table)> TablesOf(SchemaPlus subSchema, string? nameFilter)
         {
@@ -329,9 +327,9 @@ namespace Apache.Calcite.Data.Internal
         /// Returns the names in <paramref name="schema"/> that resolve to a table macro of no arguments.
         /// </summary>
         /// <remarks>
-        /// The names <c>getTablesBasedOnNullaryFunctions</c> would key its map by, without applying any of
-        /// them. <c>getFunctionNames</c> covers the explicit and the implicit alike, and the two tests are
-        /// the ones that method makes before it calls <c>apply</c>.
+        /// The names <c>getTablesBasedOnNullaryFunctions</c> would key its map by, found with the same two
+        /// tests that method applies, without expanding any macro. <c>getFunctionNames</c> includes both
+        /// explicit and implicit functions.
         /// </remarks>
         static IEnumerable<string> ViewNamesOf(CalciteSchema schema)
         {
@@ -352,14 +350,15 @@ namespace Apache.Calcite.Data.Internal
             }
         }
 
-        /// <summary>Applies an ADO.NET name restriction, which is absent when <see langword="null"/>.</summary>
+        /// <summary>Applies a name restriction: an exact match ignoring case, or none where <see langword="null"/>.</summary>
         static bool MatchesName(string name, string? filter)
         {
             return filter is null || string.Equals(name, filter, StringComparison.OrdinalIgnoreCase);
         }
 
         /// <summary>
-        /// Returns the columns of all tables visible through the root schema of the connection.
+        /// Returns the <c>Columns</c> collection: the columns of the tables and views <see cref="BuildTables"/>
+        /// would list, under the root's read lock.
         /// </summary>
         /// <param name="connection">The open connection whose root schema is enumerated.</param>
         /// <param name="restrictionValues">
@@ -444,7 +443,8 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the SQL reserved words honored by Calcite's currently configured parser.
+        /// Returns the <c>ReservedWords</c> collection: the words reserved by the parser the connection is
+        /// configured with.
         /// </summary>
         /// <param name="connection">The open connection whose parser configuration determines the reserved-word set.</param>
         public static DataTable BuildReservedWords(CalciteConnection connection)

@@ -11,48 +11,43 @@ namespace Apache.Calcite.FullText.Tests
 {
 
     /// <summary>
-    /// What <see cref="FullTextRules"/> takes out of a plan.
+    /// The rewrites <see cref="FullTextRules"/> makes, checked on plan text; there is no evaluator to compare
+    /// rows against.
     /// </summary>
-    /// <remarks>
-    /// Plans only. There is no evaluator behind these operators and there will not be one, so there are no
-    /// rows to compare a rewrite against — which is why every rewrite here is one the vocabulary's own
-    /// declarations state, rather than one measured against an answer.
-    /// </remarks>
     public class FullTextSimplificationTests
     {
 
         /// <summary>
-        /// Plans a statement and runs the pass over it.
+        /// Plans a statement, runs the pass over it, and returns the plan text.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="chain">Whether to chain the operator table rather than resolve through the
-        /// schema.</param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="chain">Whether to chain the operator table as well as declaring on the schema.</param>
+        /// <returns>The simplified plan.</returns>
         static string Simplified(string sql, bool chain = true)
         {
             return RelOptUtil.toString(Simplify(FullTextFixture.Plan(sql, chain: chain)));
         }
 
         /// <summary>
-        /// Plans a statement and leaves it alone.
+        /// Plans a statement and returns the plan text without simplifying it.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="chain"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="chain">Whether to chain the operator table as well as declaring on the schema.</param>
+        /// <returns>The plan as written.</returns>
         static string Written(string sql, bool chain = true)
         {
             return RelOptUtil.toString(FullTextFixture.Plan(sql, chain: chain));
         }
 
         /// <summary>
-        /// Runs the pass over a logical plan, which is the whole of what a host does with it.
+        /// Runs <see cref="FullTextRules.Program"/> over a logical plan.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>Programs.hep</c> builds its own <c>HepPlanner</c> and ignores the planner it is handed, so there
-        /// is nothing to pass one.
+        /// <c>Programs.hep</c> builds its own <c>HepPlanner</c> and ignores the planner it is passed, so none
+        /// is passed.
         /// </remarks>
+        /// <param name="rel">The logical plan to rewrite.</param>
+        /// <returns>The plan with every full text simplification applied.</returns>
         static RelNode Simplify(RelNode rel)
         {
             return FullTextRules.Program().run(null!, rel, rel.getTraitSet(), java.util.Collections.emptyList(), java.util.Collections.emptyList());
@@ -125,7 +120,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A weight of one counts for nothing, which <c>CLR_FT_WEIGHT</c>'s own declaration says.
+        /// A weight of one is dropped.
         /// </summary>
         [Fact]
         public void ShouldDropAWeightOfOne()
@@ -137,7 +132,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A weight that is not one is what the adapter has to render or decline.
+        /// A weight other than one is kept.
         /// </summary>
         [Fact]
         public void ShouldKeepAWeightThatIsNotOne()
@@ -148,13 +143,9 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A weight of one over a score of another type is still a conversion, and stays.
+        /// A weight of one over a score of another type is kept, since dropping it would change the
+        /// expression's type from <c>DOUBLE</c>.
         /// </summary>
-        /// <remarks>
-        /// <c>CLR_FT_WEIGHT</c> answers <c>DOUBLE</c> and takes any numeric score, an adapter's own vector
-        /// distance included, so dropping it where the two differ would hand the expression above a
-        /// differently typed value.
-        /// </remarks>
         [Fact]
         public void ShouldKeepAWeightOfOneOverAScoreOfAnotherType()
         {
@@ -164,7 +155,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A conjunction over one searched expression is the all-of form a store has an index for.
+        /// A conjunction over one searched expression merges into <c>CLR_FT_CONTAINS_ALL</c>.
         /// </summary>
         [Fact]
         public void ShouldMergeAConjunctionOverOneSearchedExpression()
@@ -175,7 +166,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// And a disjunction is the any-of form.
+        /// A disjunction over one searched expression merges into <c>CLR_FT_CONTAINS_ANY</c>.
         /// </summary>
         [Fact]
         public void ShouldMergeADisjunctionOverOneSearchedExpression()
@@ -240,9 +231,9 @@ namespace Apache.Calcite.FullText.Tests
         /// A conjunction that merges down to a keyword it already held keeps going until it settles.
         /// </summary>
         /// <remarks>
-        /// The merge and the deduplication are separate rewrites and a merged call is not revisited in the
-        /// round that made it, so what makes this land is the hep pass running to a fixed point. Written down
-        /// because a rewrite that produces work for another one is the shape that fails to terminate.
+        /// The merge produces <c>CLR_FT_CONTAINS_ALL($1, 'steel', 'steel', 'frame')</c> and the deduplication
+        /// happens on a later visit, so this depends on the hep pass running to a fixed point, and on that
+        /// fixed point being reached.
         /// </remarks>
         [Fact]
         public void ShouldSettleWhereAMergeLeavesAKeywordTwice()
@@ -255,13 +246,9 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A phrase is not unwrapped, whatever it holds.
+        /// A phrase of one word is not unwrapped, since whether the text is one token is the store's
+        /// analyzer's decision.
         /// </summary>
-        /// <remarks>
-        /// A single-token phrase is the same search as the bare token in every store surveyed, and whether
-        /// that text is one token is the analyzer's answer. Deciding it here is the in-process approximation
-        /// this package exists to refuse.
-        /// </remarks>
         [Fact]
         public void ShouldNotUnwrapAPhraseOfOneWord()
         {
@@ -271,7 +258,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A single score fused with nothing is still a rank transform, and stays.
+        /// A fusion of identical scores is kept, since fusion preserves an ordering rather than a value.
         /// </summary>
         [Fact]
         public void ShouldNotUnwrapAFusionOfScoresThatAreTheSame()

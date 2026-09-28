@@ -10,24 +10,23 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// The conversions <c>ClrEnumUtils</c> writes into a plan.
+    /// Tests of the conversions <c>ClrEnumUtils</c> writes into a plan.
     /// </summary>
     /// <remarks>
-    /// <c>EnumUtilsTest</c>, which reads the tree a conversion produced as text. A tree of
-    /// <see cref="Expression"/> has no such rendering that is worth asserting against, so these compile it and
-    /// read what it does — which is the thing the conversion exists for.
+    /// The counterpart of Calcite's <c>EnumUtilsTest</c>, which asserts on the text of the generated tree. An
+    /// <see cref="Expression"/> tree has no comparable rendering, so these compile the conversion and check the
+    /// values it produces.
     /// </remarks>
     public class ClrEnumUtilsTests
     {
 
         /// <summary>
-        /// A value known only as an object, wanted as a number, is converted rather than cast.
+        /// A value typed as <see cref="object"/> and wanted as a <c>java.lang.Number</c> is converted rather than
+        /// cast, so the string <c>"100"</c> becomes a <c>BigDecimal</c>.
         /// </summary>
         /// <remarks>
-        /// <c>EnumUtilsTest.testObjectToNumberConvert</c>, and CALCITE-6284: binding a string to a parameter
-        /// compared against an integer column reaches this, and a cast answered
-        /// <c>ClassCastException</c> — here, <c>InvalidCastException</c> — instead of saying which value was
-        /// not a number.
+        /// Mirrors <c>EnumUtilsTest.testObjectToNumberConvert</c>. A string bound to a parameter that is compared
+        /// against an integer column reaches this conversion.
         /// </remarks>
         [Fact]
         public void ShouldConvertAnObjectToANumber()
@@ -52,11 +51,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A value that is not a number says so.
+        /// Converting a value that is not a number throws <c>NumberFormatException</c> naming the value, rather
+        /// than a cast exception naming only the two types.
         /// </summary>
-        /// <remarks>
-        /// The other half of CALCITE-6284: the failure names the value, where a cast named only the two types.
-        /// </remarks>
         [Fact]
         public void ShouldNameTheValueThatIsNotANumber()
         {

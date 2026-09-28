@@ -2,16 +2,9 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Apache.Calcite.Adapter.AdoNet)](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet)
 
-**Apache.Calcite.Adapter.AdoNet** lets [Apache Calcite](https://calcite.apache.org/) treat any ADO.NET data source as a first-class relational schema. Calcite can then plan and execute federated SQL queries across those sources — pushing filters, projections, joins, aggregations, sorts, and set operations down to the underlying database wherever possible.
+**Apache.Calcite.Adapter.AdoNet** exposes a database reached through ADO.NET as an [Apache Calcite](https://calcite.apache.org/) schema. Calcite can then query its tables alongside any other schema, and sends as much of each query as it can to the database as a single SQL statement in that database's dialect: filters, projections, joins, aggregations, sorts and set operations. It is the ADO.NET counterpart of Calcite's JDBC adapter.
 
-Use this package together with [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) to federate SQL Server, SQLite, and any other ADO.NET-capable database under a single Calcite connection.
-
-## How it works
-
-1. You describe the remote database with an `AdoDataSource` — a `DbProviderFactory` plus a connection string, or a .NET 7+ `DbDataSource`.
-2. You register it with Calcite as a schema, either programmatically or through a JSON model.
-3. Calcite's planner produces a query plan, pushing as much SQL as possible back to the source in the right dialect.
-4. Whatever cannot be pushed down runs in-process, and the results arrive through the standard `DbDataReader`.
+Use it with [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data), the ADO.NET provider for Calcite, to query SQL Server, SQLite, and ODBC or OLE DB sources through one connection, including joins between them.
 
 ## Install
 
@@ -20,28 +13,26 @@ dotnet add package Apache.Calcite.Adapter.AdoNet
 dotnet add package Apache.Calcite.Data
 ```
 
-Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
+The package targets .NET 8.
 
-## Quick start — code-driven registration
+## Registering a schema in code
 
-`AdoSchema.Create` builds the schema; `SchemaPlus.add` puts it on the connection under a name:
+`AdoSchema.Create` builds the schema. It needs the parent schema it will be added to, so register it through `CalciteDataSourceBuilder.ConfigureRootSchema`, which hands you the root as a `SchemaPlus`:
 
 ```csharp
 using Apache.Calcite.Adapter.AdoNet;
 using Apache.Calcite.Data;
 using Microsoft.Data.Sqlite;
 
-// 1. Any DbDataSource will do. The matching metadata provider is chosen for you.
-var dataSource = SqliteFactory.Instance.CreateDataSource("Data Source=sales.db");
+// Any DbDataSource will do; the metadata provider is chosen from its connection type.
+var sqlite = SqliteFactory.Instance.CreateDataSource("Data Source=sales.db");
 
-// 2. Open a Calcite connection and attach the schema.
-await using var conn = new CalciteConnection("Lex=JAVA;CaseSensitive=false");
-await conn.OpenAsync();
+await using var calcite = new CalciteDataSourceBuilder("Lex=JAVA;CaseSensitive=false")
+    .ConfigureRootSchema(root => root.add("ADO", AdoSchema.Create(root, "ADO", sqlite, null, null)))
+    .Build();
 
-var root = conn.RootSchema;
-root.add("ADO", AdoSchema.Create(root, "ADO", dataSource, null, null));
+await using var conn = await calcite.OpenConnectionAsync();
 
-// 3. Query it.
 await using var cmd = conn.CreateCommand();
 cmd.CommandText = "SELECT NAME FROM ADO.EMPS WHERE SALARY > ? ORDER BY NAME";
 cmd.Parameters.Add(new CalciteParameter("salary", 100.0));
@@ -51,20 +42,13 @@ while (await reader.ReadAsync())
     Console.WriteLine(reader.GetString(0));
 ```
 
-The last two arguments to `AdoSchema.Create` are the database and schema name to restrict discovery to; pass `null` for either to take the source's default. Overloads accept an `AdoDataSource`, an `AdoDatabaseMetadata`, or an `AdoDatabaseMetadataFactory` where you need to choose the metadata provider yourself.
+The name passed to `AdoSchema.Create` must be the name the schema is added under. The last two arguments restrict the schema to one database and one schema of the source; pass `null` for either to take the provider's default (see [Supported providers](#supported-providers)). Other overloads take an `AdoDatabaseMetadataFactory`, an `AdoDatabaseMetadata`, or an `AdoDataSource` where you want to choose the metadata provider or supply connections yourself.
 
-## Quick start — JSON model
+`AdoSchema.Create` reads the database's dialect as it runs, which for SQL Server, ODBC and OLE DB opens a connection.
 
-The adapter can also be named from a [Calcite model](https://calcite.apache.org/docs/model.html). **Two things are required and neither is obvious:**
+## Registering a schema in a model
 
-- The `factory` value must be the IKVM name of the CLR class — `cli.` followed by its .NET full name. Calcite resolves a model's factory through Java's `Class.forName`, which does not know a bare .NET type name.
-- The assembly must be on IKVM's boot class path *before* the connection is opened, because `Class.forName` cannot see a type that is only in a referenced assembly.
-
-```csharp
-// Once, at startup — before opening any connection that uses the model.
-ikvm.runtime.Startup.addBootClassPathAssembly(typeof(AdoSchemaFactory).Assembly);
-DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
-```
+A [Calcite JSON model](https://calcite.apache.org/docs/model.html) can create the schema through `AdoSchemaFactory`. Name the factory by its assembly-qualified .NET type name:
 
 ```json
 {
@@ -74,7 +58,7 @@ DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Insta
     {
       "name": "ADO",
       "type": "custom",
-      "factory": "cli.Apache.Calcite.Adapter.AdoNet.AdoSchemaFactory",
+      "factory": "Apache.Calcite.Adapter.AdoNet.AdoSchemaFactory, Apache.Calcite.Adapter.AdoNet",
       "operand": {
         "adoProviderName": "Microsoft.Data.Sqlite",
         "adoConnectionString": "Data Source=sales.db"
@@ -84,110 +68,133 @@ DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Insta
 }
 ```
 
+Calcite loads a class a model names only if the `calcite.model.classes.allowed` system property allows it, and it reads the property once, the first time any Calcite class is used. Set it, and register the ADO.NET provider the operands name, at startup before anything touches Calcite:
+
 ```csharp
+// A comma-separated list; an entry ending in "." allows every class in that namespace.
+java.lang.System.setProperty("calcite.model.classes.allowed", "Apache.Calcite.Adapter.AdoNet.");
+
+DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
+
 await using var conn = new CalciteConnection($"Model=inline:{model};Lex=JAVA;CaseSensitive=false");
 await conn.OpenAsync();
 ```
 
-### Operand reference
+`Model` also accepts the path of a model file.
 
-| Operand | Required | Meaning |
-|---------|----------|---------|
-| `adoProviderName` | yes, unless `adoDataSource` is given | Invariant name registered with `DbProviderFactories`. |
-| `adoConnectionString` | yes, with `adoProviderName` | Connection string handed to that factory. |
-| `adoDataSource` | — | Assembly-qualified .NET type name of a `DbDataSource` with a parameterless constructor. Used instead of the two above. |
-| `adoDatabaseMetadata` | — | Assembly-qualified .NET type name of an `AdoDatabaseMetadata` to use instead of the detected one. |
-| `adoDatabaseMetadataFactory` | — | Assembly-qualified .NET type name of an `AdoDatabaseMetadataFactory`. |
-| `adoDatabase` | — | Restrict discovery to one database. |
-| `adoSchema` | — | Restrict discovery to one schema. |
+### Operands
 
-A missing `adoProviderName` or `adoConnectionString` throws `AdoCalciteException`, and so does a type name that cannot be loaded.
+Every operand is a string.
 
-## Federated query across two databases
+| Operand | Meaning |
+|---------|---------|
+| `adoProviderName` | The invariant name of a provider registered with `DbProviderFactories`. Required unless `adoDataSource` is given. |
+| `adoConnectionString` | The connection string to give that provider. Required with `adoProviderName`. |
+| `adoDataSource` | The assembly-qualified name of a `DbDataSource` type with a public parameterless constructor. Used instead of the two above. |
+| `adoDatabaseMetadata` | The assembly-qualified name of an `AdoDatabaseMetadata` type with a public constructor taking a `DbDataSource`. Used instead of the provider `AdoDatabaseMetadataFactoryImpl` would choose. |
+| `adoDatabase` | The database whose tables to expose. Omit it for the provider's default. |
+| `adoSchema` | The schema whose tables to expose. Omit it for the provider's default. |
 
-Federating across unrelated databases is the point of the adapter:
+A missing `adoProviderName` or `adoConnectionString`, or a type name that cannot be loaded, throws `AdoCalciteException`. An `adoDatabaseMetadataFactory` operand is currently ignored.
+
+## Joining two databases
+
+Each schema is its own source. A query can join them, and each side is sent to its own database as far as it can go; the join itself runs in process.
 
 ```csharp
-var root = conn.RootSchema;
-root.add("SQL",    AdoSchema.Create(root, "SQL",    sqlServerDataSource, null, null));
-root.add("SQLITE", AdoSchema.Create(root, "SQLITE", sqliteDataSource,    null, null));
+var sqlServer = SqlClientFactory.Instance.CreateDataSource(sqlServerConnectionString);
+var sqlite = SqliteFactory.Instance.CreateDataSource("Data Source=orders.db");
 
+await using var calcite = new CalciteDataSourceBuilder("Lex=JAVA;CaseSensitive=false")
+    .ConfigureRootSchema(root =>
+    {
+        root.add("CRM", AdoSchema.Create(root, "CRM", sqlServer, null, null));
+        root.add("SHOP", AdoSchema.Create(root, "SHOP", sqlite, null, null));
+    })
+    .Build();
+
+await using var conn = await calcite.OpenConnectionAsync();
 await using var cmd = conn.CreateCommand();
 cmd.CommandText = """
-    SELECT s.CustomerId, s.Name, COUNT(o.OrderId) AS Orders
-    FROM   SQL.Customers  s
-    JOIN   SQLITE.Orders  o ON o.CustomerId = s.CustomerId
-    GROUP BY s.CustomerId, s.Name
+    SELECT c.CustomerId, c.Name, COUNT(o.OrderId) AS Orders
+    FROM   CRM.Customers c
+    JOIN   SHOP.Orders   o ON o.CustomerId = c.CustomerId
+    GROUP BY c.CustomerId, c.Name
     """;
 ```
 
-Each side is pushed to its own database as far as it can go, and the join runs in-process.
+## Supported providers
 
-## Provider support
+`AdoDatabaseMetadataFactoryImpl`, the default, chooses the metadata provider from the type of connection the data source creates. The metadata lists the tables and their columns, maps column types to Calcite types, and supplies the dialect SQL is written in.
 
-`AdoDatabaseMetadataFactoryImpl` — the default, used when you do not name one — inspects the connection the data source produces and selects a metadata provider:
+| Connection type | Tables and columns from | Dialect | Default database / schema |
+|---|---|---|---|
+| `Microsoft.Data.SqlClient.SqlConnection`, `System.Data.SqlClient.SqlConnection` | The `Tables` and `Columns` schema collections | SQL Server, for the version the server reports | `Initial Catalog` or `Database` from the connection string, else the connection's / `dbo` |
+| `Microsoft.Data.Sqlite.SqliteConnection` | `sqlite_master` and `PRAGMA table_xinfo` | SQLite | none; SQLite has neither |
+| `System.Data.Odbc.OdbcConnection` | The ODBC catalog (`SQLTables`, `SQLColumns`) | Chosen from the product name the driver reports | The connection's catalog / every schema |
+| `System.Data.OleDb.OleDbConnection` | The OLE DB schema rowsets | Chosen from the product name the provider reports | The connection's catalog / every schema |
 
-| Connection type | Discovery | Dialect |
-|---|---|---|
-| `Microsoft.Data.SqlClient.SqlConnection`, `System.Data.SqlClient.SqlConnection` | `INFORMATION_SCHEMA`, via `GetSchema` | SQL Server, at the version the server reports |
-| `Microsoft.Data.Sqlite.SqliteConnection` | `PRAGMA table_xinfo` | SQLite |
-| `System.Data.Odbc.OdbcConnection` | The ODBC catalog — `SQLTables` and `SQLColumns`, via `GetSchema` | Whatever the driver names as the product behind it |
-| `System.Data.OleDb.OleDbConnection` | The OLE DB schema rowsets, via `GetSchema` | Whatever the provider names as the product behind it |
+Any other connection type throws `AdoCalciteException`. To support one, derive from `AdoDatabaseMetadata` and pass an instance to `AdoSchema.Create`, or name its type in the `adoDatabaseMetadata` operand. The built-in implementations are internal.
 
-Anything else throws `AdoCalciteException` naming the connection type. To support it, derive from `AdoDatabaseMetadata` — the abstract base that supplies the `SqlDialect`, table and column enumeration, and type mapping — and pass your implementation to an `AdoSchema.Create` overload, or name it in the `adoDatabaseMetadata` operand. The built-in implementations are internal; `AdoDatabaseMetadata` and `AdoDatabaseMetadataFactory` are the extension points.
+A column whose type the metadata does not recognise is typed `OTHER`, and its values are passed through as the provider returns them.
 
 ### ODBC and OLE DB
 
-Both front an unknown database, so both take the product name from the driver's `DataSourceInformation` collection and match it the way Calcite's own `SqlDialectFactoryImpl` does. An unrecognised name gets the generic ANSI dialect, which is Calcite's answer too. Neither has a default schema — a null schema means every schema rather than a particular one — so pass `adoSchema` (or the `schemaName` argument) where the database has more than one and the table names collide.
+Neither says what database is behind it except through the product name in its `DataSourceInformation` schema collection. The adapter matches that name the way Calcite's `SqlDialectFactoryImpl` does, and uses the ANSI dialect for a name it does not recognise or a driver that reports none. SQL Server's dialect is built for the reported version, so a server older than SQL Server 2012 gets `TOP (n)` rather than `OFFSET`/`FETCH`. Where the chosen dialect is not good enough, supply your own `AdoDatabaseMetadata`.
 
-The parameter marker for both is `?`, bound by position.
+With no default schema, a schema of `null` exposes the tables of every schema. Name the schema (the `schemaName` argument or `adoSchema` operand) where table names repeat across schemas.
 
-Two limitations worth knowing before choosing one of these over a native provider:
+Parameters are written `?` and bound by position.
 
-- A dialect matched from a product name alone is, in Calcite's words, an approximation. The version is carried where it changes the SQL — SQL Server below 2012 gets `TOP (n)` rather than `OFFSET`/`FETCH` — but a driver that will not report its product gets generic SQL. Name a metadata provider through `adoDatabaseMetadata` where that is not good enough.
-- `System.Data.Odbc` has no mapping for SQL Server's `time` or `datetimeoffset` and throws `ArgumentException` on reading either. The columns are still discovered and typed; only reading one fails. That is the driver, not the adapter.
-- `System.Data.OleDb` cannot bind a `DateTimeOffset` parameter at all — the Variant marshal refuses it on the client — and binds a `TimeSpan` through OLE DB's `DBTIME`, which has no fractional seconds, so a bound time reaches the server truncated to the whole second. Reading both types works; only a correlated comparison on one is affected.
+Some limitations come from the drivers rather than the adapter:
+
+- `System.Data.Odbc` cannot read SQL Server's `time` or `datetimeoffset` columns and throws `ArgumentException`. The columns are still listed with their types.
+- `System.Data.OleDb` cannot bind a `DateTimeOffset` parameter, and binds a `TimeSpan` with no fractional seconds. This matters only where such a value is sent as a parameter, as in a correlated sub-query that compares one of these columns.
+
+## What is pushed down
+
+A part of a query is sent to the database when every node in it belongs to that database's schema and can be written in its dialect:
+
+| Operation | Pushed down unless |
+|---|---|
+| Table scan | |
+| Filter (`WHERE`, `HAVING`) | the condition calls a user-defined function |
+| Projection | it calls a user-defined function, uses a window function the dialect does not support, or reads a correlation variable |
+| Join | it is a semi- or anti-join, or its condition uses anything but column references, literals, parameters, `AND`, `OR`, comparisons, `IS [NOT] NULL`, `IS [NOT] TRUE`, `IS [NOT] FALSE`, `IS NOT DISTINCT FROM` and `CAST` |
+| Aggregate (`GROUP BY`) | it has several grouping sets (`GROUPING SETS`, `ROLLUP`, `CUBE`), or uses an aggregate function or `FILTER` clause the dialect does not support |
+| Sort, offset and fetch | |
+| `UNION`, `UNION ALL` | |
+| `INTERSECT`, `EXCEPT` | it is `INTERSECT ALL` or `EXCEPT ALL` |
+| `VALUES` | |
+
+Everything else runs in process over the rows the database returns. Query parameters (`?`) in a pushed-down part are sent to the database as command parameters. Where a correlated sub-query stays correlated after planning and its inner side is pushed down, the outer row's values are sent as command parameters too, and the inner statement runs once per outer row.
+
+For SQL Server, the adapter's dialect also corrects some of what Calcite writes: an unbounded `VARCHAR` or `VARBINARY` in a `CAST` becomes `VARCHAR(MAX)` or `VARBINARY(MAX)`, a `UUID` becomes `UNIQUEIDENTIFIER` (and a `UUID` literal a cast of its text), `MOD` is parenthesised correctly as `%`, and `TOP`, `OFFSET` and `FETCH` counts are written as integers.
+
+A pushed-down statement runs over a new connection, which is closed when its rows have been read and the reader disposed. It is executed when the plan opens it, which under `Apache.Calcite.Data` normally happens inside `ExecuteReader` or `ExecuteReaderAsync`, so a statement the database rejects fails there rather than at the first `Read`. Where a pushed-down part is the whole query, each `Read` or `ReadAsync` of the reader you get advances the database's reader once, and the cancellation token you pass to `ReadAsync` is passed on to it. Listing tables and columns also opens a connection each time.
 
 ## Key public types
 
 | Type | Purpose |
 |------|---------|
-| `AdoSchema` | The Calcite `Schema` that enumerates tables from a data source. `AdoSchema.Create(...)` is how you build one. |
+| `AdoSchema` | The Calcite schema over one database schema. `AdoSchema.Create` builds one. |
 | `AdoSchemaFactory` | The `SchemaFactory` a JSON model names. |
-| `AdoDataSource` | Abstract base — implement to connect Calcite to any ADO.NET source. |
-| `DbProviderAdoDataSource` | `AdoDataSource` over a `DbProviderFactory`, a connection string, and an `AdoDatabaseMetadata`. |
-| `DbDataSourceAdoDataSource` | `AdoDataSource` over a .NET 7+ `DbDataSource` and an `AdoDatabaseMetadata`. |
-| `AdoDatabaseMetadata` | Abstract base for schema, column, and dialect discovery. |
-| `AdoDatabaseMetadataFactory` | Chooses the metadata provider for a data source. `AdoDatabaseMetadataFactoryImpl.Instance` is the default. |
-| `AdoDatabaseSchema` | A single database-level schema within the adapter. |
-| `AdoConvention` | The calling convention a pushed-down subtree is planned into. |
-| `AdoRules` | The adapter's conversion rules. |
-| `DbCommandEnricher` | Hook for adjusting each `DbCommand` before it runs. |
+| `AdoDataSource` | Opens connections and supplies the metadata. Derive from it to supply connections your own way. |
+| `DbDataSourceAdoDataSource` | An `AdoDataSource` over a `DbDataSource`. |
+| `DbProviderAdoDataSource` | An `AdoDataSource` over a `DbProviderFactory` and a connection string. |
+| `AdoDatabaseMetadata` | Lists schemas, tables and columns, and supplies the dialect and parameter syntax. Derive from it to support another provider. |
+| `AdoDatabaseMetadataFactory` | Chooses the metadata for a data source. `AdoDatabaseMetadataFactoryImpl.Instance` is the default. |
+| `IAdoSqlSyntax` | How a driver names parameters, and a hook to rewrite each generated statement. |
 | `AdoCalciteException` | What the adapter throws. |
 
-## Pushdown support
-
-The adapter provides Calcite conversion rules for these operators, which become SQL against the source when the dialect supports them:
-
-- `AdoFilter` — `WHERE` predicates
-- `AdoProject` — column projections
-- `AdoJoin` — inner and outer joins
-- `AdoAggregate` — `GROUP BY` and aggregate functions
-- `AdoSort` — `ORDER BY`, `LIMIT`, `OFFSET`
-- `AdoUnion` / `AdoIntersect` / `AdoMinus` — set operations
-- `AdoValues` — constant value sets
-- `AdoTableScan` — the scan itself
-
-Anything that cannot be pushed down runs in-process. Converters exist into both execution conventions — `AdoToClrCursorConverter` for the cursor convention that `Apache.Calcite.Data` plans into, and `AdoToEnumerableConverter` for Calcite's own — so the adapter works under either. The first hands the `DbDataReader` back as the plan's cursor: `ExecuteReader` or `ExecuteReaderAsync` is the open, each `Read` or `ReadAsync(token)` of the reader `Apache.Calcite.Data` gives you is an advance of the provider's reader, and the token of that call is the token the provider's `ReadAsync` is given. In both cases the statement is sent when the plan is opened, which is where these conventions acquire.
-
-Correlated sub-queries are supported: `AdoCorrelationDataContext` carries the outer row's values into the inner query.
+`AdoConvention`, `AdoRules`, the node types under `Apache.Calcite.Adapter.AdoNet.Rel`, and the converters `AdoToClrCursorConverter` and `AdoToEnumerableConverter` are public for callers that drive Calcite's planner themselves. The first converter serves `Apache.Calcite.Data`; the second serves plans in Calcite's own `EnumerableConvention`.
 
 ## Related packages
 
 | Package | Purpose |
 |---------|---------|
-| [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) | The ADO.NET provider — required to open connections and execute SQL. |
-| [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) | The calling convention plans are compiled into, the prepare pipeline behind it, and the IKVM interop helpers. |
+| [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) | The ADO.NET provider for Calcite: opens connections and runs SQL. |
+| [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) | The calling convention plans are compiled into, and the pipeline that prepares them. |
 
 ## Further reading
 

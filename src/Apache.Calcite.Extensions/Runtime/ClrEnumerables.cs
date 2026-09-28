@@ -11,10 +11,9 @@ namespace Apache.Calcite.Extensions.Runtime
     /// A sequence whose <see cref="IEnumerable{T}.GetEnumerator"/> runs a factory.
     /// </summary>
     /// <remarks>
-    /// The counterpart of linq4j's <c>AbstractEnumerable</c>: linq4j runs a plan by obtaining its
-    /// enumerator, and a C# iterator method cannot say that, deferring everything, acquisition included, to
-    /// the first <c>MoveNext</c>. So a cursor plan read as a sequence is one of these, and opening the plan is
-    /// the factory, run where a sequence acquires.
+    /// The counterpart of linq4j's <c>AbstractEnumerable</c>. A cursor plan read as a sequence is opened when
+    /// its enumerator is obtained, as a linq4j plan is. A C# iterator method would instead defer the open
+    /// to the first <c>MoveNext</c>.
     /// </remarks>
     sealed class ClrEnumerable<T> : IEnumerable<T>
     {
@@ -24,8 +23,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="factory">Runs once per <see cref="GetEnumerator"/>, exactly as linq4j's
-        /// <c>enumerator()</c> runs once per call.</param>
+        /// <param name="factory">Called once per <see cref="GetEnumerator"/> call.</param>
         public ClrEnumerable(Func<IEnumerator<T>> factory)
         {
             ArgumentNullException.ThrowIfNull(factory);
@@ -46,9 +44,8 @@ namespace Apache.Calcite.Extensions.Runtime
     /// factory.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrEnumerable{T}"/> for an awaiting read, with the one difference the CLR imposes:
-    /// <c>GetAsyncEnumerator</c> cannot await, so a factory that has to await its acquisition does it in the
-    /// first <c>MoveNextAsync</c>, and says so at the site.
+    /// The asynchronous counterpart of <see cref="ClrEnumerable{T}"/>. <c>GetAsyncEnumerator</c> cannot
+    /// await, so a factory whose open has to await does it in the first <c>MoveNextAsync</c> instead.
     /// </remarks>
     sealed class ClrAsyncEnumerable<T> : IAsyncEnumerable<T>
     {
@@ -58,7 +55,7 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="factory">Runs once per <see cref="GetAsyncEnumerator"/>.</param>
+        /// <param name="factory">Called once per <see cref="GetAsyncEnumerator"/> call, with its token.</param>
         public ClrAsyncEnumerable(Func<CancellationToken, IAsyncEnumerator<T>> factory)
         {
             ArgumentNullException.ThrowIfNull(factory);
@@ -72,12 +69,12 @@ namespace Apache.Calcite.Extensions.Runtime
     }
 
     /// <summary>
-    /// An asynchronous enumerator over a row loop, owning the enumerators the factory acquired for it.
+    /// An asynchronous enumerator over a row loop that also owns the sources the loop reads from.
     /// </summary>
     /// <remarks>
-    /// Disposing an async iterator that never moved runs none of its <c>finally</c> blocks, so what the
-    /// factory acquired is disposed here, unconditionally, which is linq4j's <c>close()</c> contract: a
-    /// wrapping <c>Enumerator</c> closes its source whether or not a row was ever read.
+    /// Disposing an async iterator that never advanced runs none of its <c>finally</c> blocks, so the
+    /// sources are disposed here unconditionally. That matches linq4j's <c>close()</c>, which closes a
+    /// source whether or not a row was read.
     /// </remarks>
     sealed class AcquiredAsyncEnumerator<T> : IAsyncEnumerator<T>
     {
@@ -88,8 +85,8 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="rows">The row loop, reading from the acquired enumerators.</param>
-        /// <param name="acquired">What the factory acquired, disposed after the loop, in order.</param>
+        /// <param name="rows">The row loop.</param>
+        /// <param name="acquired">The sources the loop reads, disposed in order after the loop.</param>
         public AcquiredAsyncEnumerator(IAsyncEnumerator<T> rows, params IAsyncDisposable?[] acquired)
         {
             ArgumentNullException.ThrowIfNull(rows);

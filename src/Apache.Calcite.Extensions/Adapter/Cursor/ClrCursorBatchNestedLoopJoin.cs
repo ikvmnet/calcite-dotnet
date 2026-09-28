@@ -23,27 +23,27 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// by running the right input once per batch of left rows.
     /// </summary>
     /// <remarks>
-    /// The rule rewrites the right input into a filter over a disjunction of the batch's conditions, so one
-    /// pass of it serves every row of the batch. A correlation variable per batch position is what carries
-    /// the left rows into that filter, which is why the node declares as many as the batch is wide.
+    /// Mirrors <c>EnumerableBatchNestedLoopJoin</c>. The rule rewrites the right input as a filter over a
+    /// disjunction of per-row conditions, one correlation variable per batch position, so one pass of the right
+    /// input serves a whole batch. The batch size is the number of correlation variables.
     ///
-    /// <para>The right input is opened per batch inside an advance, by the open of that advance's kind, so
-    /// each body visits it through both hierarchies, each visit under its own declarations of the
-    /// correlation variables into a block of its own.</para>
+    /// <para>The right input is opened once per batch while the join's cursor advances, synchronously or
+    /// awaiting according to how that advance was called. Each body therefore visits it through both
+    /// hierarchies, each visit with its own declarations of the correlation variables.</para>
     /// </remarks>
     public class ClrCursorBatchNestedLoopJoin : Join, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorBatchNestedLoopJoin"/>.
+        /// Creates a <see cref="ClrCursorBatchNestedLoopJoin"/>, deriving its collation as Calcite does.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="requiredColumns"></param>
-        /// <param name="joinType"></param>
-        /// <returns></returns>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input, filtered on the correlation variables.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables, one per batch position.</param>
+        /// <param name="requiredColumns">The left fields the right input reads.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorBatchNestedLoopJoin Create(RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, ImmutableBitSet requiredColumns, JoinRelType joinType)
         {
             var cluster = left.getCluster();
@@ -57,16 +57,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         readonly ImmutableBitSet requiredColumns;
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="requiredColumns"></param>
-        /// <param name="joinType"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traits">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input, filtered on the correlation variables.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables, one per batch position.</param>
+        /// <param name="requiredColumns">The left fields the right input reads.</param>
+        /// <param name="joinType">The join type.</param>
         public ClrCursorBatchNestedLoopJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, ImmutableBitSet requiredColumns, JoinRelType joinType) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, condition, variablesSet, joinType)
         {
@@ -110,8 +110,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (double.IsInfinity(leftRowCount) || double.IsInfinity(rightRowCount))
                 return planner.getCostFactory().makeInfiniteCost();
 
-            // the right input is read once per batch rather than once per row, which is the whole point of
-            // the node, so the restart count is the left's row count divided by the batch size
+            // the right input is read once per batch, so it restarts left row count / batch size times
             var restartCount = mq.getRowCount(getLeft()).doubleValue() / getVariablesSet().size();
 
             var rightCost = planner.getCost(getRight(), mq);
@@ -120,7 +119,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var rescanCost = rightCost.multiplyBy(java.lang.Math.max(1.0, restartCount - 1));
 
-            // TODO add cost of last loop (the one that looks for the match)
+            // TODO add the cost of the last loop, the one that looks for the match (as in Calcite)
             return planner.getCostFactory()
                 .makeCost(rowCount + leftRowCount, 0, 0)
                 .plus(rescanCost);
@@ -137,8 +136,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)getLeft(), pref);
 
-            // the getters registered below are ones Calcite's Rex translation reads the outer row through,
-            // so they are given their physical type, built here from the three values ours carries
+            // Calcite's Rex translation reads the correlation variables registered below, so they take
+            // Calcite's physical type of the left row
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
             var corrVarType = leftCalcite.getJavaRowType();
             var corrArgList = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, (java.lang.reflect.Type)(java.lang.Class)typeof(java.util.List), "corrList");
@@ -149,9 +148,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             for (var i = getVariablesSet().iterator(); i.hasNext();)
                 names.Add(((CorrelationId)i.next()).getName());
 
-            // one correlation variable per batch position, each read out of the list the batch arrives in.
-            // Not optimising, for the reason ClrCursorCorrelate gives: the block is translated apart
-            // from the sub-plan that reads its variables.
+            // one correlation variable per batch position, each read from the list the batch arrives in. The
+            // builder does not optimise: it would inline a declaration used once, and the sub-plan translated
+            // separately still refers to the variable by name
             var corrBlock = new J.BlockBuilder(false);
             for (int c = 0; c < names.Count; c++)
             {
@@ -170,9 +169,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             foreach (var name in names)
                 implementor.ClearCorrelVariable(name);
 
-            // and the other hierarchy's visit of the same input, into a block of its own: the right side is
-            // opened per batch inside an advance, by the open of that advance's kind, so the operator takes
-            // both
+            // the right input again through the other hierarchy, with its own declarations: the operator opens
+            // it per batch with whichever kind of open the current advance needs, so it takes both
             var corrBlockAsync = new J.BlockBuilder(false);
             for (int c = 0; c < names.Count; c++)
             {
@@ -190,8 +188,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             foreach (var name in names)
                 implementor.ClearCorrelVariable(name);
-
-            // boxed, as every join here boxes: the selector takes boxed rows, and a left join hands it a null
 
             implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
             body.Add(rightResult.Expression);
@@ -235,8 +231,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)getLeft(), pref);
 
-            // the getters registered below are ones Calcite's Rex translation reads the outer row through,
-            // so they are given their physical type, built here from the three values ours carries
+            // Calcite's Rex translation reads the correlation variables registered below, so they take
+            // Calcite's physical type of the left row
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
             var corrVarType = leftCalcite.getJavaRowType();
             var corrArgList = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, (java.lang.reflect.Type)(java.lang.Class)typeof(java.util.List), "corrList");
@@ -247,9 +243,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             for (var i = getVariablesSet().iterator(); i.hasNext();)
                 names.Add(((CorrelationId)i.next()).getName());
 
-            // one correlation variable per batch position, each read out of the list the batch arrives in.
-            // Not optimising, for the reason ClrCursorCorrelate gives: the block is translated apart
-            // from the sub-plan that reads its variables.
+            // one correlation variable per batch position, each read from the list the batch arrives in. The
+            // builder does not optimise: it would inline a declaration used once, and the sub-plan translated
+            // separately still refers to the variable by name
             var corrBlock = new J.BlockBuilder(false);
             for (int c = 0; c < names.Count; c++)
             {
@@ -268,9 +264,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             foreach (var name in names)
                 implementor.ClearCorrelVariable(name);
 
-            // and the other hierarchy's visit of the same input, into a block of its own: the right side is
-            // opened per batch inside an advance, by the open of that advance's kind, so the operator takes
-            // both
+            // the right input again through the other hierarchy, with its own declarations: the operator opens
+            // it per batch with whichever kind of open the current advance needs, so it takes both
             var corrBlockSync = new J.BlockBuilder(false);
             for (int c = 0; c < names.Count; c++)
             {
@@ -288,8 +283,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             foreach (var name in names)
                 implementor.ClearCorrelVariable(name);
-
-            // boxed, as every join here boxes: the selector takes boxed rows, and a left join hands it a null
 
             implementor.Translator.TranslateStatements(corrBlock.toBlock(), out var declared, out var body);
             body.Add(rightResult.Expression);

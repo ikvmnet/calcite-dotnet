@@ -14,14 +14,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The centre of a geography, which is a direction from the Earth's centre rather than an average of two
+    /// Tests <c>CLR_ST_GEOG_CENTROID</c>, which averages directions from the Earth's centre rather than
     /// coordinates.
     /// </summary>
     /// <remarks>
-    /// The antimeridian is what separates the two readings, and not by a little. Averaging the longitudes of
-    /// a shape sitting either side of longitude 180 gives zero, which is the far side of the planet; summing
-    /// directions gives a point in the shape. That is the same failure the bounding rectangle has and the
-    /// same fix.
+    /// Averaging the longitudes of a shape either side of longitude 180 gives about zero, on the far side of
+    /// the planet; averaging directions gives a point in the shape.
     /// </remarks>
     public class GeographyCentroidTests
     {
@@ -52,13 +50,9 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The one that separates the two readings: a shape across the antimeridian.
+        /// The centroid of a square across the antimeridian is in the square, where Calcite's is near
+        /// longitude zero.
         /// </summary>
-        /// <remarks>
-        /// Every coordinate of this square is within a degree of longitude 180, so its centre is too. Calcite
-        /// averages the longitudes — 179 and -179 and their like — and answers a point near longitude zero,
-        /// half a world away. This answers a point in the square.
-        /// </remarks>
         [Fact]
         public void ShouldNotPutTheCentreOnTheFarSideOfThePlanet()
         {
@@ -73,12 +67,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An area outranks a line and a line outranks a point, as JTS orders them.
+        /// Only the parts of highest dimension contribute to a collection's centroid, as in JTS.
         /// </summary>
         [Fact]
         public void ShouldLetTheHighestDimensionDecide()
         {
-            // the point is far away and contributes nothing, the square deciding alone
+            // The distant point would move the centroid if it counted.
             var mixed = Centroid("GEOMETRYCOLLECTION(POLYGON((0 0, 2 0, 2 2, 0 2, 0 0)), POINT(40 40))");
 
             mixed.getCoordinate().getX().Should().BeApproximately(1, 0.01);
@@ -86,7 +80,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A line's centre is weighted by length, so a long edge counts for more than a short one.
+        /// A line's centroid is weighted by edge length.
         /// </summary>
         [Fact]
         public void ShouldWeightALineByItsLength()
@@ -98,7 +92,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A set of points is their mean direction.
+        /// A multi-point's centroid is the mean of its points' directions.
         /// </summary>
         [Fact]
         public void ShouldAverageAPointSet()
@@ -110,11 +104,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Where there is no direction to answer, there is no answer.
+        /// Where the directions sum to zero, or there are none, the centroid is an empty point.
         /// </summary>
         /// <remarks>
-        /// Two antipodal points sum to nothing, and every direction between them is as good as its opposite.
-        /// An empty point says so, which is what JTS answers for a shape with no centroid too.
+        /// Two antipodal points have no single centre. JTS also answers an empty point for a shape with no
+        /// centroid.
         /// </remarks>
         [Fact]
         public void ShouldAnswerNothingWhereThereIsNoCentre()
@@ -133,8 +127,8 @@ namespace Apache.Calcite.Geography.Tests
         [Fact]
         public void ShouldRunAsAnOperator()
         {
-            // the longitude comes back a few bits shy of one, a coordinate having gone out and back as a
-            // unit vector, so this asks the operator for the number rather than for its spelling
+            // The longitude is not exactly 1, having been converted to a unit vector and back, so this compares
+            // the number with a tolerance rather than the text.
             var longitude = GeographyExecutionTests.Run(
                 "SELECT CLR_ST_GEOG_X(CLR_ST_GEOG_CENTROID(CLR_ST_GEOG_GEOMFROMTEXT('MULTIPOINT((0 0), (2 0))')))")[0][0];
 

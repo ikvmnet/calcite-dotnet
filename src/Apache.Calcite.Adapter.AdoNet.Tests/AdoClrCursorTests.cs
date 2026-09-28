@@ -19,14 +19,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// The adapter under the cursor convention, which is the convention <c>Apache.Calcite.Data</c> plans
-    /// into: the provider's reader is the plan's leaf.
+    /// Tests the adapter under the cursor convention, which <c>Apache.Calcite.Data</c> plans into, with the
+    /// provider's reader as the plan's leaf.
     /// </summary>
     /// <remarks>
-    /// What is held here: the converter chosen, the rows the provider reads over the adapter, that both
-    /// advances read the same rows over one connection, that a failing statement fails the open of either
-    /// kind, that a correlated sub-query is enriched from the cursor convention's correlate, and
-    /// <see cref="AdoCursors"/> read directly, without a plan around it.
+    /// Covers the converter chosen, the rows read through both advances, connection lifetime, failure at the
+    /// open, correlated sub-queries under the cursor convention's correlate, and <see cref="AdoCursors"/>
+    /// used directly without a plan.
     /// </remarks>
     public class AdoClrCursorTests : IDisposable
     {
@@ -111,13 +110,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The adapter converts straight into the cursor convention, pushed down intact.
+        /// The adapter converts directly into the cursor convention through <c>AdoToClrCursorConverter</c>,
+        /// not by way of <c>AdoToEnumerableConverter</c>.
         /// </summary>
-        /// <remarks>
-        /// One converter, the cursor convention's own, and nothing of Calcite's between the adapter and the
-        /// reader: the route by way of <c>AdoToEnumerableConverter</c> answers the same rows and costs a
-        /// converter more.
-        /// </remarks>
         [Fact]
         public void ShouldCarryTheAdapterIntoTheCursorConvention()
         {
@@ -152,13 +147,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Leaving the adapter costs a tenth of what it carries, as <c>JdbcToEnumerableConverter</c> does, so
-        /// a plan that leaves it once beats one that leaves it twice and joins here.
+        /// A join the adapter can push down leaves the adapter once rather than reading each table separately
+        /// and joining in memory.
         /// </summary>
         /// <remarks>
-        /// Neither converter out of the adapter overrode <c>computeSelfCost</c>, so leaving it was priced at
-        /// its full row count and both of these read each table in a statement of its own and joined in
-        /// memory.
+        /// Depends on the converter costing a tenth of its input, as <c>JdbcToEnumerableConverter</c> does.
         /// </remarks>
         [Theory]
         [InlineData("SELECT e.name, d.dname FROM ADO.emps e FULL JOIN ADO.depts d ON e.deptno = d.deptno")]
@@ -212,9 +205,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A failing statement fails the open of either kind, not the first advance.
         /// </summary>
         /// <remarks>
-        /// The open is the acquisition: the connection is opened and the statement sent inside it, so a
-        /// caller gets the failure back from <c>ExecuteReader</c> or <c>ExecuteReaderAsync</c>, as a caller
-        /// of any provider expects.
+        /// The open connects and sends the statement, so the failure surfaces from <c>ExecuteReader</c> or
+        /// <c>ExecuteReaderAsync</c>, as it does with any provider.
         /// </remarks>
         [Fact]
         public async Task ShouldFailFromEitherOpen()
@@ -230,12 +222,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A correlated sub-query pushed down under the cursor convention's correlate still gets its parameters.
+        /// A correlated sub-query pushed down under the cursor convention's correlate gets its parameters.
         /// </summary>
         /// <remarks>
-        /// The correlation variables come off the implementor implementing the plan, which is the cursor
-        /// convention's here, so the builder has to read them from that one. <c>forceDecorrelate=false</c>
-        /// is what leaves a correlate in the plan at all.
+        /// The correlation variables are read from the implementor of the plan, which is the cursor
+        /// convention's here. <c>forceDecorrelate=false</c> keeps the correlate in the plan.
         /// </remarks>
         [Fact]
         public async Task ShouldEnrichACorrelatedSubQueryUnderTheCursorCorrelate()
@@ -258,11 +249,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A <c>uniqueidentifier</c> cast to the <c>UUID</c> a view gives it, projected, reads back as a GUID.
         /// </summary>
         /// <remarks>
-        /// The cast is pushed into the ADO convention, so the reader is handed a <c>UUID</c> column and the
-        /// row holds a <c>java.util.UUID</c> — which is the only thing <c>GetGuid</c> on this provider reads.
-        /// SQL Server rather than the fixture's SQLite because SQLite has no type for the sixteen bytes: a
-        /// type name it does not recognise gives a cast numeric affinity, so the value coming back would be a
-        /// number rather than anything a GUID could be read out of.
+        /// The cast is pushed into the ADO convention, so the row holds a <c>java.util.UUID</c> for
+        /// <c>GetGuid</c> to read. Runs against SQL Server because SQLite has no GUID type: a cast to a type
+        /// name SQLite does not recognise has numeric affinity and returns a number.
         /// </remarks>
         [Fact]
         public void ShouldReadAUuidCastThroughTheCursorConvention()
@@ -319,7 +308,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// <see cref="AdoCursors"/> on its own, without a plan around it, opened and read either way.
+        /// <see cref="AdoCursors"/> used directly, without a plan, opens and reads through either advance.
         /// </summary>
         [Fact]
         public async Task ShouldReadRowsThroughEitherOpenOfTheReader()
@@ -346,9 +335,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// row still closes its connection.
         /// </summary>
         /// <remarks>
-        /// Where the convention acquires, and the reason a failing statement reaches the caller from the
-        /// call that executed it: <c>CalciteSession</c> opens the plan inside <c>ExecuteReader</c> and
-        /// <c>ExecuteReaderAsync</c>.
+        /// <c>CalciteSession</c> opens the plan inside <c>ExecuteReader</c> and <c>ExecuteReaderAsync</c>, so
+        /// this is why a failing statement surfaces from the execute call.
         /// </remarks>
         [Fact]
         public async Task ShouldSendTheStatementAtTheOpen()
@@ -382,9 +370,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A read under a cancelled token is refused, and the cursor still closes its connection.
         /// </summary>
         /// <remarks>
-        /// The token is the read's own, handed to the provider's <c>ReadAsync</c>: the statement was sent
-        /// by the open, so what the token stops is the reading. How the provider's token reaches this from
-        /// <c>ExecuteReaderAsync</c> and from each <c>ReadAsync</c> is <c>AdoCancellationTests</c>.
+        /// The open was not cancelled, so the token stops only the read. <c>AdoCancellationTests</c> covers
+        /// how tokens given to <c>ExecuteReaderAsync</c> and <c>ReadAsync</c> reach the provider.
         /// </remarks>
         [Fact]
         public async Task ShouldObserveACancelledReadToken()
@@ -401,10 +388,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The fixture's data source, counting the connections a plan opened and how many of them were
+        /// An <see cref="AdoDataSource"/> over another data source that counts the connections opened and
         /// disposed.
         /// </summary>
-        /// <param name="dataSource"></param>
+        /// <param name="dataSource">The data source connections are opened from.</param>
         internal sealed class CountingAdoDataSource(DbDataSource dataSource) : AdoDataSource
         {
 
@@ -424,7 +411,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             public int Closed => Volatile.Read(ref _closed);
 
             /// <summary>
-            /// Gets or sets whether every open fails as the provider rejecting the statement would.
+            /// Gets or sets whether every <see cref="OpenConnection"/> throws a <see cref="SqliteException"/>.
             /// </summary>
             public bool Failing { get; init; }
 
@@ -448,8 +435,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             /// <summary>
             /// A connection that tells the source it was disposed.
             /// </summary>
-            /// <param name="connection"></param>
-            /// <param name="source"></param>
+            /// <param name="connection">The connection to forward to.</param>
+            /// <param name="source">The source whose count to increment.</param>
             sealed class Counted(DbConnection connection, CountingAdoDataSource source) : DbConnection
             {
 

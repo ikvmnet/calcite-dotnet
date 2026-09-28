@@ -11,13 +11,12 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Covers the three ways a type can be named and what is kept and lost carrying a name between them.
+    /// Covers the mappings between <see cref="SqlTypeName"/>, <see cref="CalciteDbType"/> and
+    /// <see cref="DbType"/>, and what each keeps and loses.
     /// </summary>
     /// <remarks>
-    /// Every one of these is a claim about a lossy mapping, which is the kind of table that rots silently:
-    /// a member added to <see cref="SqlTypeName"/> upstream, or a case quietly dropped here, changes an
-    /// answer with nothing to notice it. The round trips are the part worth having — a name that survives
-    /// the trip out and back is exactly stated, and one that does not is named here as approximate.
+    /// A name that survives the trip out and back is mapped exactly; one that does not is listed here as
+    /// approximate.
     /// </remarks>
     public class CalciteDbTypeTests
     {
@@ -87,8 +86,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The members Calcite has that this list deliberately does not, which must answer
-        /// <see cref="CalciteDbType.Unknown"/> rather than something near.
+        /// The <see cref="SqlTypeName"/> members <see cref="CalciteDbType"/> does not name, which map to
+        /// <see cref="CalciteDbType.Unknown"/> rather than to a near type.
         /// </summary>
         [Theory]
         [InlineData(nameof(SqlTypeName.DISTINCT))]
@@ -206,8 +205,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The ANSI members name the same Calcite types as their Unicode counterparts, Calcite having one
-        /// character type family.
+        /// <see cref="DbType"/> members that alias another map to the same Calcite type: the ANSI and XML
+        /// types to their Unicode counterparts, Calcite having one character type family, and the currency,
+        /// numeric and <c>DateTime2</c> types to <c>DECIMAL</c> and <c>TIMESTAMP</c>.
         /// </summary>
         [Theory]
         [InlineData(DbType.AnsiString, CalciteDbType.VarChar)]
@@ -259,8 +259,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A second level has nowhere to go in one flag. The flag says it is an array and stops, which is
-        /// the documented limit and not a defect — <c>GetRelDataType</c> is what does not approximate.
+        /// A second level has nowhere to go in one flag, so the value says only that it is an array.
+        /// <c>CalciteDataReader.GetRelDataType</c> gives the full type.
         /// </summary>
         [Fact]
         public void A_nested_array_should_keep_the_flag_and_lose_the_element()
@@ -331,8 +331,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The flags do not collide with the base, which is what makes reading the two halves apart work at
-        /// all.
+        /// The collection flags do not overlap the base type bits, so the two halves can be read apart.
         /// </summary>
         [Fact]
         public void The_collection_flags_should_not_overlap_the_base()
@@ -351,7 +350,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Every member of the list is a type. A mask is not one, and lives where the bit arithmetic does.
+        /// Every member of <see cref="CalciteDbType"/> names a Calcite type; the base-type mask is kept out of
+        /// the enum.
         /// </summary>
         [Fact]
         public void Every_member_of_the_list_should_be_a_type()

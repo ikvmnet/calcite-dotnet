@@ -11,14 +11,13 @@ namespace Apache.Calcite.Extensions.Prepare
 {
 
     /// <summary>
-    /// The one row a statement prepared by <c>ClrPrepareImpl.SimplePrepare</c> produces.
+    /// A plan that returns the single row of a statement prepared by <c>ClrPrepareImpl.SimplePrepare</c>.
     /// </summary>
     /// <remarks>
-    /// <c>CalcitePrepareImpl.simplePrepare</c> writes this as the lambda
-    /// <c>dataContext -&gt; Linq4j.asEnumerable(list)</c>, which it can because a <c>Bindable</c> is one
-    /// method. It is a class here because a cursor plan has two opens and an element type.
+    /// The counterpart of the <c>dataContext -&gt; Linq4j.asEnumerable(list)</c> lambda in
+    /// <c>CalcitePrepareImpl.simplePrepare</c>.
     /// </remarks>
-    /// <param name="row">The row, which is the value itself — the result has one column.</param>
+    /// <param name="row">The row; the result has one column, so this is the column's value.</param>
     sealed class ClrSimpleBindable(object row) : IClrCursorFactory
     {
 

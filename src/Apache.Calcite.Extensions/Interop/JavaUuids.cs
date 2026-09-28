@@ -6,20 +6,17 @@ namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
-    /// Lossless binary conversion between <see cref="Guid"/> and Calcite's UUID representations.
+    /// Converts between <see cref="Guid"/> and the UUID types Calcite uses, without loss.
     /// </summary>
     /// <remarks>
-    /// Both types are the same sixteen bytes in the order the canonical <c>8-4-4-4-12</c> text writes
-    /// them: <see cref="java.util.UUID"/> holds them as two <see cref="long"/> halves, and
-    /// <see cref="Guid"/> reads and writes them in that order under <c>bigEndian</c>. The halves are
-    /// transferred directly, avoiding any string round-trip.
+    /// <see cref="java.util.UUID"/> holds the sixteen bytes as two <see cref="long"/> halves in the order of
+    /// the canonical <c>8-4-4-4-12</c> text, which is the order <see cref="Guid"/> reads and writes them in
+    /// when <c>bigEndian</c> is set, so the halves are transferred directly.
     ///
-    /// <para>Calcite's <em>runtime</em> representation is <c>org.apache.calcite.util.UuidValue</c>, not
-    /// <see cref="java.util.UUID"/> — CALCITE-7716 wrapped it because <c>UUID.compareTo</c> orders the
-    /// two halves as signed longs where SQL orders a UUID as an unsigned 128-bit value.
-    /// <c>JavaTypeFactoryImpl.getJavaClass</c> answers <c>UuidValue.class</c> for a UUID, so that is what
-    /// a generated plan casts to and what a value bound into one has to be. The wrapper exposes the same
-    /// two halves, so the conversion is the same four lines either way.</para>
+    /// <para>At run time Calcite holds a UUID as <c>org.apache.calcite.util.UuidValue</c>, which orders the
+    /// value as an unsigned 128-bit number, rather than as <see cref="java.util.UUID"/>;
+    /// <c>JavaTypeFactoryImpl.getJavaClass</c> answers <c>UuidValue</c> for a UUID column, so a value bound
+    /// into a plan has to be one.</para>
     /// </remarks>
     internal static class JavaUuids
     {
@@ -27,8 +24,8 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Converts a <see cref="java.util.UUID"/> to the equivalent <see cref="Guid"/>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The Java UUID.</param>
+        /// <returns>A <see cref="Guid"/> with the same 128 bits, most significant first.</returns>
         public static Guid ToGuid(java.util.UUID value)
         {
             Span<byte> bytes = stackalloc byte[16];
@@ -40,8 +37,8 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Converts a <see cref="Guid"/> to the equivalent <see cref="java.util.UUID"/>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The CLR GUID.</param>
+        /// <returns>A <see cref="java.util.UUID"/> with the same 128 bits, most significant first.</returns>
         public static java.util.UUID ToUuid(Guid value)
         {
             Span<byte> bytes = stackalloc byte[16];
@@ -54,8 +51,8 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Converts an <c>org.apache.calcite.util.UuidValue</c> to the equivalent <see cref="Guid"/>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The Calcite UUID value.</param>
+        /// <returns>A <see cref="Guid"/> with the same 128 bits, most significant first.</returns>
         public static Guid ToGuid(org.apache.calcite.util.UuidValue value)
         {
             Span<byte> bytes = stackalloc byte[16];
@@ -65,11 +62,10 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Converts a <see cref="Guid"/> to the <c>org.apache.calcite.util.UuidValue</c> Calcite holds a
-        /// UUID as at run time.
+        /// Converts a <see cref="Guid"/> to the equivalent <c>org.apache.calcite.util.UuidValue</c>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The CLR GUID.</param>
+        /// <returns>A <c>UuidValue</c> with the same 128 bits, most significant first.</returns>
         public static org.apache.calcite.util.UuidValue ToUuidValue(Guid value)
         {
             return new org.apache.calcite.util.UuidValue(ToUuid(value));

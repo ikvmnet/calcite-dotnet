@@ -8,26 +8,17 @@ namespace Apache.Calcite.Geography.Runtime
 {
 
     /// <summary>
-    /// The measurements, on the WGS84 ellipsoid.
+    /// Geodesic measurements on the WGS84 ellipsoid, using GeographicLib's implementation of Karney's algorithms.
     /// </summary>
     /// <remarks>
-    /// S2 models the Earth as a sphere. That is not a defect in S2 — it is spherical by construction and says
-    /// so — but it is the wrong instrument for a distance, and the gap was measured rather than assumed:
-    /// against a live Cosmos DB account with <c>geospatialConfig</c> Geography, a spherical distance is out by
-    /// up to 0.56%. The diagnosis is in one pair of numbers. One degree east and one degree north of the
-    /// equator are the same distance on a sphere, and the service answers 111319.490736 and 110574.388493 —
-    /// the first being the WGS84 semi-major axis times π/180, to every digit reported.
+    /// S2 treats the Earth as a sphere, which is close enough to decide topology but not to measure: a spherical
+    /// distance differs from the ellipsoidal one by up to about half a percent. At the equator one degree of
+    /// longitude is 111319.49 m and one degree of latitude is 110574.39 m, which a sphere cannot reproduce. So S2
+    /// chooses which points to measure between and this class measures them. Choosing the closest pair on the
+    /// sphere introduces an error second order in the distance between that pair and the true closest pair.
     ///
-    /// <para>Karney's algorithm answers the ellipsoid to nanometres, and reproduces those two figures here.
-    /// So the engines split by what each is for, which is what the design proposed before either was written:
-    /// S2 decides topology — which points of two shapes are closest, whether one contains another — and this
-    /// measures between the points S2 chose. Choosing the closest pair on a sphere and then measuring it on
-    /// the ellipsoid is not exact, but the error is second order in the distance between the true closest
-    /// pair and the spherical one, where using the sphere for the measurement itself is first order.</para>
-    ///
-    /// <para>A predicate stays on S2 entirely. Sphere against ellipsoid moves an edge by far less than it
-    /// moves a distance, and containment asks which side of an edge a point falls on rather than how long the
-    /// edge is.</para>
+    /// <para>Predicates stay entirely on S2. The sphere moves an edge far less than it changes a length, and
+    /// containment depends on which side of an edge a point lies, not on how long the edge is.</para>
     /// </remarks>
     static class Wgs84
     {
@@ -35,9 +26,9 @@ namespace Apache.Calcite.Geography.Runtime
         /// <summary>
         /// Returns the geodesic distance between two points in metres.
         /// </summary>
-        /// <param name="a"></param>
-        /// <param name="b"></param>
-        /// <returns></returns>
+        /// <param name="a">The first point, as a unit vector.</param>
+        /// <param name="b">The second point, as a unit vector.</param>
+        /// <returns>The distance in metres on the WGS84 ellipsoid.</returns>
         public static double Distance(S2Point a, S2Point b)
         {
             var p = new S2LatLng(a);
@@ -50,19 +41,16 @@ namespace Apache.Calcite.Geography.Runtime
         /// The mean radius of the WGS84 ellipsoid, <c>(2a + b) / 3</c>, in metres.
         /// </summary>
         /// <remarks>
-        /// The one place a single radius is defensible: turning a distance into an angle so that a bounding
-        /// rectangle can be grown by it. A bound is an over-approximation already — it is a rectangle around
-        /// a shape that is not one — so a fraction of a percent in how far it grows changes nothing it
-        /// promises. Nothing else here uses a radius, and a measurement never does.
+        /// Used only to turn a distance into an angle for growing a bounding rectangle, where the result is already an
+        /// over-approximation and a fraction of a percent does not matter. No measurement uses it.
         /// </remarks>
         public const double MeanRadiusMeters = 6371008.7714;
 
         /// <summary>
-        /// Returns the angle a distance in metres subtends at the Earth's centre.
+        /// Returns the angle a distance in metres subtends at the centre of a sphere of <see cref="MeanRadiusMeters"/>.
         /// </summary>
-        /// <param name="metres"></param>
-        /// <returns></returns>
-        /// <inheritdoc cref="MeanRadiusMeters" />
+        /// <param name="metres">The distance in metres.</param>
+        /// <returns>The angle.</returns>
         public static S1Angle AngleFor(double metres)
         {
             return S1Angle.radians(metres / MeanRadiusMeters);
@@ -71,13 +59,12 @@ namespace Apache.Calcite.Geography.Runtime
         /// <summary>
         /// Returns the geodesic distance between two coordinates in metres.
         /// </summary>
-        /// <param name="a"></param>
-        /// <param name="b"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A JTS coordinate carries longitude in x and latitude in y, which is the order WKT writes and the
-        /// reverse of the order a geodesic library takes.
+        /// A JTS coordinate carries longitude in x and latitude in y, the reverse of the order GeographicLib takes.
         /// </remarks>
+        /// <param name="a">The first coordinate.</param>
+        /// <param name="b">The second coordinate.</param>
+        /// <returns>The distance in metres on the WGS84 ellipsoid.</returns>
         public static double Distance(org.locationtech.jts.geom.Coordinate a, org.locationtech.jts.geom.Coordinate b)
         {
             return Geodesic.WGS84.Inverse(a.getY(), a.getX(), b.getY(), b.getX()).s12;
@@ -87,20 +74,17 @@ namespace Apache.Calcite.Geography.Runtime
 
 
         /// <summary>
-        /// Returns the coordinate a fraction of the way along the geodesic between two coordinates, offset
-        /// sideways by a distance in metres.
+        /// Returns the coordinate a fraction of the way along the geodesic between two coordinates, offset sideways.
         /// </summary>
-        /// <param name="from"></param>
-        /// <param name="to"></param>
-        /// <param name="fraction"></param>
+        /// <param name="from">The start of the geodesic.</param>
+        /// <param name="to">The end of the geodesic.</param>
+        /// <param name="fraction">How far along, from 0 to 1.</param>
         /// <param name="offset">Metres to the left of the direction of travel, negative for the right.</param>
-        /// <returns></returns>
         /// <remarks>
-        /// Two things a planar reading gets wrong at once. The point a fraction along a geodesic is not the
-        /// point that fraction along a straight line in degrees, and sideways is a direction that turns as
-        /// the geodesic goes — so the offset is taken from the azimuth <em>at the point reached</em>, which
-        /// is what <c>Direct</c> answers alongside it, rather than from the azimuth the geodesic set out on.
+        /// The sideways direction is taken from the azimuth at the point reached rather than at the start, because the
+        /// azimuth of a geodesic changes along it.
         /// </remarks>
+        /// <returns>The coordinate reached, longitude in x and latitude in y.</returns>
         public static org.locationtech.jts.geom.Coordinate Along(
             org.locationtech.jts.geom.Coordinate from,
             org.locationtech.jts.geom.Coordinate to,
@@ -119,12 +103,12 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// Returns the azimuth at the first coordinate of the geodesic to the second, in degrees clockwise
-        /// from north.
+        /// Returns the azimuth, in degrees clockwise from north, at which the geodesic from one coordinate to another
+        /// sets out.
         /// </summary>
-        /// <param name="from"></param>
-        /// <param name="to"></param>
-        /// <returns></returns>
+        /// <param name="from">The start of the geodesic.</param>
+        /// <param name="to">The end of the geodesic.</param>
+        /// <returns>The azimuth in degrees, from -180 to 180.</returns>
         public static double Azimuth(
             org.locationtech.jts.geom.Coordinate from,
             org.locationtech.jts.geom.Coordinate to)
@@ -133,19 +117,16 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// Returns the point reached by travelling the given distance from a coordinate along the given
-        /// azimuth.
+        /// Returns the coordinate reached by travelling a distance along a geodesic from a coordinate.
         /// </summary>
-        /// <param name="from"></param>
-        /// <param name="azimuth">Degrees clockwise from north.</param>
-        /// <param name="metres"></param>
-        /// <returns></returns>
+        /// <param name="from">The starting coordinate.</param>
+        /// <param name="azimuth">The initial direction, in degrees clockwise from north.</param>
+        /// <param name="metres">The distance to travel.</param>
         /// <remarks>
-        /// The true geodesic, so the ring of points this traces at a fixed distance is the set of places
-        /// actually that far away — which is what makes a buffer built from it agree with
-        /// <c>CLR_ST_GEOG_DWITHIN</c>. A circle of constant angular radius on a sphere would not: the two differ
-        /// by the same half percent every other measurement here differs by.
+        /// Points traced at a fixed distance this way are exactly that far away on the ellipsoid, so a buffer built from
+        /// them agrees with <c>CLR_ST_GEOG_DWITHIN</c>.
         /// </remarks>
+        /// <returns>The coordinate reached, longitude in x and latitude in y.</returns>
         public static org.locationtech.jts.geom.Coordinate Offset(
             org.locationtech.jts.geom.Coordinate from,
             double azimuth,
@@ -157,19 +138,17 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// Returns the points that divide the geodesic between two coordinates into segments no longer than
-        /// the given distance, excluding the two ends.
+        /// Returns the points that divide the geodesic between two coordinates into equal segments no longer than a
+        /// distance, excluding the two ends.
         /// </summary>
-        /// <param name="a"></param>
-        /// <param name="b"></param>
+        /// <param name="a">The first end.</param>
+        /// <param name="b">The second end.</param>
         /// <param name="longest">The greatest segment length in metres.</param>
-        /// <returns></returns>
+        /// <returns>The points in order from <paramref name="a"/>; none if the geodesic is already short enough or
+        /// <paramref name="longest"/> is not positive.</returns>
         /// <remarks>
-        /// Walked with <c>Direct</c> from the first end along the azimuth <c>Inverse</c> gives, so the points
-        /// lie on the true geodesic rather than on a great circle or on a straight line in degrees. The three
-        /// differ: between two points on a parallel away from the equator, a straight line in degrees stays on
-        /// the parallel and a geodesic bows poleward, and the whole reason to densify is usually to hand a
-        /// planar consumer something that follows the first.
+        /// The points lie on the ellipsoidal geodesic, which differs from both the great circle and a straight line in
+        /// degrees; between two points on a parallel away from the equator the geodesic bows toward the pole.
         /// </remarks>
         public static List<org.locationtech.jts.geom.Coordinate> Divide(
             org.locationtech.jts.geom.Coordinate a,
@@ -197,8 +176,8 @@ namespace Apache.Calcite.Geography.Runtime
         /// <summary>
         /// Returns the total geodesic length of the given edges in metres.
         /// </summary>
-        /// <param name="edges"></param>
-        /// <returns></returns>
+        /// <param name="edges">The edges, each a pair of unit vectors.</param>
+        /// <returns>The sum of the edges' lengths in metres.</returns>
         public static double Length(IEnumerable<(S2Point, S2Point)> edges)
         {
             var total = 0.0;
@@ -210,15 +189,14 @@ namespace Apache.Calcite.Geography.Runtime
         }
 
         /// <summary>
-        /// Returns the geodesic area of the given polygon in square metres.
+        /// Returns the geodesic area of an S2 polygon in square metres.
         /// </summary>
-        /// <param name="polygon"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Loop by loop, because a hole subtracts. S2 records nesting as a loop's depth — even is a shell and
-        /// odd is a hole — and <c>PolygonArea</c> is asked for the magnitude of each, the winding being S2's
-        /// business rather than the measurement's.
+        /// Each loop's area is measured as a magnitude, leaving orientation to S2, and added for a shell (even depth)
+        /// or subtracted for a hole (odd depth).
         /// </remarks>
+        /// <param name="polygon">The polygon.</param>
+        /// <returns>The area in square metres.</returns>
         public static double Area(S2Polygon polygon)
         {
             var total = 0.0;

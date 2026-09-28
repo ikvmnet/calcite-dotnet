@@ -12,20 +12,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers a <c>UUID</c> literal reaching a real SQL Server, where the rendering of the literal is the
-    /// thing in question.
+    /// Tests a <c>UUID</c> literal pushed down to SQL Server.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A comparison against a <c>uniqueidentifier</c> column coerces its string literal to <c>UUID</c>, and a
-    /// <c>UUID</c> literal unparses as the standard typed literal <c>UUID '…'</c> — <c>SqlUuidLiteral.unparse</c>
-    /// writes it with no reference to the dialect at all. SQL Server has no such literal syntax and no
-    /// <c>UUID</c> type name, so the statement never parses: it answers "Incorrect syntax" on the string.
+    /// A comparison against a <c>uniqueidentifier</c> column coerces its string literal to <c>UUID</c>, and
+    /// <c>SqlUuidLiteral.unparse</c> writes the typed literal <c>UUID '…'</c> without consulting the dialect.
+    /// SQL Server has neither that literal syntax nor a <c>UUID</c> type.
     /// </para>
     /// <para>
-    /// <see cref="AdoImplementor.AsStatement"/> rewrites the literal into <c>CAST('…' AS UNIQUEIDENTIFIER)</c>
-    /// once the plan is a statement, which is the same seam <c>getCastSpec</c> is — the type named as the product
-    /// names it, reached from the one place the literal's own unparse would not ask the dialect for.
+    /// The SQL Server metadata's <c>IAdoSqlSyntax.Rewrite</c> rewrites each such literal into a cast of its
+    /// text, whose target type the dialect's <c>getCastSpec</c> writes as <c>UNIQUEIDENTIFIER</c>.
     /// </para>
     /// </remarks>
     public class SqlServerUuidLiteralTests
@@ -53,17 +50,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// What a query answered, and what was sent to the server to answer it.
+        /// What a query returned, and the statements sent to the server to answer it.
         /// </summary>
-        /// <param name="Rows"></param>
-        /// <param name="Statements"></param>
+        /// <param name="Rows">The first column of each row, as a string.</param>
+        /// <param name="Statements">The statements the adapter generated.</param>
         readonly record struct Answer(List<string> Rows, IReadOnlyList<string> Statements);
 
         /// <summary>
-        /// Runs a query against the fixture's database, capturing what was pushed down.
+        /// Runs a query against the fixture's database, recording the generated SQL.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite against the fixture's SQL Server
+        /// database.</param>
+        /// <returns>The first column of every row, and the SQL statements the adapter sent to the
+        /// server.</returns>
         static Answer Run(string sql)
         {
             var properties = new java.util.Properties();
@@ -95,7 +94,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The equality finds its row — the literal reached the server as something it could parse.
+        /// The equality finds its row, so the literal reached the server in a form it parses.
         /// </summary>
         [Fact]
         public void AGuidEqualityMatchesItsRow()
@@ -106,8 +105,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And a GUID that matches nothing is an empty answer rather than a failure — the point being that the
-        /// statement ran at all, which before the rewrite it did not.
+        /// A GUID that matches nothing gives an empty result rather than a failure.
         /// </summary>
         [Fact]
         public void AGuidEqualityMatchingNothingIsEmpty()
@@ -118,8 +116,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The claim that the server answered: the GUID went down as a cast to the type SQL Server names, not
-        /// as the <c>UUID '…'</c> typed literal it has no syntax for.
+        /// The GUID is pushed down as a cast to <c>uniqueidentifier</c>, not as a <c>UUID '…'</c> typed literal.
         /// </summary>
         [Fact]
         public void TheGuidLiteralIsCastToUniqueidentifierOnTheServer()

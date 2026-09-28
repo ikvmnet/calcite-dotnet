@@ -4,16 +4,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Relational expression that uses ADO.NET calling convention.
+    /// A relational expression of an <see cref="AdoConvention"/>, which the <see cref="AdoImplementor"/> turns into
+    /// SQL. The counterpart of Calcite's <c>JdbcRel</c>.
     /// </summary>
     public interface AdoRel : RelNode
     {
 
         /// <summary>
-        /// Invoked by the <see cref="AdoImplementor"/>.
+        /// Translates this node to SQL. The default hands the node to Calcite's <c>RelToSqlConverter</c> through
+        /// <see cref="AdoImplementor.implement(AdoRel)"/>.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <returns>The SQL for this node and its inputs.</returns>
         public org.apache.calcite.rel.rel2sql.SqlImplementor.Result implement(AdoImplementor implementor)
         {
             return implementor.implement(this);

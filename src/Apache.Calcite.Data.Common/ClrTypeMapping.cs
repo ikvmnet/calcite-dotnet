@@ -9,22 +9,18 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// One CLR type's relationship to one Calcite type, and the conversions across it.
+    /// Pairs one Calcite type with the CLR type it is presented as, and converts values between the two.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Three boundaries need the same three facts, so they are one object: which .NET type a column is seen
-    /// as, what a .NET value becomes on the way in, and what comes back out. A mapping that names a type
-    /// without carrying its conversions is where the four tables this replaces drifted apart — the ADO
-    /// adapter typed a provider <c>uniqueidentifier</c> as <c>CHAR(36)</c> in one file and had to discover
-    /// in another that the value arriving was a <see cref="Guid"/> and not a string.
+    /// <see cref="ToCalcite"/> converts a CLR value to the class Calcite holds the type in, and
+    /// <see cref="FromCalcite"/> converts back. Neither is called with <see langword="null"/>.
     /// </para>
     /// <para>
-    /// <see cref="RepresentationType"/> is the anchor. Calcite decides what class holds a value of a given
-    /// type through <c>JavaTypeFactory.getJavaClass</c>, and that answer is not fixed: a schema that types a
-    /// column with <c>createJavaType</c> carries its own class through the whole plan, ahead of every
-    /// <c>SqlTypeName</c> the switch in <c>JavaTypeFactoryImpl</c> knows. A mapping therefore states what it
-    /// produces and the registry checks the statement against the type factory rather than assuming.
+    /// The class Calcite holds the type in, <see cref="RepresentationType"/>, is not declared by the mapping
+    /// but taken from the session's type factory (<c>JavaTypeFactory.getJavaClass</c>), since a schema can
+    /// give a column its own class with <c>createJavaType</c>. The first value a mapping converts to Calcite
+    /// is checked against it, and a mismatch throws <see cref="ClrTypeMappingException"/>.
     /// </para>
     /// </remarks>
     public abstract class ClrTypeMapping
@@ -52,14 +48,13 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Returns the runtime class Calcite holds a value of <paramref name="relType"/> in.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="relType"></param>
-        /// <returns></returns>
+        /// <param name="typeFactory">The type factory whose <c>getJavaClass</c> decides the class.</param>
+        /// <param name="relType">The Calcite type.</param>
+        /// <returns>The class as a CLR type, with a Java primitive replaced by its boxed class.</returns>
         /// <remarks>
-        /// Boxed, because a value that has left the plan is a reference whatever the physical type said, and
-        /// because a nullable column and a non-nullable one of the same type would otherwise answer
-        /// differently — <c>getJavaClass</c> returns <c>int.class</c> for a <c>NOT NULL</c> <c>INTEGER</c>
-        /// and <c>Integer.class</c> for a nullable one.
+        /// The result is always the boxed class, so that a nullable and a <c>NOT NULL</c> column of the same
+        /// type agree: <c>getJavaClass</c> answers <c>int</c> for <c>INTEGER NOT NULL</c> and
+        /// <c>java.lang.Integer</c> for a nullable <c>INTEGER</c>.
         /// </remarks>
         public static Type RepresentationTypeOf(JavaTypeFactory typeFactory, RelDataType relType)
         {
@@ -84,37 +79,32 @@ namespace Apache.Calcite.Data.Common
         /// <see cref="ToCalcite"/> answers with and what <see cref="FromCalcite"/> is handed.
         /// </summary>
         /// <remarks>
-        /// Computed from the type factory rather than declared, so that a mapping cannot claim a class the
-        /// factory disagrees with. Overridable for the one case where <c>getJavaClass</c> describes the form
-        /// a value has <em>inside</em> a plan rather than the form it has at this boundary — see
-        /// <see cref="RowClrTypeMapping"/>, where the two genuinely differ.
+        /// By default this is <see cref="RepresentationTypeOf"/> for <see cref="RelType"/>. A mapping overrides
+        /// it where the value at this boundary has a different class from the one <c>getJavaClass</c>
+        /// describes inside a plan, as <see cref="RowClrTypeMapping"/> does.
         /// </remarks>
         public virtual Type RepresentationType => _representationType;
 
         /// <summary>
-        /// Gets the <see cref="System.Data.DbType"/> this mapping presents, which is
-        /// <see cref="System.Data.DbType.Object"/> where nothing in that fixed list fits.
+        /// Gets the <see cref="System.Data.DbType"/> for <see cref="ClrType"/>, which is
+        /// <see cref="System.Data.DbType.Object"/> where no member of that enumeration fits.
         /// </summary>
         /// <remarks>
-        /// Derived from <see cref="ClrType"/> rather than stated, because <see cref="System.Data.DbType"/>
-        /// names a .NET type and not a SQL one: <c>DATE</c> and <c>TIMESTAMP</c> are both read back as a
-        /// <see cref="DateTime"/> and are the same <see cref="System.Data.DbType"/>, while the two Calcite
-        /// types are not the same type at all. A mapping that presents a .NET type the list does not name —
-        /// an array, a dictionary, a type of a caller's own — is <see cref="System.Data.DbType.Object"/>,
-        /// which is what ADO.NET has for "not one of these". Override it where a mapping means a narrower
-        /// one than its CLR type implies, such as an ANSI or fixed-length character type.
+        /// <see cref="System.Data.DbType"/> describes a .NET type, so this is derived from
+        /// <see cref="ClrType"/> by <see cref="DbTypeOf"/>; for example <c>DATE</c> and <c>TIMESTAMP</c>, both
+        /// read as <see cref="DateTime"/>, are both <see cref="System.Data.DbType.DateTime"/>. Override it
+        /// where a mapping means something narrower, such as an ANSI or fixed-length character type. Use
+        /// <see cref="CalciteDbType"/> to tell Calcite types apart.
         /// </remarks>
         public virtual System.Data.DbType DbType => DbTypeOf(ClrType);
 
         /// <summary>
         /// Gets the <see cref="Common.CalciteDbType"/> naming <see cref="RelType"/>, which is
-        /// <see cref="Common.CalciteDbType.Unknown"/> where that fixed list has no name for it.
+        /// <see cref="Common.CalciteDbType.Unknown"/> where the enumeration has no member for it.
         /// </summary>
         /// <remarks>
-        /// The provider-specific counterpart of <see cref="DbType"/>, and the one that keeps apart what
-        /// ADO.NET's list collapses: the unsigned integers, the zoned temporal types, the intervals,
-        /// <c>UUID</c>, <c>VARIANT</c>, and an <c>ARRAY</c> from a <c>MULTISET</c>. Best effort, because
-        /// Calcite's type model is open and a schema may supply a type that names nothing.
+        /// Unlike <see cref="DbType"/>, this distinguishes the unsigned integers, the zoned temporal types,
+        /// the intervals, <c>UUID</c>, <c>VARIANT</c>, and <c>ARRAY</c> from <c>MULTISET</c>.
         /// </remarks>
         public virtual CalciteDbType CalciteDbType => CalciteDbTypes.Of(RelType);
 
@@ -122,8 +112,9 @@ namespace Apache.Calcite.Data.Common
         /// Returns the <see cref="System.Data.DbType"/> naming a CLR type, or
         /// <see cref="System.Data.DbType.Object"/> where none does.
         /// </summary>
-        /// <param name="clrType"></param>
-        /// <returns></returns>
+        /// <param name="clrType">The CLR type; a <see cref="Nullable{T}"/> is treated as its underlying
+        /// type.</param>
+        /// <returns>The <see cref="System.Data.DbType"/>.</returns>
         public static System.Data.DbType DbTypeOf(Type clrType)
         {
             ArgumentNullException.ThrowIfNull(clrType);
@@ -156,67 +147,60 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Gets whether <see cref="RelType"/> says what a value of it is, rather than leaving that to the
-        /// value's own class.
+        /// Gets whether <see cref="RelType"/> determines what a value of it is, as opposed to the value's own
+        /// runtime class determining it.
         /// </summary>
         /// <remarks>
-        /// True for all but three, and they are one problem written three ways. An <c>ANY</c> is
-        /// <c>java.lang.Object</c> and carries nothing; an <c>OTHER</c> is a class Calcite has no SQL name
-        /// for, which is what typing a column with <c>createJavaType</c> produces; a <c>VARIANT</c> carries
-        /// its payload's type with the payload. Either way the column does not say and the value does, and
-        /// an accessor that wants to know has to ask the mapping rather than compare
-        /// <see cref="org.apache.calcite.sql.type.SqlTypeName"/>s of its own — a list kept somewhere else is
-        /// a list that falls behind this table, which is how <c>OTHER</c> came to be readable by
-        /// <c>GetValue</c> and by no typed getter.
+        /// <see langword="true"/> except for the mappings of <c>ANY</c> and <c>OTHER</c>, which say nothing
+        /// about their values, and <c>VARIANT</c>, whose values carry their own type. A caller that needs to
+        /// know whether a column's type describes its values should ask this rather than test the type name.
         /// </remarks>
         public virtual bool DescribesValue => true;
 
         /// <summary>
-        /// Returns whether the value Calcite produced is a SQL null.
+        /// Returns whether a non-null value Calcite produced represents SQL null.
         /// </summary>
         /// <param name="value">The value, never <see langword="null"/>.</param>
-        /// <returns></returns>
+        /// <returns><see langword="true"/> where the value is a SQL null.</returns>
         /// <remarks>
-        /// Everywhere but one, Calcite holds a SQL null as a Java null and a value that arrived at all is
-        /// not null. The exception is <c>VARIANT</c>, whose nulls are objects, and asking the mapping is
-        /// what keeps that knowledge in the one class that has it.
+        /// Calcite holds a SQL null as a Java null for every type except <c>VARIANT</c>, whose null is an
+        /// object; only the <c>VARIANT</c> mapping overrides this.
         /// </remarks>
         public virtual bool IsNull(object value) => false;
 
         /// <summary>
-        /// Converts a CLR value to the representation Calcite holds it in.
+        /// Converts a CLR value to the class Calcite holds <see cref="RelType"/> in.
         /// </summary>
         /// <param name="value">The value, never <see langword="null"/>.</param>
-        /// <returns></returns>
+        /// <returns>The value as an instance of <see cref="RepresentationType"/>, or
+        /// <see langword="null"/>.</returns>
         public abstract object? ToCalcite(object value);
 
         /// <summary>
-        /// Converts the representation Calcite holds a value in to the CLR type this mapping presents.
+        /// Converts a value of the class Calcite holds <see cref="RelType"/> in to <see cref="ClrType"/>.
         /// </summary>
         /// <param name="value">The value, never <see langword="null"/>.</param>
-        /// <returns></returns>
+        /// <returns>The CLR value, or <see langword="null"/>.</returns>
         public abstract object? FromCalcite(object value);
 
         /// <summary>
-        /// Whether <see cref="ToCalcite"/> has been checked against <see cref="RepresentationType"/>.
+        /// Whether a result of <see cref="ToCalcite"/> has been checked against <see cref="RepresentationType"/>.
         /// </summary>
         bool _checked;
 
         /// <summary>
-        /// Converts a CLR value as <see cref="ToCalcite"/> does, checking the first result against
+        /// Converts a CLR value with <see cref="ToCalcite"/>, checking the first result against
         /// <see cref="RepresentationType"/>.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        /// <exception cref="ClrTypeMappingException"></exception>
+        /// <exception cref="ClrTypeMappingException">The first result is neither <see langword="null"/> nor
+        /// an instance of <see cref="RepresentationType"/>.</exception>
         /// <remarks>
-        /// A mapping that answers with a value of the wrong class does not fail here; it fails somewhere
-        /// inside a plan, as a comparator refusing two representations of one value, and the mapping is by
-        /// then several frames away. The check is worth its cost once per mapping — mappings are cached per
-        /// pair of types, so this runs once and not once per row. It cannot be a check of the declaration
-        /// instead: <see cref="RepresentationType"/> is computed from the type factory rather than declared,
-        /// exactly so that a mapping cannot claim a class the factory disagrees with.
+        /// A value of the wrong class would otherwise fail much later, inside a plan, far from the mapping
+        /// that produced it. Mappings are cached per pair of types, so the check runs about once per mapping
+        /// rather than once per row.
         /// </remarks>
+        /// <param name="value">The CLR value to convert; not <see langword="null"/>.</param>
+        /// <returns>What <see cref="ToCalcite"/> answers for the value.</returns>
         internal object? ConvertToCalcite(object value)
         {
             var result = ToCalcite(value);

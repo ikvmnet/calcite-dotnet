@@ -7,12 +7,13 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// Answers what a Calcite type looks like to .NET, and what a .NET value looks like to Calcite.
+    /// Maps Calcite types to CLR types and converts values between them.
     /// </summary>
     /// <remarks>
-    /// The whole extension point is this one method. A caller that wants a type of its own — a provider
-    /// type with no Calcite equivalent, a domain type in place of a string, a different .NET type for
-    /// <c>TIMESTAMP</c> — writes one of these and puts it in front of the chain.
+    /// Resolvers form a chain in which the first non-null answer wins. To present a type differently — a
+    /// provider type with no Calcite equivalent, a domain type in place of a string, another .NET type for
+    /// <c>TIMESTAMP</c> — implement this interface and put the resolver at the front of the chain with
+    /// <see cref="ClrTypeMapper.Prepend"/>.
     /// </remarks>
     public interface IClrTypeResolver
     {
@@ -20,29 +21,25 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Resolves a mapping for a CLR type, a Calcite type, or both. At least one is supplied.
         /// </summary>
-        /// <param name="clrType">The CLR type wanted, or <see langword="null"/> where the caller has no preference.</param>
-        /// <param name="relType">The Calcite type in play, or <see langword="null"/> where it is not yet decided.</param>
-        /// <param name="context">The type factory and registry the lookup is being answered against.</param>
-        /// <returns>A mapping, or <see langword="null"/> to pass the question to the next resolver.</returns>
+        /// <param name="clrType">The CLR type wanted, or <see langword="null"/> for the Calcite type's default.</param>
+        /// <param name="relType">The Calcite type, or <see langword="null"/> where only the CLR type is known, as for a
+        /// parameter holding a bare value.</param>
+        /// <param name="context">The type factory and registry the lookup is answered against.</param>
+        /// <returns>A mapping, or <see langword="null"/> to pass the lookup to the next resolver.</returns>
         ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context);
 
         /// <summary>
-        /// Returns every CLR type this resolver will present <paramref name="relType"/> as, most preferred
+        /// Returns every CLR type this resolver can present <paramref name="relType"/> as, most preferred
         /// first.
         /// </summary>
-        /// <param name="relType">The Calcite type in play.</param>
-        /// <param name="context">The type factory and registry the question is being answered against.</param>
-        /// <returns>The CLR types, which may be empty where the resolver claims the type for none.</returns>
+        /// <param name="relType">The Calcite type.</param>
+        /// <param name="context">The type factory and registry the question is answered against.</param>
+        /// <returns>The CLR types; empty where the resolver does not handle the type.</returns>
         /// <remarks>
-        /// <see cref="GetMapping"/> answers which conversion to use; this answers which are permitted, which
-        /// is a different question and the one an introspecting caller asks. A schema browser listing what a
-        /// column can be read as, and a modelling layer choosing among them, both need the set rather than
-        /// the winner — an object-relational mapper picking the property type for a <c>BIGINT</c> wants to
-        /// know that <see cref="long"/> is the default and whether anything else is legal at all.
-        ///
-        /// <para>Defaulted, so that a resolver written before this existed still compiles and still
-        /// resolves. The default answers the default mapping alone, which is true of any resolver and
-        /// understates one that accepts more.</para>
+        /// <see cref="GetMapping"/> picks the one mapping to use; this lists every type a caller may ask for,
+        /// which is what a schema browser or an object-relational mapper choosing a property type needs. The
+        /// default implementation returns only the type of the default mapping, so a resolver that accepts
+        /// more should override it.
         /// </remarks>
         IEnumerable<Type> GetClrTypes(RelDataType relType, ClrTypeContext context)
         {

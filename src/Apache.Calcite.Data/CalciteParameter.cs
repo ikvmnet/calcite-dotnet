@@ -10,12 +10,28 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a parameter to a <see cref="CalciteCommand"/>. This class cannot be inherited.
+    /// Represents a parameter to a <see cref="CalciteCommand"/> or <see cref="CalciteBatchCommand"/>. This
+    /// class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// Calcite parameters are positional. The order in which parameters are added to
-    /// <see cref="CalciteParameterCollection"/> determines the binding order of the corresponding
-    /// <c>?</c> placeholders in the SQL text; <see cref="ParameterName"/> is informational.
+    /// <para>
+    /// Calcite parameters are positional: the parameter's position in its
+    /// <see cref="CalciteParameterCollection"/> decides which <c>?</c> placeholder it binds to, and
+    /// <see cref="ParameterName"/> is used only to look the parameter up in the collection.
+    /// </para>
+    /// <para>
+    /// Calcite infers a SQL type for every placeholder while it validates the statement, and the value is
+    /// converted to that type. The parameter's <see cref="DbType"/> chooses which .NET type the value is
+    /// converted from, where the inferred type has a conversion from it; otherwise the inferred type's default
+    /// conversion is used. A <see langword="null"/> or <see cref="System.DBNull"/> value binds SQL null. Only
+    /// input parameters are supported; <see cref="Direction"/>, <see cref="Size"/>, <see cref="Precision"/>
+    /// and <see cref="Scale"/> are stored and not used.
+    /// </para>
+    /// <para>
+    /// The parameter's type can be stated three ways, as <see cref="DbType"/>, as <see cref="CalciteDbType"/>
+    /// or as <see cref="RelDataType"/>. Setting one sets the other two to the nearest equivalent, so they never
+    /// disagree. Binding reads <see cref="DbType"/>.
+    /// </para>
     /// </remarks>
     public sealed class CalciteParameter : DbParameter
     {
@@ -44,7 +60,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteParameter"/> class with a name and value.
         /// </summary>
-        /// <param name="parameterName">An informational name for the parameter. Because Calcite uses positional binding, this name does not affect query execution.</param>
+        /// <param name="parameterName">The name of the parameter. It does not affect binding, which is by position.</param>
         /// <param name="value">The value of the parameter, or <see langword="null"/>.</param>
         public CalciteParameter(string parameterName, object? value)
         {
@@ -55,7 +71,7 @@ namespace Apache.Calcite.Data
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteParameter"/> class with a name and database type.
         /// </summary>
-        /// <param name="parameterName">An informational name for the parameter.</param>
+        /// <param name="parameterName">The name of the parameter. It does not affect binding, which is by position.</param>
         /// <param name="dbType">The <see cref="DbType"/> of the parameter.</param>
         public CalciteParameter(string parameterName, DbType dbType)
         {
@@ -63,12 +79,14 @@ namespace Apache.Calcite.Data
             DbType = dbType;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets or sets the <see cref="System.Data.DbType"/> of the parameter.
+        /// </summary>
         /// <remarks>
-        /// One of three views of one statement. Setting this restates the parameter's type, so
-        /// <see cref="CalciteDbType"/> and <see cref="RelDataType"/> follow — see <see cref="CalciteDbType"/>
-        /// for what that costs in each direction. Where nothing has been set the value's own type decides,
-        /// which is what a caller that only ever assigns <see cref="Value"/> relies on.
+        /// Where no type has been set, the type is inferred from the CLR type of <see cref="Value"/>, and is
+        /// <see cref="System.Data.DbType.Object"/> for a <see langword="null"/> value or a type with no corresponding
+        /// <see cref="System.Data.DbType"/>. Setting it also sets <see cref="CalciteDbType"/> to the nearest
+        /// equivalent and clears <see cref="RelDataType"/>.
         /// </remarks>
         public override DbType DbType
         {
@@ -83,28 +101,17 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets or sets the Calcite type this parameter is written as, which names what
-        /// <see cref="DbType"/> cannot.
+        /// Gets or sets the Calcite type of the parameter, including types <see cref="DbType"/> cannot name.
         /// </summary>
         /// <remarks>
         /// <para>
-        /// Three ways to say one thing, widening: <see cref="DbType"/> is the list every provider shares,
-        /// this is Calcite's own list, and <see cref="RelDataType"/> is the type itself. A caller that needs
-        /// an unsigned integer, a zoned timestamp, an interval, or a <c>MULTISET</c> rather than an
-        /// <c>ARRAY</c>, has no way to say so through <see cref="DbType"/>, where every one of those is
-        /// <see cref="System.Data.DbType.Object"/> or a near miss.
+        /// <see cref="Common.CalciteDbType"/> names Calcite types that <see cref="System.Data.DbType"/> has no member
+        /// for, such as the unsigned integers, the zoned timestamps, the intervals, and <c>MULTISET</c> as distinct
+        /// from <c>ARRAY</c>. Where no type has been set, it is derived from <see cref="DbType"/>.
         /// </para>
         /// <para>
-        /// <b>They are three views of one statement, not three settings.</b> Setting any one restates the
-        /// parameter's type and the other two follow, so they can never disagree. What that costs depends
-        /// on which way the restatement runs, and it is always a widening that keeps and a narrowing that
-        /// approximates: setting <see cref="RelDataType"/> to an <c>INTEGER ARRAY ARRAY</c> leaves this
-        /// <see cref="Common.CalciteDbType.Array"/> over
-        /// <see cref="Common.CalciteDbType.Unknown"/> and <see cref="DbType"/>
-        /// <see cref="System.Data.DbType.Object"/>, because neither list can spell it; setting this to
-        /// <see cref="Common.CalciteDbType.UInteger"/> leaves <see cref="DbType"/> exact and
-        /// <see cref="RelDataType"/> null, a name not being a type. Only <see cref="RelDataType"/> is never
-        /// approximate, so set that one where the type nests or a schema supplied it.
+        /// Setting it also sets <see cref="DbType"/> to the nearest equivalent, which is
+        /// <see cref="System.Data.DbType.Object"/> where there is none, and clears <see cref="RelDataType"/>.
         /// </para>
         /// </remarks>
         public CalciteDbType CalciteDbType
@@ -120,16 +127,20 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets or sets the Calcite type this parameter is written as, stated exactly.
+        /// Gets or sets the exact Calcite type of the parameter, or <see langword="null"/> where none is set.
         /// </summary>
         /// <remarks>
-        /// The escape hatch from both fixed lists, and the only way to name a type that nests — an
-        /// <c>INTEGER ARRAY ARRAY</c>, a <c>MAP</c> with stated key and value types, a <c>ROW</c> — or one a
-        /// schema supplied itself. Build one from the connection's
-        /// <see cref="CalciteConnection.TypeFactory"/>, which is the factory the session will plan against.
-        ///
-        /// <para>This outranks <see cref="CalciteDbType"/> and <see cref="DbType"/> where it is set, being
-        /// the only one of the three that cannot be approximate.</para>
+        /// <para>
+        /// Use this for a type the other two properties cannot express: a nested type such as
+        /// <c>INTEGER ARRAY ARRAY</c>, a <c>MAP</c> with its key and value types, a <c>ROW</c>, or a type a schema
+        /// supplies. Create it with the connection's <see cref="CalciteConnection.TypeFactory"/>.
+        /// </para>
+        /// <para>
+        /// Setting it also sets <see cref="CalciteDbType"/> and <see cref="DbType"/> to the nearest equivalents,
+        /// which may be approximate: an <c>INTEGER ARRAY ARRAY</c> gives <see cref="Common.CalciteDbType.Array"/>
+        /// and <see cref="System.Data.DbType.Object"/>. Setting <see cref="DbType"/> or <see cref="CalciteDbType"/> clears
+        /// it. Setting it to <see langword="null"/> resets all three, as <see cref="ResetDbType"/> does.
+        /// </para>
         /// </remarks>
         public org.apache.calcite.rel.type.RelDataType? RelDataType
         {
@@ -151,6 +162,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Only <see cref="ParameterDirection.Input"/> is meaningful. Other values are stored and ignored.
+        /// </remarks>
         public override ParameterDirection Direction
         {
             get => _direction;
@@ -158,6 +172,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Stored and not used.
+        /// </remarks>
         public override bool IsNullable
         {
             get => _isNullable;
@@ -166,8 +183,8 @@ namespace Apache.Calcite.Data
 
         /// <inheritdoc />
         /// <remarks>
-        /// <see cref="DbParameter.ParameterName"/> is declared <see cref="AllowNullAttribute"/>, so the
-        /// override says so too and reads a null as no name.
+        /// Setting <see langword="null"/> sets the empty string. The name is used to find the parameter in its
+        /// collection, not to bind it.
         /// </remarks>
         [AllowNull]
         public override string ParameterName
@@ -177,6 +194,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Stored and not used.
+        /// </remarks>
         public override int Size
         {
             get => _size;
@@ -184,7 +204,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
-        /// <inheritdoc cref="ParameterName" path="/remarks" />
+        /// <remarks>
+        /// Setting <see langword="null"/> sets the empty string.
+        /// </remarks>
         [AllowNull]
         public override string SourceColumn
         {
@@ -196,6 +218,9 @@ namespace Apache.Calcite.Data
         public override bool SourceColumnNullMapping { get; set; }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// The value is read when the command executes.
+        /// </remarks>
         public override object? Value
         {
             get => _value;
@@ -203,6 +228,9 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Stored and not used.
+        /// </remarks>
         public override byte Precision
         {
             get => _precision;
@@ -210,13 +238,21 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Stored and not used.
+        /// </remarks>
         public override byte Scale
         {
             get => _scale;
             set => _scale = value;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Clears the parameter's type, so that it is inferred from <see cref="Value"/> again.
+        /// </summary>
+        /// <remarks>
+        /// Resets <see cref="DbType"/>, <see cref="CalciteDbType"/> and <see cref="RelDataType"/>.
+        /// </remarks>
         public override void ResetDbType()
         {
             _dbType = DbType.Object;

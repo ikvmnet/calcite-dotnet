@@ -8,15 +8,12 @@ namespace Apache.Calcite.Extensions.Interop.Tests
 {
 
     /// <summary>
-    /// The adapter every value crossing between the two runtimes goes through, both ways.
+    /// Tests of <c>JavaValues</c>, which converts values between their CLR and Java boxed forms.
     /// </summary>
     /// <remarks>
-    /// A CLR primitive handed to Calcite has to be the box Java gives it, and a Java box read as a CLR
-    /// primitive has to be unboxed by its accessor, or one value has two representations in a plan and
-    /// Calcite's comparators fail on them. These hold each of Java's eight primitives both ways, the value
-    /// types that are not Java primitives passing through, and the one case the adapter answers by
-    /// reflection: a value of another primitive than the one it is boxed as, which
-    /// <c>MethodBase.Invoke</c> widens.
+    /// A CLR primitive handed to Calcite has to be boxed as Java boxes it, and a Java box read as a CLR
+    /// primitive has to be unboxed by its accessor; otherwise one value has two representations in a plan and
+    /// Calcite's comparators treat them as different.
     /// </remarks>
     public class JavaValuesTests
     {
@@ -71,7 +68,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaValues.Unwrap(java.lang.Character.valueOf('x'), typeof(char)).Should().Be('x');
             JavaValues.Unwrap(java.lang.Boolean.valueOf(true), typeof(bool)).Should().Be(true);
 
-            // the accessor, not the box's own type: an Integer read as a long, a BigDecimal read as an int
+            // the target type's accessor, not the box's own type: an Integer read as a long, a BigDecimal as an int
             JavaValues.Unwrap(java.lang.Integer.valueOf(3), typeof(long)).Should().Be(3L);
             JavaValues.Unwrap(new java.math.BigDecimal("12.75"), typeof(int)).Should().Be(12);
         }
@@ -102,13 +99,14 @@ namespace Apache.Calcite.Extensions.Interop.Tests
             JavaValues.As<java.lang.Integer>(3).intValue().Should().Be(3);
             JavaValues.As<int>(3).Should().Be(3);
 
-            // a CLR int read where the row type is java.lang.Long: boxed by Long.valueOf(long), the int
-            // widened on the way in, which is the one case the adapter still answers by reflection
+            // a CLR int read where the row type is java.lang.Long: Long.valueOf(long) is called by reflection,
+            // which widens the int
             JavaValues.As<java.lang.Long>(5).longValue().Should().Be(5L);
         }
 
         /// <summary>
-        /// A value of another primitive than the one it is boxed as is widened, as reflection widens it.
+        /// A value of a different primitive from the one requested is widened, as reflection widens a call
+        /// argument, and never narrowed.
         /// </summary>
         [Fact]
         public void ShouldWidenAValueOfAnotherPrimitive()

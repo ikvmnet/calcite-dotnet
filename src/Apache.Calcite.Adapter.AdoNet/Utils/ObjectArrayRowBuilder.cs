@@ -11,12 +11,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
 {
 
     /// <summary>
-    /// Reads one row from a <see cref="DbDataReader"/> and returns it as an <c>object[]</c>
-    /// array aligned to the projected field list.
+    /// A linq4j <see cref="Function0"/> that reads the current row of a <see cref="DbDataReader"/> into an
+    /// <c>object[]</c>, one element per field, each in Calcite's representation of the field's type.
     /// </summary>
     /// <remarks>
-    /// This class implements the Calcite <c>Function0</c> interface so it can be called
-    /// repeatedly by the enumeration loop to produce successive rows.
+    /// Each call to <see cref="apply"/> reads the row the reader is positioned on, so one instance serves every
+    /// row.
     /// </remarks>
     public class ObjectArrayRowBuilder : Function0
     {
@@ -27,8 +27,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         /// <summary>
         /// Initializes a new instance of <see cref="ObjectArrayRowBuilder"/>.
         /// </summary>
-        /// <param name="reader">The open <see cref="DbDataReader"/> positioned before the first row.</param>
-        /// <param name="fields">The Calcite <c>RelDataTypeField</c> list that defines the projected columns.</param>
+        /// <param name="reader">The reader to read rows from.</param>
+        /// <param name="fields">The <see cref="RelDataTypeField"/>s of the row. Each is read at its own index.</param>
         /// <exception cref="ArgumentNullException"><paramref name="reader"/> or <paramref name="fields"/> is <see langword="null"/>.</exception>
         public ObjectArrayRowBuilder(DbDataReader reader, List fields)
         {
@@ -36,7 +36,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
             _fields = fields ?? throw new ArgumentNullException(nameof(fields));
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Reads the current row.
+        /// </summary>
+        /// <returns>An <c>object[]</c> holding the row's values.</returns>
+        /// <exception cref="AdoCalciteException">The reader raised a <see cref="DataException"/>.</exception>
         public object apply()
         {
             try
@@ -54,10 +58,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Utils
         }
 
         /// <summary>
-        /// Override this method to implement value retrieval.
+        /// Reads one field of the current row.
         /// </summary>
-        /// <param name="field"></param>
-        /// <returns></returns>
+        /// <param name="field">The field.</param>
+        /// <returns>The value in Calcite's representation, or <see langword="null"/>.</returns>
         object? GetValue(RelDataTypeField field)
         {
             return AdoReaderUtil.GetDbReaderValue(_reader, field.getIndex(), field.getType());

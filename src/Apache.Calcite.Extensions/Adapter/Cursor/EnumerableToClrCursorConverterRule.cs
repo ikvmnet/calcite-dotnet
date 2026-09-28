@@ -8,15 +8,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Rule that converts an <c>EnumerableConvention</c> node to a <see cref="ClrCursorConvention"/> one.
+    /// Rule that converts a node of <c>EnumerableConvention</c> to <see cref="ClrCursorConvention"/> by placing an
+    /// <see cref="EnumerableToClrCursorConverter"/> over it.
     /// </summary>
     public class EnumerableToClrCursorConverterRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates an <see cref="EnumerableToClrCursorConverterRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static EnumerableToClrCursorConverterRule Create()
         {
             return (EnumerableToClrCursorConverterRule)Config.INSTANCE
@@ -32,7 +33,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public EnumerableToClrCursorConverterRule(Config config) :
             base(config)
         {
@@ -41,19 +42,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// <see langword="true"/>, because <see cref="convert"/> accepts any node of the input convention.
-        /// Guaranteed is what puts the rule into <c>ConventionTraitDef</c>'s conversion graph, which is the
-        /// only route a conversion has when its input is itself a <c>Converter</c>.
+        /// Returns <see langword="true"/>, because <see cref="convert"/> accepts any node of
+        /// <c>EnumerableConvention</c>. A guaranteed rule is registered in <c>ConventionTraitDef</c>'s
+        /// conversion graph.
         /// </remarks>
         public override bool isGuaranteed() => true;
 
         /// <inheritdoc />
         public override RelNode? convert(RelNode rel)
         {
-            // simplified, because that is the trait set of the subset the input is registered in: RelSet.add
-            // simplifies a rel's traits before choosing its subset, so a merge join carrying two collations
-            // sits in the subset carrying none, and a converter claiming both over that subset is a claim its
-            // input does not keep. RelOptRule.convert simplifies for the same reason.
+            // the traits are simplified because RelSet.add registers the input in the subset of its
+            // simplified traits: a node with two collations sits in a subset with none, and a converter
+            // claiming both would claim an order its input does not guarantee. RelOptRule.convert simplifies
+            // for the same reason.
             return new EnumerableToClrCursorConverter(
                 rel.getCluster(),
                 rel.getTraitSet().replace(ClrCursorConvention.Instance).simplify(),

@@ -12,14 +12,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the mapping from a SQL Server value to the representation Calcite's runtime expects.
+    /// Tests <see cref="AdoReaderUtil"/>'s mapping from a SQL Server value to the representation Calcite's
+    /// runtime expects.
     /// </summary>
     /// <remarks>
-    /// <see cref="AdoReaderUtilTests"/> reads from SQLite, which decodes nearly everything to
-    /// <see cref="long"/>, <see cref="double"/> or <see cref="string"/> and so never presents the reader with
-    /// a value of the type the column was declared in. SQL Server does: a <c>uniqueidentifier</c> arrives as
-    /// a <see cref="Guid"/>, a <c>datetimeoffset</c> as a <see cref="DateTimeOffset"/>, a <c>tinyint</c> as a
-    /// <see cref="byte"/>. Those are the cases a typed accessor casts and fails on.
+    /// SQLite, which <see cref="AdoReaderUtilTests"/> reads from, returns nearly everything as
+    /// <see cref="long"/>, <see cref="double"/> or <see cref="string"/>. SQL Server returns the declared type:
+    /// a <c>uniqueidentifier</c> as a <see cref="Guid"/>, a <c>datetimeoffset</c> as a
+    /// <see cref="DateTimeOffset"/>, a <c>tinyint</c> as a <see cref="byte"/>, which a typed accessor that
+    /// casts would fail on.
     /// </remarks>
     public class SqlServerReaderUtilTests : IDisposable
     {
@@ -57,10 +58,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns a reader positioned on a single row holding the given expression.
+        /// Returns a reader positioned on a single row holding the given expression. The command is kept until
+        /// the test is disposed, because disposing it would close the reader.
         /// </summary>
-        /// <param name="selectExpression"></param>
-        /// <returns></returns>
+        /// <param name="selectExpression">The text placed after <c>SELECT</c>, producing the single column to
+        /// read.</param>
+        /// <returns>An open reader already advanced onto the row.</returns>
         DbDataReader Row(string selectExpression)
         {
             var command = _connection.CreateCommand();
@@ -73,8 +76,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The whole of the server's tiny integer range reaches a <c>SMALLINT</c>, which is why that is what
-        /// it is mapped to: the top half of it does not fit a signed <c>TINYINT</c>.
+        /// A <c>tinyint</c> read as <c>SMALLINT</c> widens to a <see cref="java.lang.Short"/> without losing the
+        /// upper half of its range, which a signed <c>TINYINT</c> could not hold.
         /// </summary>
         [Fact]
         public void ATinyIntWidensToAShort()
@@ -118,9 +121,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>uniqueidentifier</c> is not a character column and is not read as one. Formatting it would
-        /// be the mapping answering for a type the column does not have, and the text it produced could
-        /// not be told from a <c>CHAR(36)</c> that really is text.
+        /// A <c>uniqueidentifier</c> is not read as a character column; formatting it as text would make it
+        /// indistinguishable from a <c>CHAR(36)</c>.
         /// </summary>
         [Fact]
         public void AUniqueIdentifierIsNotReadAsAString()
@@ -132,9 +134,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// It is a <c>UUID</c>, and the value is the sixteen bytes rather than the text:
-        /// <c>org.apache.calcite.util.UuidValue</c> is the class Calcite's runtime holds them in, since
-        /// CALCITE-7716 wrapped <c>java.util.UUID</c> to order a UUID unsigned as SQL does.
+        /// A <c>uniqueidentifier</c> is read as a <c>UUID</c>, held in <c>org.apache.calcite.util.UuidValue</c>,
+        /// the class Calcite's runtime uses for UUIDs.
         /// </summary>
         [Fact]
         public void AUniqueIdentifierIsReadAsAUuidValue()
@@ -147,7 +148,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A null <c>uniqueidentifier</c> is a null, the class being a reference.
+        /// A null <c>uniqueidentifier</c> reads as null.
         /// </summary>
         [Fact]
         public void ANullUniqueIdentifierIsNull()
@@ -193,9 +194,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A timestamp carries no zone, so the count is to the wall clock read as UTC. Reading it as local
-        /// time instead put every timestamp out by the machine's offset, and only a machine at UTC would
-        /// have noticed.
+        /// A timestamp carries no zone, so the count is to the wall clock read as UTC; reading it as local
+        /// time would shift it by the machine's offset.
         /// </summary>
         [Fact]
         public void ATimestampDoesNotDependOnTheMachineTimeZone()
@@ -212,8 +212,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A zoned timestamp is an instant, and the provider hands one over as a
-        /// <see cref="DateTimeOffset"/> — <see cref="DbDataReader.GetDateTime"/> refuses it outright.
+        /// A zoned timestamp is an instant. The provider returns it as a <see cref="DateTimeOffset"/>, and
+        /// <see cref="DbDataReader.GetDateTime"/> rejects it.
         /// </summary>
         [Fact]
         public void AZonedTimestampIsReadAsAnInstant()
@@ -223,8 +223,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The offset is part of the value, not decoration: the same wall clock at a different offset is a
-        /// different instant.
+        /// The offset is part of the value: the same wall clock at a different offset is a different instant.
         /// </summary>
         [Fact]
         public void AZonedTimestampHonoursItsOffset()

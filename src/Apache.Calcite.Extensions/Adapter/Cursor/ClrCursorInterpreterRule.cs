@@ -12,13 +12,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorConvention"/> calling convention, by interpreting it.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableInterpreterRule</c>, and the same 0.5 cost factor.
+    /// Mirrors <c>EnumerableInterpreterRule</c>, with the same cost factor of 0.5.
     ///
-    /// <para>Not in what <see cref="ClrCursorRules.Rules"/> returns, because <c>TO_INTERPRETER</c> is not
-    /// in <c>ENUMERABLE_RULES</c> either: Calcite registers it from <c>RelOptUtil.registerDefaultRules</c>,
-    /// which is Calcite's own function and registers Calcite's rule. A caller who wants an interpreted node
-    /// to land in this convention rather than in <c>EnumerableConvention</c> under a converter adds this
-    /// one.</para>
+    /// <para>Not among <see cref="ClrCursorRules.Rules"/>, just as <c>TO_INTERPRETER</c> is not among
+    /// <c>ENUMERABLE_RULES</c>; <c>RelOptUtil.registerDefaultRules</c> registers Calcite's rule, so by default an
+    /// interpreted node lands in <c>EnumerableConvention</c> under a converter. A caller who wants it in this
+    /// convention adds this rule.</para>
     /// </remarks>
     public class ClrCursorInterpreterRule : ConverterRule
     {
@@ -26,7 +25,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorInterpreterRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorInterpreterRule Create()
         {
             return (ClrCursorInterpreterRule)Config.INSTANCE
@@ -38,7 +37,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorInterpreterRule(Config config) :
             base(config)
         {

@@ -12,14 +12,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers a query travelling the whole way: parsed by Calcite, planned into the
+    /// Tests queries end to end over SQLite through Calcite's JDBC driver: parsed, planned into the
     /// <see cref="AdoConvention"/>, executed against the provider, and read back.
     /// </summary>
-    /// <remarks>
-    /// This is the only thing that exercises the converter rules, the relational factories and the row
-    /// builder together, and the only place a mistake in any of them shows up as a wrong answer rather than
-    /// a plan that merely looks reasonable.
-    /// </remarks>
     public class AdoQueryTests : IDisposable
     {
 
@@ -59,11 +54,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its rows as strings, so a comparison does not depend on which numeric
-        /// type a provider chose.
+        /// Runs a query and returns each row's values as strings joined by a pipe, so a comparison does not
+        /// depend on which numeric type a provider chose.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite against the SQLite database.</param>
+        /// <returns>One string per row, its values joined by a pipe with <c>NULL</c> for a null.</returns>
         List<string> Rows(string sql)
         {
             using var statement = _connection.createStatement();
@@ -85,10 +80,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns the single value it produces.
+        /// Runs a query that must return one row and returns that row as <see cref="Rows"/> formats it.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">A statement expected to produce exactly one row.</param>
+        /// <returns>The single row, its values joined by a pipe.</returns>
         string Scalar(string sql)
         {
             var rows = Rows(sql);
@@ -197,8 +192,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// An aggregate skips nulls rather than counting them, which is the SQL rule and not the obvious
-        /// one to get right by accident.
+        /// <c>COUNT</c> of a column skips nulls.
         /// </summary>
         [Fact]
         public void CountOfAColumnSkipsNulls()
@@ -225,8 +219,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A null key joins to nothing: two unknowns are not equal in SQL, however tempting a hash lookup
-        /// makes it.
+        /// A null key joins to nothing, since null is not equal to null in SQL.
         /// </summary>
         [Fact]
         public void ANullKeyJoinsToNothing()
@@ -300,8 +293,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Dates
 
         /// <summary>
-        /// The end of the chain the DATE representation runs through: read from the provider as a day count,
-        /// carried through the plan, and decoded back to a date.
+        /// A <c>DATE</c> is read from the provider as a day count, carried through the plan, and returned as the
+        /// date that was stored.
         /// </summary>
         [Fact]
         public void ADateComesBackAsTheDateThatWasStored()

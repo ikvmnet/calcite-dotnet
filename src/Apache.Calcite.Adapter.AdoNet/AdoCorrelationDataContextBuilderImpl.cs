@@ -11,16 +11,18 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Default implementation of <see cref="IAdoCorrelationDataContextBuilder"/> that
-    /// generates code to construct an <see cref="AdoCorrelationDataContext"/> at plan execution time.
+    /// The <see cref="IAdoCorrelationDataContextBuilder"/> for a plan in Calcite's <c>EnumerableConvention</c>. It
+    /// generates linq4j code that constructs an <see cref="AdoCorrelationDataContext"/> when the plan runs.
     /// </summary>
+    /// <remarks>
+    /// Each registered field is read through the implementor's getter for its correlation variable, which declares
+    /// the read into the builder's block. Indexes start at <see cref="AdoCorrelationDataContext.Offset"/>.
+    /// </remarks>
     public class AdoCorrelationDataContextBuilderImpl : IAdoCorrelationDataContextBuilder
     {
 
-        // (Class) and not (java.lang.reflect.Type): IKVM converts a System.Type to a java.lang.Class, but a
-        // cast to the interface Class implements is a plain runtime cast, and a System.RuntimeType does not
-        // implement it. This threw for as long as it existed, unnoticed because C# defers a static field
-        // until it is first read and only Build below reads this one.
+        // (Class), never (java.lang.reflect.Type): IKVM defines a conversion from System.Type to java.lang.Class,
+        // but a cast to the Type interface is a plain runtime cast, which a System.Type fails
         static readonly java.lang.reflect.Constructor NEW = Types.lookupConstructor((java.lang.Class)typeof(AdoCorrelationDataContext), typeof(DataContext), typeof(object[]));
 
         readonly ImmutableList.Builder _parameters = ImmutableList.builder();
@@ -33,9 +35,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="builder"></param>
-        /// <param name="dataContext"></param>
+        /// <param name="implementor">The implementor the correlation variables are registered on.</param>
+        /// <param name="builder">The block the field reads are declared into.</param>
+        /// <param name="dataContext">The expression of the context the plan runs with, which the new context wraps.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         public AdoCorrelationDataContextBuilderImpl(EnumerableRelImplementor implementor, BlockBuilder builder, Expression dataContext)
         {
             _implementor = implementor ?? throw new ArgumentNullException(nameof(implementor));
@@ -50,7 +53,10 @@ namespace Apache.Calcite.Adapter.AdoNet
             return offset++;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the linq4j expression that constructs the context from the registered fields.
+        /// </summary>
+        /// <returns>The expression.</returns>
         public Expression Build()
         {
             return Expressions.new_(NEW, _dataContext, Expressions.newArrayInit((java.lang.Class)typeof(object), 1, _parameters.build()));

@@ -13,8 +13,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="JoinFactory"/> implementation that creates <see cref="AdoJoin"/> nodes
-    /// during relational-algebra construction in the <see cref="AdoConvention"/>.
+    /// A <see cref="JoinFactory"/> that creates an <see cref="AdoJoin"/> in its left input's convention.
     /// </summary>
     public class AdoJoinFactory : JoinFactory
     {

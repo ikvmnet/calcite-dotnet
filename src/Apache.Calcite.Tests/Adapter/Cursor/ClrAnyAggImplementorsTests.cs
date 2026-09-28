@@ -26,26 +26,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Holds what an aggregate over a column of type ANY compiles to.
+    /// Tests that a plan aggregating a column of type ANY compiles to an expression tree holding no linq4j
+    /// tree node.
     /// </summary>
     /// <remarks>
-    /// The answers themselves are asserted by the two differential suites; this asks the other question about
-    /// the same plans, which is what they are made of. MIN, MAX and SUM over ANY are the one place in the
-    /// convention where this project writes a linq4j tree of its own rather than translating one Calcite
-    /// produced — <c>ClrAnyAggImplementors</c> implements <c>AggImplementor</c>, whose contexts hand out a
-    /// <c>BlockBuilder</c> and a list of linq4j expressions and admit nothing else — so the claim that it is
-    /// all translated away before anything runs is worth measuring rather than asserting.
-    ///
-    /// <para>A tree that reached the delegate untranslated would in fact throw at
-    /// <see cref="LambdaExpression.Compile"/> long before it ran, so this is belt and braces. What it really
-    /// guards is the day someone adds a node to those implementors that <c>LixToClrTranslator</c> happens to
-    /// carry across as a constant.</para>
+    /// The differential suites check the rows these plans return; this checks what the compiled plan is made
+    /// of. <c>ClrAnyAggImplementors</c> implements Calcite's <c>AggImplementor</c>, whose contexts accept only
+    /// a <c>BlockBuilder</c> and linq4j expressions, so it writes linq4j trees of its own that must all be
+    /// translated to <see cref="Expression"/>s. Most untranslated nodes would already fail at
+    /// <see cref="LambdaExpression.Compile()"/>; this also catches one that <c>LixToClrTranslator</c> carries
+    /// across as a constant.
     /// </remarks>
     public class ClrAnyAggImplementorsTests
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts Calcite's JDBC assembly on the boot class path.
         /// </summary>
         static ClrAnyAggImplementorsTests()
         {
@@ -53,7 +49,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of two ANY columns, one holding numbers of two classes and one holding strings.
+        /// A table over <c>AsyncTestRows.Anys</c> with two ANY columns: <c>V</c>, holding numbers of more than
+        /// one class, and <c>S</c>, holding strings.
         /// </summary>
         sealed class AnysTable : AbstractTable, ScannableTable
         {
@@ -84,6 +81,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map the implementor stashed values into, which <c>get</c> answers from.</param>
         sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
@@ -102,16 +101,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a statement, implements it the way asked for, and returns the tree and the rows it gives.
+        /// Plans and implements a statement, and returns one open's expression tree and the rows it reads.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="async">Whether to read the awaiting open's tree and rows rather than the synchronous
-        /// one's. The plan is the same either way; only the open differs.</param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="async">Whether to take the awaiting open's tree and rows rather than the synchronous
+        /// open's. The plan is the same either way.</param>
+        /// <returns>The chosen open's lambda, and the rows that open reads, each rendered as text.</returns>
         /// <remarks>
-        /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> for the same reason the differential suites register it: AVG has
-        /// no implementor in any convention, in any type, and is a <c>$SUM0</c> over a <c>COUNT</c> by the
-        /// time a planner sees it.
+        /// <c>AGGREGATE_REDUCE_FUNCTIONS</c> is registered, as in the differential suites, because AVG has no
+        /// implementor and must be rewritten in terms of SUM and COUNT before it is planned.
         /// </remarks>
         static async Task<(LambdaExpression Tree, List<string> Rows)> Plan(string sql, bool async)
         {
@@ -149,7 +147,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var context = new TestDataContext(rootSchema, parameters);
             var rows = new List<string>();
 
-            // one planned root, both opens of it
             var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters)
                 .ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
@@ -203,8 +200,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             {
                 var (tree, rows) = await Plan(sql, async);
 
-                // the tree is only worth reading if it produced something: a plan that yielded nothing would
-                // satisfy the assertion below without having exercised an implementor at all
+                // a plan that returned no rows could pass the assertion below without exercising an implementor
                 rows.Should().NotBeEmpty("'{0}' should give rows", sql);
 
                 var found = new Linq4jTrees();
@@ -217,10 +213,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Collects every reference to a linq4j tree type in an expression tree.
         /// </summary>
         /// <remarks>
-        /// <c>org.apache.calcite.linq4j.tree</c> only, and not linq4j as a whole. A plan legitimately holds
-        /// linq4j's <em>runtime</em> — a <c>ScannableTable</c> answers an <c>Enumerable</c> and the scan reads
-        /// it — and what is being asked here is whether a tree Calcite's or ours <em>built</em> survived the
-        /// translation rather than being turned into <see cref="Expression"/>s.
+        /// Only types in <c>org.apache.calcite.linq4j.tree</c> count. A plan legitimately uses linq4j's runtime
+        /// types, such as the <c>Enumerable</c> a <c>ScannableTable</c> returns; a tree type in the compiled plan
+        /// means a linq4j tree was not translated to <see cref="Expression"/>s.
         /// </remarks>
         sealed class Linq4jTrees : ExpressionVisitor
         {
@@ -272,6 +267,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             /// Yields a type and everything it is written in terms of, so that a linq4j node hiding as an
             /// element or a type argument is seen.
             /// </summary>
+            /// <param name="type">The type to expand; null yields nothing.</param>
+            /// <returns>The type itself, then its element type and generic arguments, recursively.</returns>
             static IEnumerable<Type> Expand(Type? type)
             {
                 if (type == null)

@@ -15,15 +15,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the adapter over an <see cref="OleDbConnection"/>, against the same LocalDB database
+    /// Tests the adapter over an <see cref="OleDbConnection"/>, against the same LocalDB database
     /// <see cref="SqlServerQueryTests"/> uses.
     /// </summary>
     /// <remarks>
-    /// OLE DB's schema rowsets borrow the information schema's column names without its types — a numeric
+    /// OLE DB's schema rowsets use the information schema's column names with different types: a numeric
     /// <c>DATA_TYPE</c>, a <see cref="bool"/> <c>IS_NULLABLE</c>, a <see cref="decimal"/>
-    /// <c>CHARACTER_MAXIMUM_LENGTH</c> — which is close enough to look like it should have worked and did
-    /// not: the whole of <see cref="Metadata.OleDbDatabaseMetadata"/> threw
-    /// <see cref="NotImplementedException"/>.
+    /// <c>CHARACTER_MAXIMUM_LENGTH</c>. <see cref="Metadata.OleDbDatabaseMetadata"/> reads them accordingly.
     /// </remarks>
     public class OleDbQueryTests : IDisposable
     {
@@ -72,10 +70,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its rows as strings.
+        /// Runs a query and returns each row's values as strings joined by a pipe.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite over the OLE DB data source.</param>
+        /// <returns>One string per row, its values joined by a pipe with <c>NULL</c> for a null.</returns>
         List<string> Rows(string sql)
         {
             using var statement = _connection.createStatement();
@@ -97,10 +95,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns the single value it produces.
+        /// Runs a query that must return one row and returns that row as <see cref="Rows"/> formats it.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">A statement expected to produce exactly one row.</param>
+        /// <returns>The single row, its values joined by a pipe.</returns>
         string Scalar(string sql)
         {
             var rows = Rows(sql);
@@ -109,10 +107,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns the fields of a table's row type, by name.
+        /// Returns the fields of a table's row type, keyed case-insensitively by name.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The name of a table in the mounted schema, exactly as the schema exposes
+        /// it.</param>
+        /// <returns>Each column's Calcite type, keyed by column name without regard to case.</returns>
         Dictionary<string, RelDataType> Fields(string tableName)
         {
             var table = (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
@@ -137,7 +136,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// That the version came with it is <see cref="AnOffsetIsHonoured"/>.
+        /// The dialect comes from the product name the provider reports, here SQL Server. That the version is
+        /// also picked up is covered by <see cref="AnOffsetIsHonoured"/>.
         /// </summary>
         [Fact]
         public void TheDialectIsTheOneTheProviderReports()
@@ -161,8 +161,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// OLE DB states nullability as a <see cref="bool"/>, where the information schema and ODBC both
-        /// state it otherwise.
+        /// OLE DB states nullability as a <see cref="bool"/>, unlike the information schema and ODBC.
         /// </summary>
         [Fact]
         public void NullabilityIsCarriedOntoTheType()
@@ -206,8 +205,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>DBTYPE</c> says <c>DBTYPE_STR</c> for both <c>char</c> and <c>varchar</c>; only
-        /// <c>DBCOLUMNFLAGS_ISFIXEDLENGTH</c> tells them apart, and Calcite pads a <c>CHAR</c>.
+        /// OLE DB reports <c>DBTYPE_STR</c> for both <c>char</c> and <c>varchar</c>; only
+        /// <c>DBCOLUMNFLAGS_ISFIXEDLENGTH</c> tells them apart, and the difference matters because Calcite pads
+        /// a <c>CHAR</c>.
         /// </summary>
         [Fact]
         public void AFixedLengthColumnIsDistinguishedFromAVaryingOne()

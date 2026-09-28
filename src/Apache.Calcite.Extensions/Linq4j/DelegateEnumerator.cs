@@ -11,14 +11,9 @@ namespace Apache.Calcite.Extensions.Linq4j
     /// A linq4j <see cref="Enumerator"/> backed by four delegates.
     /// </summary>
     /// <remarks>
-    /// An anonymous class of one method is a lambda, and every other adapter here is that. This one is not:
-    /// an enumerator is four methods over state they share, which is a thing rather than a function. Calcite
-    /// generates one wherever a sub-plan of <c>EnumerableConvention</c> reads its input — a calc, a table
-    /// function — so it is what the converter meets most often.
-    ///
-    /// <para>The shared state is not held here. It stays where the class declared it: the fields become
-    /// variables of the block that builds these delegates, and all four close over them, which is the same
-    /// lifetime one instance of the anonymous class would have had.</para>
+    /// What an anonymous <c>Enumerator</c> class in a Calcite-generated block, such as a calc's, becomes when
+    /// translated. The class's fields become variables of the block that creates the delegates, which all
+    /// four close over, so they live as long as one instance of the class would.
     /// </remarks>
     sealed class DelegateEnumerator : Enumerator
     {
@@ -31,10 +26,10 @@ namespace Apache.Calcite.Extensions.Linq4j
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="current"></param>
-        /// <param name="moveNext"></param>
-        /// <param name="reset"></param>
-        /// <param name="close"></param>
+        /// <param name="current">Implements <c>current()</c>.</param>
+        /// <param name="moveNext">Implements <c>moveNext()</c>.</param>
+        /// <param name="reset">Implements <c>reset()</c>.</param>
+        /// <param name="close">Implements <c>close()</c> and <see cref="Dispose"/>.</param>
         public DelegateEnumerator(Func<object> current, Func<bool> moveNext, Action reset, Action close)
         {
             onCurrent = current ?? throw new ArgumentNullException(nameof(current));
@@ -57,8 +52,8 @@ namespace Apache.Calcite.Extensions.Linq4j
 
         /// <inheritdoc />
         /// <remarks>
-        /// IKVM maps <c>java.lang.AutoCloseable</c>, which an enumerator extends, onto
-        /// <see cref="IDisposable"/>, so closing one from Java arrives here.
+        /// IKVM maps <c>java.lang.AutoCloseable</c>, which <c>Enumerator</c> extends, onto
+        /// <see cref="IDisposable"/>.
         /// </remarks>
         public void Dispose() => onClose();
 

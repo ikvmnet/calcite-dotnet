@@ -12,13 +12,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalUnion"/> to a <see cref="ClrCursorUnion"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableUnionRule</c>.
+    /// </remarks>
     public class ClrCursorUnionRule : ConverterRule
     {
 
         /// <summary>
         /// Creates a <see cref="ClrCursorUnionRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule, with its default configuration.</returns>
         public static ClrCursorUnionRule Create()
         {
             return (ClrCursorUnionRule)Config.INSTANCE
@@ -30,7 +33,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorUnionRule(Config config) :
             base(config)
         {
@@ -55,13 +58,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalIntersect"/> to a <see cref="ClrCursorIntersect"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableIntersectRule</c>.
+    /// </remarks>
     public class ClrCursorIntersectRule : ConverterRule
     {
 
         /// <summary>
         /// Creates a <see cref="ClrCursorIntersectRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule, with its default configuration.</returns>
         public static ClrCursorIntersectRule Create()
         {
             return (ClrCursorIntersectRule)Config.INSTANCE
@@ -73,7 +79,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorIntersectRule(Config config) :
             base(config)
         {
@@ -94,13 +100,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalMinus"/> to a <see cref="ClrCursorMinus"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableMinusRule</c>.
+    /// </remarks>
     public class ClrCursorMinusRule : ConverterRule
     {
 
         /// <summary>
         /// Creates a <see cref="ClrCursorMinusRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule, with its default configuration.</returns>
         public static ClrCursorMinusRule Create()
         {
             return (ClrCursorMinusRule)Config.INSTANCE
@@ -112,7 +121,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorMinusRule(Config config) :
             base(config)
         {

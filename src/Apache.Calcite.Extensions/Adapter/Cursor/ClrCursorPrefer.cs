@@ -4,12 +4,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// The representation a consumer of a plan would prefer its rows to arrive in.
+    /// The row representation a consumer of a node's output prefers or requires.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRel.Prefer</c>, with the same five values.
-    /// <see cref="ClrCursorPrefers"/> has the methods that answer what format a preference asks for, and
-    /// converts to and from Calcite's enum.
+    /// Mirrors <c>EnumerableRel.Prefer</c>, with the same five values. <see cref="ClrCursorPrefers"/> holds the
+    /// methods Calcite declares on the enum, and the conversions to and from it.
     /// </remarks>
     public enum ClrCursorPrefer
     {
@@ -44,37 +43,41 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     }
 
     /// <summary>
-    /// The methods <c>EnumerableRel.Prefer</c> carries on its values, which a C# enum cannot.
+    /// Methods on <see cref="ClrCursorPrefer"/>, mirroring those Calcite declares on <c>EnumerableRel.Prefer</c>.
     /// </summary>
     public static class ClrCursorPrefers
     {
 
         /// <summary>
-        /// Returns the format to use where objects are wanted but arrays would do.
+        /// Returns the row format to use when the producer would choose <see cref="JavaRowFormat.CUSTOM"/>.
         /// </summary>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
+        /// <param name="prefer">The consumer's preference.</param>
+        /// <returns><see cref="JavaRowFormat.ARRAY"/> if <paramref name="prefer"/> is
+        /// <see cref="ClrCursorPrefer.Array"/>; otherwise <see cref="JavaRowFormat.CUSTOM"/>.</returns>
         public static JavaRowFormat PreferCustom(this ClrCursorPrefer prefer)
         {
             return prefer.Prefer(JavaRowFormat.CUSTOM);
         }
 
         /// <summary>
-        /// Returns the format to use where arrays are wanted but objects would do.
+        /// Returns the row format to use when the producer would choose <see cref="JavaRowFormat.ARRAY"/>.
         /// </summary>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
+        /// <param name="prefer">The consumer's preference.</param>
+        /// <returns><see cref="JavaRowFormat.CUSTOM"/> if <paramref name="prefer"/> is
+        /// <see cref="ClrCursorPrefer.Custom"/>; otherwise <see cref="JavaRowFormat.ARRAY"/>.</returns>
         public static JavaRowFormat PreferArray(this ClrCursorPrefer prefer)
         {
             return prefer.Prefer(JavaRowFormat.ARRAY);
         }
 
         /// <summary>
-        /// Returns the format to use, which is the one asked for unless the preference insists.
+        /// Returns the row format to use given the format the producer would choose.
         /// </summary>
-        /// <param name="prefer"></param>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="prefer">The consumer's preference.</param>
+        /// <param name="format">The format the producer would choose.</param>
+        /// <returns><see cref="JavaRowFormat.CUSTOM"/> for <see cref="ClrCursorPrefer.Custom"/>,
+        /// <see cref="JavaRowFormat.ARRAY"/> for <see cref="ClrCursorPrefer.Array"/>, and
+        /// <paramref name="format"/> otherwise.</returns>
         public static JavaRowFormat Prefer(this ClrCursorPrefer prefer, JavaRowFormat format)
         {
             return prefer switch
@@ -86,21 +89,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the preference that insists on a format.
+        /// Returns the preference that requires a format.
         /// </summary>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="format">The required format.</param>
+        /// <returns><see cref="ClrCursorPrefer.Array"/> for <see cref="JavaRowFormat.ARRAY"/>; otherwise
+        /// <see cref="ClrCursorPrefer.Custom"/>.</returns>
         public static ClrCursorPrefer Of(JavaRowFormat format)
         {
             return format.name() == nameof(JavaRowFormat.ARRAY) ? ClrCursorPrefer.Array : ClrCursorPrefer.Custom;
         }
 
         /// <summary>
-        /// Returns the <c>EnumerableRel.Prefer</c> that means the same, for a sub-plan of Calcite's own
-        /// convention.
+        /// Returns the equivalent <c>EnumerableRel.Prefer</c>, for implementing a sub-plan in
+        /// <c>EnumerableConvention</c>.
         /// </summary>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
+        /// <param name="prefer">The preference to convert.</param>
+        /// <returns>The Calcite value of the same name.</returns>
         public static EnumerableRel.Prefer ToCalcite(this ClrCursorPrefer prefer)
         {
             return prefer switch
@@ -114,14 +118,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the <see cref="ClrCursorPrefer"/> that means the same, for a sub-plan of this
-        /// convention under one of Calcite's.
+        /// Returns the equivalent <see cref="ClrCursorPrefer"/>, for implementing a sub-plan of this convention
+        /// under a node of <c>EnumerableConvention</c>.
         /// </summary>
-        /// <param name="prefer"></param>
-        /// <returns></returns>
+        /// <param name="prefer">The Calcite preference to convert.</param>
+        /// <returns>The value of the same name.</returns>
         /// <remarks>
-        /// Dispatched on the name, because a Java enum's ordinals are not stable across versions and its
-        /// names are.
+        /// Matches on the name, because a Java enum's ordinals are not stable across versions.
         /// </remarks>
         public static ClrCursorPrefer FromCalcite(EnumerableRel.Prefer prefer)
         {

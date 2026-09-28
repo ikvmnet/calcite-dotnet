@@ -9,12 +9,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
     /// <summary>
     /// A linq4j <see cref="Function1"/> backed by a delegate.
     /// </summary>
-    /// <typeparam name="TArg"></typeparam>
-    /// <typeparam name="TResult"></typeparam>
-    /// <param name="function"></param>
+    /// <typeparam name="TArg">The argument type.</typeparam>
+    /// <typeparam name="TResult">The result type.</typeparam>
+    /// <param name="function">The function.</param>
     /// <remarks>
-    /// Calcite passes a method reference where a Function1 is wanted; C# has no such conversion for an
-    /// interface IKVM compiled, so the delegate is wrapped.
+    /// C# cannot convert a method group to an interface IKVM compiled, so a method passed where Calcite
+    /// takes a <c>Function1</c> is wrapped in this. The argument and result are converted with
+    /// <see cref="JavaValues"/>.
     /// </remarks>
     class DelegateFunction1<TArg, TResult>(Func<TArg, TResult> function) : Function1
     {

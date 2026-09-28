@@ -13,29 +13,28 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Implementation of <see cref="Join"/> in the <see cref="ClrCursorConvention"/> calling convention,
-    /// by comparing every pair of rows.
+    /// Implementation of <see cref="Join"/> in the <see cref="ClrCursorConvention"/> calling convention that
+    /// tests the condition against every pair of rows.
     /// </summary>
     /// <remarks>
-    /// What a join with no equality to build a lookup on becomes, and what
-    /// <see cref="ClrCursorHashJoin"/> leaves for it.
+    /// Mirrors <c>EnumerableNestedLoopJoin</c>, and implements joins that have no equi-join keys or that
+    /// <see cref="ClrCursorHashJoin"/> does not support.
     ///
-    /// <para>The right input is acquired inside an advance — once per left row by the streaming body, and
-    /// by the buffering one at the open, through the opener of the open's own kind — so it is handed to the
-    /// operator as openers of both kinds, and each body visits it through both hierarchies to build them.</para>
+    /// <para>The operator may acquire the right input from within an advance of either kind, so each body
+    /// visits the right input through both hierarchies and passes a synchronous and an awaiting opener.</para>
     /// </remarks>
     public class ClrCursorNestedLoopJoin : Join, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorNestedLoopJoin"/>.
+        /// Creates a <see cref="ClrCursorNestedLoopJoin"/>, deriving its collation from its inputs.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
-        /// <returns></returns>
+        /// <param name="left">The left (outer) input.</param>
+        /// <param name="right">The right (inner) input.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables set by the join.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>The new join.</returns>
         public static ClrCursorNestedLoopJoin Create(RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType)
         {
             var cluster = left.getCluster();
@@ -47,15 +46,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> derives the trait set; this constructor takes it as
+        /// given.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traits">The node's traits.</param>
+        /// <param name="left">The left (outer) input.</param>
+        /// <param name="right">The right (inner) input.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables set by the join.</param>
+        /// <param name="joinType">The join type.</param>
         public ClrCursorNestedLoopJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, condition, variablesSet, joinType)
         {
@@ -70,9 +70,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// The collation passes to the left input and to no other: the left is the outer loop, so only it can
-        /// preserve an ordering. Pushing a sort to the right does not help a right outer join either, because
-        /// the unmatched right rows are produced together at the end.
+        /// A required collation on left fields only is passed to the left input, which is the outer loop and so
+        /// determines the output order. None is passed for a <c>RIGHT</c> or <c>FULL</c> join, whose unmatched
+        /// right rows come at the end.
         /// </remarks>
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
@@ -99,9 +99,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var rowCount = mq.getRowCount(this).doubleValue();
 
-            // a join can be flipped, and for many algorithms both versions are viable and cost the same. To
-            // keep the answer stable from one version of the planner to the next, one of them is made
-            // slightly more expensive.
+            // a join and its flipped form often cost the same; one is made slightly more expensive so that
+            // the planner's choice between them is stable
             switch (joinType.name())
             {
                 case nameof(JoinRelType.SEMI):
@@ -124,7 +123,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (double.IsInfinity(rightRowCount))
                 rowCount = rightRowCount;
 
-            // give it some penalty
+            // the factor of ten is EnumerableNestedLoopJoin's penalty against the other join algorithms
             return planner.getCostFactory().makeCost(rowCount, 0, 0).multiplyBy(10);
         }
 
@@ -147,17 +146,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a mark join, which returns every left row with a marker saying whether the right side
-        /// had a match.
+        /// Implements a <c>LEFT_MARK</c> join, which returns every left row with a marker saying whether any
+        /// right row matched.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>implementNLMarkJoin</c>. The predicate is the whole condition rather than
-        /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
-        /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
+        /// Mirrors <c>EnumerableNestedLoopJoin.implementNLMarkJoin</c>. The predicate is generated nullable, so
+        /// it returns null where the condition is unknown and the marker can be null; that is what makes
+        /// <c>IN</c> over a nullable column answer <c>UNKNOWN</c>.
         /// </remarks>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The awaiting open of the join, whose rows are each left row followed by its marker.</returns>
         ClrCursorAsyncResult ImplementNLMarkJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
@@ -183,11 +182,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements the join by comparing every pair.
+        /// Implements every join type other than <c>LEFT_MARK</c>. Mirrors
+        /// <c>EnumerableNestedLoopJoin.implementNLJoin</c>.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The awaiting open of the join.</returns>
         ClrCursorAsyncResult ImplementNLJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
@@ -214,17 +214,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a mark join, which returns every left row with a marker saying whether the right side
-        /// had a match.
+        /// Implements a <c>LEFT_MARK</c> join, which returns every left row with a marker saying whether any
+        /// right row matched.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>implementNLMarkJoin</c>. The predicate is the whole condition rather than
-        /// its non-equi part, and it is the three-valued one: a mark join's marker is null where a comparison
-        /// was unknown, which is what makes <c>IN</c> over a nullable column answer UNKNOWN.
+        /// Mirrors <c>EnumerableNestedLoopJoin.implementNLMarkJoin</c>. The predicate is generated nullable, so
+        /// it returns null where the condition is unknown and the marker can be null; that is what makes
+        /// <c>IN</c> over a nullable column answer <c>UNKNOWN</c>.
         /// </remarks>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The synchronous open of the join, whose rows are each left row followed by its marker.</returns>
         ClrCursorResult ImplementNLMarkJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
@@ -251,11 +251,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements the join by comparing every pair.
+        /// Implements every join type other than <c>LEFT_MARK</c>. Mirrors
+        /// <c>EnumerableNestedLoopJoin.implementNLJoin</c>.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The synchronous open of the join.</returns>
         ClrCursorResult ImplementNLJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);

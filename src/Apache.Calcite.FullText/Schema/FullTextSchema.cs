@@ -11,58 +11,50 @@ namespace Apache.Calcite.FullText.Schema
 {
 
     /// <summary>
-    /// The same operators <see cref="FullTextOperatorTable"/> carries, in the form a schema declares them, so
-    /// that a plain connection can name one.
+    /// Declares the <c>CLR_FT_*</c> operators as schema functions, so that a connection which cannot chain
+    /// <see cref="FullTextOperatorTable"/>, such as a plain <c>jdbc:calcite:</c> connection, can resolve them.
     /// </summary>
     /// <remarks>
-    /// <para><b>There are two routes to a name and they are not interchangeable.</b> A validator resolves a
-    /// function against the operator table it was built with, chained with the catalog reader — and the
-    /// catalog reader resolves a schema's own functions. So an operator table is something a <em>host</em>
-    /// hands a planner it assembled, and a schema function is something a <em>connection</em> finds by
-    /// itself. A stock <c>jdbc:calcite:</c> connection chains nothing, so without these the whole package
-    /// would be reachable only by embedders.</para>
+    /// <para>Calcite's catalog reader resolves a schema's functions for every statement a connection prepares,
+    /// so registering them is enough:</para>
     ///
     /// <code>
     /// FullTextSchema.AddTo(rootSchema);
     /// </code>
     ///
-    /// <para><b>Declare at every level the connection might be rooted at.</b> An unqualified name resolves
-    /// against the connection's default schema and the root, and nowhere else — never a subschema. An adapter
-    /// with a schema per database under a schema per account declares at both, and nothing resolves twice
-    /// because no arrangement searches both for one unqualified name.</para>
+    /// <para>An unqualified function name resolves against the connection's default schema and the root
+    /// schema only, never against another subschema, so declare the functions at each level a connection may
+    /// use as its default.</para>
     ///
-    /// <para><b>Chaining the operator table as well is not a duplicate, and is not a second registration
-    /// either.</b> Overload resolution takes the first candidate whose arity fits and a chained table comes
-    /// before the catalog reader, so the operator answers and the declaration is simply not reached. What it
-    /// buys is the arity past <see cref="VariadicOperandLimit"/>.</para>
+    /// <para>Use this or the operator table, not both. With both registered, each call has two candidates,
+    /// and Calcite's type-precedence pass then throws <c>IllegalArgumentException</c> for a call whose
+    /// searched operand is an <c>ARRAY</c> column.</para>
     ///
-    /// <para><b>The same order is why the names are worth a tripwire.</b> A connection chains the table its
-    /// <c>fun</c> property names ahead of the catalog reader, so the day Calcite gives some library a function
-    /// called <c>CLR_FT_SCORE</c>, that operator would answer and these declarations would stop being reached —
-    /// silently, and only for hosts that set <c>fun</c>. The failure would be a wrong statement rather than an
-    /// error. This package owns that test once rather than having each adapter remember to write it.</para>
+    /// <para>A schema function takes a fixed number of operands, so each variadic operator is declared once
+    /// per arity up to <see cref="VariadicOperandLimit"/>. A call with more operands resolves only through the
+    /// operator table.</para>
     /// </remarks>
     public static class FullTextSchema
     {
 
         /// <summary>
-        /// How many operands a function with no declared upper arity is offered through a schema.
+        /// The largest number of operands, the searched operand included, for which a variadic operator is
+        /// declared on a schema.
         /// </summary>
         /// <remarks>
-        /// Calcite builds a function's operand count range out of its parameter list, so a schema function
-        /// accepts as many operands as it declares parameters and no more. The operators themselves are
-        /// unbounded — <c>CLR_FT_CONTAINS_ALL</c> takes as many keywords as a caller has — and this is the arity
-        /// at which that stops being true through a connection. A query needing more still resolves against
-        /// <c>FullTextOperatorTable.Instance()</c>, whose checker is genuinely variadic, which is what
-        /// chaining it is still for.
+        /// Calcite derives a schema function's operand count from its parameter list, so each variadic
+        /// operator (<c>CLR_FT_CONTAINS_ALL</c>, <c>CLR_FT_CONTAINS_ANY</c>, <c>CLR_FT_SCORE</c>,
+        /// <c>CLR_FT_RRF</c>) is declared once for every arity from two up to this limit. The operators in
+        /// <see cref="FullTextOperatorTable"/> have no upper limit.
         /// </remarks>
         public const int VariadicOperandLimit = 16;
 
         /// <summary>
-        /// Registers every <c>CLR_FT_*</c> operator on the given schema.
+        /// Adds every declaration in <see cref="Functions"/> to the given schema.
         /// </summary>
         /// <param name="schema">The schema to register on.</param>
         /// <returns>The schema, for chaining.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="schema"/> is <c>null</c>.</exception>
         public static SchemaPlus AddTo(SchemaPlus schema)
         {
             ArgumentNullException.ThrowIfNull(schema);
@@ -80,11 +72,12 @@ namespace Apache.Calcite.FullText.Schema
         }
 
         /// <summary>
-        /// Gets the functions a schema declares, keyed by name.
+        /// Gets the schema function declarations, keyed by name, with one <see cref="FullTextSchemaFunction"/>
+        /// per operator and arity.
         /// </summary>
         /// <remarks>
-        /// For an adapter that implements <c>Schema.getFunctions</c> itself and wants these to arrive with its
-        /// tables. <see cref="AddTo"/> is the same thing for a caller holding a <c>SchemaPlus</c>.
+        /// For an adapter that implements <c>Schema.getFunctions</c> itself and returns these alongside its own
+        /// functions. The same immutable multimap is returned on every call.
         /// </remarks>
         /// <returns>The declarations.</returns>
         public static Multimap Functions()
@@ -95,24 +88,15 @@ namespace Apache.Calcite.FullText.Schema
         static readonly Multimap instance = Build();
 
         /// <summary>
-        /// Declares each operator once per arity it accepts.
+        /// Declares each operator of <see cref="FullTextOperatorTable"/> once per arity it accepts.
         /// </summary>
         /// <remarks>
-        /// <para><b>One declaration per arity rather than one with optional parameters</b>, and that is a
-        /// measurement rather than a preference. <c>SqlCallBinding.operands</c> pads a call out to the whole
-        /// parameter list with <c>DEFAULT</c> where three things hold at once — room under the count range's
-        /// maximum, the position is optional, and the checker's parameters are fixed — so a single variadic
-        /// declaration produced <c>CLR_FT_CONTAINS_ALL(BODY, 'steel', DEFAULT(), …)</c> out to the limit, and no
-        /// store has a rendering for <c>DEFAULT</c>. Declared one arity at a time, every parameter is
-        /// required, the second condition is false, and nothing is padded.</para>
+        /// <para>One declaration per arity with every parameter required, rather than one declaration with
+        /// optional parameters, because <c>SqlCallBinding.operands</c> pads a call to a function with optional
+        /// parameters out to the full parameter list with <c>DEFAULT</c>, which no store can render. Overload
+        /// resolution keeps the one declaration whose operand count matches the call.</para>
         ///
-        /// <para>A name therefore carries several declarations, which is what a multimap is for and what
-        /// Calcite's overload resolution expects: it keeps the candidates whose operand count range accepts
-        /// the call, and exactly one of these does.</para>
-        ///
-        /// <para>Derived from the operator table rather than listed beside it. The two would otherwise be one
-        /// list written twice, and an operator added to one and forgotten in the other would resolve through a
-        /// planner a host built and not through a connection — which is the gap these close.</para>
+        /// <para>The list is read from the operator table so that the two routes offer the same operators.</para>
         /// </remarks>
         static Multimap Build()
         {

@@ -10,19 +10,20 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads the rows of a prepared <see cref="IClrPrepare.Signature"/>.
+    /// One result set of an executed statement: its columns, its affected-row count and its current row.
     /// </summary>
     /// <remarks>
-    /// What a reader holds, and what both execute paths return. Everything about a <em>row</em> is here —
-    /// the columns, the cursor factory, the current row, the affected count. Reading is the subclass's,
-    /// and <see cref="CalciteCursorResult"/> is the only one: it steps the plan's cursor.
-    ///
-    /// <para><b>Both read methods are always answered</b>, and that is deliberate rather than a compromise.
-    /// <c>DbDataReader</c> is a contract: a consumer that knows nothing but <c>DbDataReader</c> -- a
-    /// micro-ORM, <c>DataTable.Load</c>, anything generic -- calls <c>Read</c>, and a provider whose reader
-    /// throws there is not a provider. A plan has no mode, and its cursor carries both advances, so
-    /// <c>Read</c> blocks only where a leaf can only be awaited and <c>ReadAsync</c> completes
-    /// synchronously wherever nothing is awaited.</para>
+    /// <para>
+    /// This is what a <see cref="CalciteDataReader"/> holds per result set and what every execute path in
+    /// <see cref="CalciteSession"/> returns. Advancing is the subclass's; <see cref="CalciteCursorResult"/>
+    /// is the only one.
+    /// </para>
+    /// <para>
+    /// Both <see cref="Read"/> and <see cref="ReadAsync"/> are always supported, whichever way the statement
+    /// was executed, because a generic <c>DbDataReader</c> consumer such as <c>DataTable.Load</c> calls
+    /// <c>Read</c>. <see cref="Read"/> blocks only where a table can only produce rows asynchronously, and
+    /// <see cref="ReadAsync"/> completes synchronously where nothing is awaited.
+    /// </para>
     /// </remarks>
     internal abstract class CalciteResult : IDisposable, IAsyncDisposable
     {
@@ -37,9 +38,9 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="signature"></param>
+        /// <param name="signature">The prepared statement, which gives the columns and the row shape.</param>
         /// <param name="registry">The mappings the session reads values through.</param>
-        /// <param name="recordsAffected"></param>
+        /// <param name="recordsAffected">The affected-row count <see cref="RecordsAffected"/> reports.</param>
         protected CalciteResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, long recordsAffected)
         {
             ArgumentNullException.ThrowIfNull(signature);
@@ -51,30 +52,32 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the collection of columns returned by the Calcite query result.
+        /// Gets the result's columns.
         /// </summary>
         public CalciteResultColumns Columns => _columns;
 
         /// <summary>
-        /// Gets the number of records affected by the operation, if available.
+        /// Gets the affected-row count the execute path recorded. The reader paths record 0; the non-query
+        /// path records -1 for a query, 0 for DDL and the count for DML.
         /// </summary>
         public long RecordsAffected => _recordsAffected;
 
         /// <summary>
         /// Gets the current row.
         /// </summary>
+        /// <exception cref="InvalidOperationException">No row has been read, or the last read found none.</exception>
         public CalciteResultRow Current => _current ?? throw new InvalidOperationException();
 
         /// <summary>
-        /// Reads the next row.
+        /// Advances to the next row synchronously.
         /// </summary>
         /// <returns>Whether there was a row.</returns>
         public abstract bool Read();
 
         /// <summary>
-        /// Reads the next row.
+        /// Advances to the next row, awaiting where the plan has something to await.
         /// </summary>
-        /// <param name="cancellationToken"></param>
+        /// <param name="cancellationToken">The token for this advance.</param>
         /// <returns>Whether there was a row.</returns>
         public abstract Task<bool> ReadAsync(CancellationToken cancellationToken);
 
@@ -82,7 +85,7 @@ namespace Apache.Calcite.Data.Internal
         /// Records the row just read, or that there was none.
         /// </summary>
         /// <param name="row">The row the plan produced, or <see langword="null"/> where it is exhausted.</param>
-        /// <param name="moved"></param>
+        /// <param name="moved">Whether the advance produced a row.</param>
         /// <returns>Whether there was a row.</returns>
         protected bool Accept(object? row, bool moved)
         {
@@ -91,7 +94,7 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Throws where this instance has been disposed.
+        /// Throws <see cref="ObjectDisposedException"/> where this instance has been disposed.
         /// </summary>
         protected void ThrowIfDisposed()
         {
@@ -109,7 +112,9 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         protected abstract ValueTask ReleaseAsync();
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Releases the plan's cursor. Exceptions thrown while releasing are swallowed.
+        /// </summary>
         public void Dispose()
         {
             if (_disposed)
@@ -127,7 +132,10 @@ namespace Apache.Calcite.Data.Internal
             }
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Releases the plan's cursor, awaiting where it has something to await. Exceptions thrown while
+        /// releasing are swallowed.
+        /// </summary>
         public async ValueTask DisposeAsync()
         {
             if (_disposed)

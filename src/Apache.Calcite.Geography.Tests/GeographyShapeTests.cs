@@ -14,14 +14,11 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Two shapes defined by a distance, which is where degrees and metres part company.
+    /// Tests <c>CLR_ST_GEOG_OFFSETCURVE</c> and <c>CLR_ST_GEOG_MAKEELLIPSE</c>, whose distances are in metres.
     /// </summary>
     /// <remarks>
-    /// An offset curve is meant to run at a constant distance from a line and an ellipse is meant to be the
-    /// width and height it says. Neither is true of the planar versions anywhere but the equator: a degree
-    /// north is not a degree east, so a planar offset is a different distance depending on which way the line
-    /// happens to run, and a planar ellipse of equal width and height is a circle on the map and never on the
-    /// ground.
+    /// Away from the equator a degree north is not a degree east, so Calcite's planar offset depends on the
+    /// line's direction and its ellipse of equal width and height is not round on the ground.
     /// </remarks>
     public class GeographyShapeTests
     {
@@ -39,13 +36,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The offset runs at the distance asked for, whichever way the line goes.
+        /// An east–west line and a north–south line are offset by the same distance in metres.
         /// </summary>
-        /// <remarks>
-        /// The test the planar version fails. An east–west line and a north–south line offset by the same
-        /// number of degrees end up different distances away; offset by the same number of metres they do
-        /// not.
-        /// </remarks>
         [Fact]
         public void ShouldOffsetTheSameDistanceWhicheverWayTheLineRuns()
         {
@@ -58,7 +50,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A positive distance goes left of the way the line is going, a negative one right.
+        /// A positive distance offsets to the left of the line's direction, a negative one to the right.
         /// </summary>
         [Fact]
         public void ShouldOffsetLeftForAPositiveDistance()
@@ -73,7 +65,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The offset keeps the shape of the line: as many vertices, in the same order.
+        /// The offset is a line with as many vertices as the original.
         /// </summary>
         [Fact]
         public void ShouldKeepTheVerticesOfTheLine()
@@ -86,7 +78,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Only a line is offset, as Calcite accepts only a line.
+        /// Offsetting anything but a line returns null.
         /// </summary>
         [Fact]
         public void ShouldDeclineToOffsetAnythingButALine()
@@ -96,7 +88,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An ellipse is the width and height it says, in metres.
+        /// An ellipse has the width and height given, in metres.
         /// </summary>
         [Fact]
         public void ShouldMeasureTheEllipseInMetres()
@@ -115,12 +107,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Equal width and height is a circle on the ground, which a planar one is not.
+        /// An ellipse of equal width and height is round on the ground; Calcite's is not.
         /// </summary>
         /// <remarks>
-        /// At 60 degrees north a degree of longitude is half a degree of latitude on the ground. Calcite's
-        /// ellipse of equal width and height in degrees is therefore twice as wide as it is tall in metres;
-        /// this one is round.
+        /// At 60 degrees north a degree of longitude is about half a degree of latitude on the ground, so
+        /// Calcite's ellipse of equal width and height in degrees is about half as wide as it is tall in
+        /// metres.
         /// </remarks>
         [Fact]
         public void ShouldBeRoundOnTheGroundRatherThanOnTheMap()
@@ -145,7 +137,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Only a point has an ellipse about it, as Calcite decides too.
+        /// An ellipse about anything but a point is null, as in Calcite.
         /// </summary>
         [Fact]
         public void ShouldDeclineToMakeAnEllipseAboutAnythingButAPoint()
@@ -190,14 +182,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A closed line offsets to a closed line.
+        /// A closed line offsets to a closed line with the same number of vertices.
         /// </summary>
         /// <remarks>
-        /// A ring has no ends, so the vertex it begins and finishes on has to be carried one way and not
-        /// two. Read as though the line had ends, the first vertex takes its direction from the edge leaving
-        /// it and the last from the edge arriving, and the same point lands in two places: a ten kilometre
-        /// offset of a square came back open with fourteen kilometres between its ends, which is the
-        /// diagonal across the corner.
+        /// If the shared first and last vertex were treated as two ends, the first would take its direction
+        /// from the edge leaving it and the last from the edge arriving, and the offset would not close.
         /// </remarks>
         [Fact]
         public void ShouldOffsetAClosedLineToAClosedLine()
@@ -210,17 +199,16 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// And it carries the shared vertex the way it carries any other corner.
+        /// A ring's shared first vertex is offset as an interior vertex.
         /// </summary>
         /// <remarks>
-        /// Closing the ring is not enough on its own — the shared vertex could be closed by carrying it the
-        /// wrong way twice. So the same corner is offset in both shapes it can appear in: as the interior
-        /// vertex of an open line, and as the point a ring begins and finishes on. It has to land in the
-        /// same place, because a ring's first vertex <em>is</em> an interior one.
+        /// A closed result alone would not show this, since the shared vertex could be moved the same wrong
+        /// way twice. The same corner is offset as the start of a ring and as the interior vertex of an open
+        /// line, and must land in the same place.
         ///
-        /// <para>Its distance from the line is not the distance asked for, and that is the smoothing the
-        /// function documents rather than a fault: a vertex is carried the full distance along the bisector,
-        /// so a right-angled corner ends up the cosine of forty-five degrees of it from either edge.</para>
+        /// <para>A vertex is moved the full distance perpendicular to the direction from its predecessor to
+        /// its successor, so a right-angled corner ends up the distance times cos 45° from either edge; the
+        /// function documents that smoothing.</para>
         /// </remarks>
         [Fact]
         public void ShouldCarryTheSharedVertexAsAnInteriorOne()

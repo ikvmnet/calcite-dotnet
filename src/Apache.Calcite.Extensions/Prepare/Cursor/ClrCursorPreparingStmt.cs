@@ -16,10 +16,10 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
     /// Prepares a statement into the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// Calcite's <c>CalcitePreparingStmt</c> with the convention and the compile swapped. The root is
-    /// implemented once, through both of its bodies, into a <see cref="ClrCursorFactory"/>, which is
-    /// the bindable the signature carries; each of the factory's two opens is compiled the first time a
-    /// caller opens that way.
+    /// The counterpart of Calcite's <c>CalcitePreparingStmt</c>, with this convention in place of
+    /// <c>EnumerableConvention</c> and expression trees in place of Janino. The root is implemented into a
+    /// <see cref="ClrCursorFactory"/>, whose synchronous and asynchronous opens are each compiled the first
+    /// time they are used.
     /// </remarks>
     sealed class ClrCursorPreparingStmt : ClrPrepareImpl.PreparingStmt
     {
@@ -68,14 +68,13 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
                 org.apache.calcite.prepare.Prepare.CatalogReader.THREAD_LOCAL.set(CatalogReader);
                 InternalParameters.put("_conformance", Context.config().conformance());
 
-                // a caller that wants a fractional FETCH or OFFSET rounded its own way puts the policy on the
-                // planner's context, and the limit reads it back out of the data context
+                // a FetchOffsetRoundingPolicy on the planner's context is passed to the limit through the
+                // internal parameters
                 var roundingPolicy = node.getCluster().getPlanner().getContext().unwrap((java.lang.Class)typeof(org.apache.calcite.adapter.enumerable.FetchOffsetRoundingPolicy));
                 if (roundingPolicy != null)
                     InternalParameters.put(ClrCursorRelImplementor.FetchOffsetRoundingPolicy, roundingPolicy);
 
-                // both bodies, now: translation was measured at a few milliseconds of a prepare, and the
-                // factory compiles each open only when it is first asked for it
+                // builds both opens now; the factory compiles each only when it is first used
                 var implementor = new ClrCursorRelImplementor(node.getCluster().getRexBuilder(), InternalParameters);
                 factory = implementor.ImplementRoot(node, Prefer);
             }

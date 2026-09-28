@@ -9,21 +9,20 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// A <see cref="DataContext"/> that injects correlation variables into a nested-loop join execution.
+    /// A <see cref="DataContext"/> that supplies the outer row's values to a pushed-down statement that reads a
+    /// correlation variable, and passes every other lookup to the context it wraps.
     /// </summary>
     /// <remarks>
-    /// During batch nested-loop join execution the planner inserts correlation variables into the inner
-    /// side of the join. This context intercepts variable lookups whose index is at or above
-    /// <see cref="Offset"/> and resolves them from the parameter array supplied at construction time,
-    /// delegating all other lookups to the wrapped <see cref="DataContext"/>.
+    /// The correlation variable's fields are written into the statement as dynamic parameters numbered from
+    /// <see cref="Offset"/>, far above any index a query's own parameters use. <see cref="get"/> answers
+    /// <c>?</c> followed by such an index from the array given to the constructor.
     /// </remarks>
     public class AdoCorrelationDataContext : DataContext
     {
 
         /// <summary>
-        /// Index threshold above which a variable lookup is treated as a correlation variable.
-        /// Variable indices in the range <c>[<see cref="Offset"/>, int.MaxValue]</c> are resolved
-        /// from the parameter array passed to the constructor rather than the delegate context.
+        /// The index of the first correlation parameter. The value of the parameter at <c>Offset + i</c> is
+        /// element <c>i</c> of the array given to the constructor.
         /// </summary>
         public const int Offset = int.MaxValue - 10000;
 
@@ -33,8 +32,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="delegate">The underlying <see cref="DataContext"/> to which non-correlation variable lookups are forwarded.</param>
-        /// <param name="parameters">The correlation variable values, indexed relative to <see cref="Offset"/>.</param>
+        /// <param name="delegate">The context every other lookup goes to.</param>
+        /// <param name="parameters">The outer row's values, in the order their indexes were assigned from
+        /// <see cref="Offset"/>.</param>
         public AdoCorrelationDataContext(DataContext @delegate, object[] parameters)
         {
             _delegate = @delegate;
@@ -59,12 +59,12 @@ namespace Apache.Calcite.Adapter.AdoNet
             return _delegate.getQueryProvider();
         }
 
-        /// <inheritdoc />
-        /// <remarks>
-        /// A correlation variable is named <c>?</c> followed by an index at or above <see cref="Offset"/>,
-        /// which is how the implementor numbers them so they cannot collide with an ordinary query
-        /// parameter. Anything else belongs to the context this one wraps.
-        /// </remarks>
+        /// <summary>
+        /// Returns the outer row's value for <c>?</c> followed by an index in the range this context holds, and
+        /// otherwise the wrapped context's value for <paramref name="name"/>.
+        /// </summary>
+        /// <param name="name">The variable's name.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public object? get(string name)
         {
             if (name.StartsWith('?') && int.TryParse(name.AsSpan(1), out var index))

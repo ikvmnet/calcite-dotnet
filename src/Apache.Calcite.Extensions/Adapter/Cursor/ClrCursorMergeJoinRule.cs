@@ -15,17 +15,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Rule that converts a <see cref="LogicalJoin"/> to a <see cref="ClrCursorMergeJoin"/>.
     /// </summary>
     /// <remarks>
-    /// Unlike the hash and nested loop rule, this one asks its inputs for a collation on the join keys rather
-    /// than taking what they have: a merge join is only a merge join if they arrive sorted, and the planner
-    /// decides whether satisfying that is worth it.
+    /// Mirrors <c>EnumerableMergeJoinRule</c>. The rule requests each input sorted ascending, nulls last, on its
+    /// join keys, and leaves it to the planner to decide whether providing that order is worth the cost. It
+    /// declines a join whose condition uses <c>IS NOT DISTINCT FROM</c>, a join type the merge join does not
+    /// support, and a join with no equi-join keys.
     /// </remarks>
     public class ClrCursorMergeJoinRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorMergeJoinRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>A rule converting <see cref="LogicalJoin"/> in <c>Convention.NONE</c> to <see cref="ClrCursorConvention"/>.</returns>
         public static ClrCursorMergeJoinRule Create()
         {
             return (ClrCursorMergeJoinRule)Config.INSTANCE
@@ -35,9 +36,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance from a converter rule configuration.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorMergeJoinRule(Config config) :
             base(config)
         {
@@ -49,18 +50,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var join = (Join)rel;
 
-            // a merge join stops at a null, and IS NOT DISTINCT FROM says two nulls are equal, so a
-            // condition carrying one cannot be a merge join key
+            // a merge join stops at a null, and IS NOT DISTINCT FROM treats two nulls as equal, so a
+            // condition containing one cannot supply merge join keys
             if (RexUtil.findOperatorCall(SqlStdOperatorTable.IS_NOT_DISTINCT_FROM, join.getCondition()) != null)
                 return null;
 
             var info = JoinInfo.createWithStrictEquality(join.getLeft(), join.getRight(), join.getCondition());
 
-            // a merge join answers only some join types
             if (ClrCursorMergeJoin.IsMergeJoinSupported(join.getJoinType()) == false)
                 return null;
 
-            // a cartesian join could be merged too, and Calcite leaves it off for now
+            // a cartesian join could be merged, but EnumerableMergeJoinRule declines it and so does this
             if (info.pairs().isEmpty())
                 return null;
 
@@ -93,7 +93,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (collations.isEmpty() == false)
                 traitSet = traitSet.replace(collations);
 
-            // re-arrange the condition: the equi-join elements first, the non-equi ones after
+            // equi-join conjuncts first and the rest after, as Calcite orders them, so plans print alike
             var rexBuilder = join.getCluster().getRexBuilder();
             var equi = info.getEquiCondition(left, right, rexBuilder);
             var condition = info.isEqui()

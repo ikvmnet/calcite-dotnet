@@ -16,9 +16,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// there is no equality to build a lookup on, to a <see cref="ClrCursorNestedLoopJoin"/>.
     /// </summary>
     /// <remarks>
-    /// One rule for both algorithms, as <c>EnumerableJoinRule</c> is. Two rules were tried, and the second
-    /// one was ours rather than Calcite's: the choice is made from one <c>JoinInfo</c>, so making it twice
-    /// means analysing the condition twice and agreeing about it by luck.
+    /// Mirrors <c>EnumerableJoinRule</c>, which chooses between the two algorithms from one analysis of the
+    /// condition.
     /// </remarks>
     public class ClrCursorJoinRule : ConverterRule
     {
@@ -26,7 +25,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorJoinRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorJoinRule Create()
         {
             return (ClrCursorJoinRule)Config.INSTANCE
@@ -38,7 +37,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorJoinRule(Config config) :
             base(config)
         {
@@ -65,14 +64,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var right = (RelNode)newInputs.get(1);
             var info = join.analyzeCondition();
 
-            // if the join has equi keys (a complete or a partial equi-join), a hash join takes it — it
-            // supports every join type, even where the condition also carries non-equi parts; a complete
-            // non-equi join goes to the nested loop, where hashing would buy nothing.
+            // a join with equi keys, even alongside non-equi conditions, becomes a hash join, which supports
+            // every join type; a join with no equi keys becomes a nested-loop join
             var hasEquiKeys = info.leftKeys.isEmpty() == false && info.rightKeys.isEmpty() == false;
             if (hasEquiKeys)
             {
-                // re-arrange the condition: the equi-join elements first, the non-equi ones after. Not
-                // strictly necessary, and it keeps a plan readable and stable.
+                // as in Calcite, the condition is rearranged with the equi-join parts first, which keeps the
+                // plan readable and stable
                 var equi = info.getEquiCondition(left, right, rexBuilder);
                 var condition = info.isEqui()
                     ? equi

@@ -9,9 +9,8 @@ namespace Apache.Calcite.Data.Common
     /// A mapping whose two conversions are delegates.
     /// </summary>
     /// <remarks>
-    /// What the built-in table is made of, and enough for most of what a caller adds. A mapping that needs
-    /// to hold state — a converter that has resolved something once and keeps it — derives from
-    /// <see cref="ClrTypeMapping"/> instead.
+    /// Most of the built-in mappings are of this kind. A mapping that needs state of its own, such as a
+    /// resolved element mapping, derives from <see cref="ClrTypeMapping"/> instead.
     /// </remarks>
     public sealed class DelegateClrTypeMapping : ClrTypeMapping
     {
@@ -22,11 +21,12 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="context"></param>
-        /// <param name="relType"></param>
-        /// <param name="clrType"></param>
-        /// <param name="toCalcite"></param>
-        /// <param name="fromCalcite"></param>
+        /// <param name="context">The context the mapping is resolved in.</param>
+        /// <param name="relType">The Calcite type the mapping is for.</param>
+        /// <param name="clrType">The CLR type the mapping presents it as.</param>
+        /// <param name="toCalcite">Converts a non-null CLR value to the class Calcite holds the type in.</param>
+        /// <param name="fromCalcite">Converts a non-null value of that class to <paramref name="clrType"/>.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         public DelegateClrTypeMapping(ClrTypeContext context, RelDataType relType, Type clrType, Func<object, object?> toCalcite, Func<object, object?> fromCalcite) :
             base(context, relType, clrType)
         {

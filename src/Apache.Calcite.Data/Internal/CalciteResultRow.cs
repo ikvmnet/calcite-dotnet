@@ -6,9 +6,13 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Provides a wrapper over a single row in a Calcite result set. Prevents a copy of the row layout into a separate column-oriented
-    /// array.
+    /// The current row of a result, read in place in the shape the plan produced it.
     /// </summary>
+    /// <remarks>
+    /// The row's shape is the signature's <c>Meta.CursorFactory</c> style: <c>OBJECT</c> for a one-column
+    /// result, whose row is the value itself; <c>ARRAY</c> for an <c>object[]</c>; <c>LIST</c> for a
+    /// <c>java.util.List</c>.
+    /// </remarks>
     internal readonly struct CalciteResultRow
     {
 
@@ -19,9 +23,9 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="result"></param>
-        /// <param name="cursorFactory"></param>
-        /// <param name="row"></param>
+        /// <param name="result">The result's columns.</param>
+        /// <param name="cursorFactory">The signature's cursor factory, whose style gives the row's shape.</param>
+        /// <param name="row">The row as the plan produced it.</param>
         public CalciteResultRow(CalciteResultColumns result, Meta.CursorFactory cursorFactory, object? row)
         {
             _columns = result;
@@ -30,13 +34,13 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the raw value of the specified column index in the row.
+        /// Gets the value of a column in this row.
         /// </summary>
-        /// <param name="ordinal"></param>
-        /// <returns></returns>
-        /// <exception cref="IndexOutOfRangeException"></exception>
-        /// <exception cref="NullReferenceException"></exception>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="ordinal">The zero-based column ordinal.</param>
+        /// <returns>The cell, carrying the column's type and mapping.</returns>
+        /// <exception cref="IndexOutOfRangeException"><paramref name="ordinal"/> is out of range.</exception>
+        /// <exception cref="NullReferenceException">The row is null in an <c>ARRAY</c> or <c>LIST</c> style.</exception>
+        /// <exception cref="NotSupportedException">The cursor style is not <c>OBJECT</c>, <c>ARRAY</c> or <c>LIST</c>.</exception>
         public CalciteResultValue GetValue(int ordinal)
         {
             var style = _cursorFactory.style;
@@ -69,7 +73,7 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Builds the value with the column's type and mapping, which the result answered once and holds.
+        /// Builds a cell from the column's type and its mapping, which the columns resolved once.
         /// </summary>
         CalciteResultValue Value(int ordinal, object? value)
         {

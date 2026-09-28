@@ -12,8 +12,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="MatchFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// MATCH_RECOGNIZE pattern matching is not supported by the ADO adapter; this factory always throws.
+    /// A <see cref="MatchFactory"/> that throws: the adapter does not push down <c>MATCH_RECOGNIZE</c>.
     /// </summary>
     public class AdoMatchFactory : MatchFactory
     {

@@ -4,8 +4,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Base class for Calcite planner rules that convert a standard relational operator
-    /// to its ADO.NET-convention counterpart.
+    /// Base class of the rules that convert a logical node into its <see cref="AdoConvention"/> counterpart.
+    /// Mirrors <c>JdbcRules.JdbcConverterRule</c>.
     /// </summary>
     public abstract class AdoConverterRule : ConverterRule
     {
@@ -13,7 +13,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration, naming the node class and the two conventions.</param>
         protected AdoConverterRule(Config config) :
             base(config)
         {

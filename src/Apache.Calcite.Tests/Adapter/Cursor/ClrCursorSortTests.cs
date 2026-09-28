@@ -10,35 +10,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Holds the one shape neither convention can run, and the defect underneath it, which is Calcite's.
+    /// Tests of a plan neither convention can run: a sort over a one-column table function, where the defect is
+    /// Calcite's and this convention reproduces it.
     /// </summary>
     /// <remarks>
-    /// <para>Sort, limit, limit-sort, spool and repeat union yield their input's rows unchanged, and build
-    /// their physical type with the overload that optimises — which turns ARRAY into SCALAR for a one-field
-    /// row type. A table function cannot reshape its rows, so it passes <c>optimize = false</c> and keeps an
-    /// honest ARRAY; the sort above it then names SCALAR and hands the ARRAY rows on regardless. Nothing
-    /// reconciles the two, in either convention: <c>EnumerableSort</c> names a format it does not produce.
-    /// </para>
+    /// <para>Sort, limit, limit-sort, spool and repeat union pass their input's rows through unchanged but build
+    /// their physical type with the optimising overload, which turns ARRAY into SCALAR for a one-field row
+    /// type. A table function scan passes <c>optimize = false</c> and keeps ARRAY, so the sort above it names
+    /// SCALAR while handing on ARRAY rows. <c>EnumerableSort</c> does not reconcile the two, and neither does
+    /// <see cref="ClrCursorSort"/>, which follows it.</para>
     ///
-    /// <para><b>Every node here carries Calcite's own text, and neither convention answers the query.</b>
-    /// Calcite reaches a cast and throws; this convention refuses a node further up, because
-    /// <c>ClrCursorRelImplementor.RequireRowType</c> checks the element type a CLR cursor has to name and
-    /// Java's erased <c>Enumerable</c> does not. Same defect, caught earlier and named.</para>
+    /// <para>Calcite fails at run time on a cast. This convention fails while building the plan, because
+    /// <c>ClrCursorRelImplementor</c> checks the element type of each node's cursor against its physical row
+    /// type, which Java's erased <c>Enumerable</c> cannot express. The fix belongs in <c>EnumerableSort</c>:
+    /// either it keeps the input's format when only passing rows through, or it converts the rows to the
+    /// format it names.</para>
     ///
-    /// <para><b>The fix belongs upstream</b>, in <c>EnumerableSort</c> — either it stops optimising a format
-    /// it is only passing through, or it converts the rows into the one it names. Repairing it here was
-    /// tried three ways — in the five pass-through nodes, in the table function scan, and once generally in
-    /// the implementor — and every one of them was this project inventing a behaviour Calcite has not got.
-    /// The measurement said so: across the whole suite the repair fired three times, all in the sort, all
-    /// <c>ARRAY Object[] -&gt; SCALAR</c>.</para>
-    ///
-    /// <para><b>The oracle is <c>Smalls.fibonacciTableWithLimit100</c></b>, a one-column table function
-    /// written in Java, so Janino can name it. Every table function of this project's own is a CLR class,
-    /// which is why this could not be measured before.</para>
-    ///
-    /// <para>The hash join rule is removed so that the merge join is the only way to join, which is what puts
-    /// a sort over the table function. With it in place the planner hashes instead and the shape never
-    /// arises — which is the whole reason Calcite has not noticed.</para>
+    /// <para>The table function is <c>Smalls.fibonacciTableWithLimit100</c>, written in Java so that
+    /// <c>EnumerableConvention</c> can run it too. The hash join rule is removed so that a merge join, and
+    /// therefore a sort over each table function, is the only plan; with hash joins available the shape does
+    /// not arise.</para>
     /// </remarks>
     public class ClrCursorSortTests
     {
@@ -47,8 +38,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             "SELECT \"A\".\"N\" FROM TABLE(\"FIB\"()) AS \"A\", TABLE(\"FIB\"()) AS \"B\" WHERE \"A\".\"N\" = \"B\".\"N\" ORDER BY 1";
 
         /// <summary>
-        /// Both conventions choose the same plan, so what follows is a difference in the nodes and not in the
-        /// planning.
+        /// Both conventions choose a merge join over sorted table function scans, so the failures below come from
+        /// the nodes and not from planning.
         /// </summary>
         [Fact]
         public void ShouldPlanAMergeJoinOverSortedTableFunctionsInBothConventions()
@@ -68,8 +59,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <c>long</c> the sort said it was.
         /// </summary>
         /// <remarks>
-        /// <b>When this test starts failing, Calcite has fixed <c>EnumerableSort</c></b>, and whatever it did
-        /// is what this convention's sort should then say.
+        /// If this test fails, Calcite has changed <c>EnumerableSort</c>, and <see cref="ClrCursorSort"/> should
+        /// follow the change.
         /// </remarks>
         [Fact]
         public void ShouldShowThatCalciteCannotRunTheQuery()
@@ -81,7 +72,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// This convention cannot either, and refuses before it builds the plan rather than while running it.
+        /// This convention cannot run it either, and refuses while building the plan, naming the sort, the
+        /// element type it handed up and its row type.
         /// </summary>
         [Fact]
         public void ShouldRefuseTheQueryNamingTheNodeAndBothTypes()

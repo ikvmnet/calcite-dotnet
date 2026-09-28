@@ -33,7 +33,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             _sqlite = new SqliteFixture();
             _types = new JavaTypeFactoryImpl();
 
-            // a real parent: AdoSchema derives its own expression from one, and cannot be given null
+            // AdoSchema needs a real parent to locate itself from generated code
             _root = org.apache.calcite.tools.Frameworks.createRootSchema(true);
             _schema = AdoSchema.Create(_root, "ADO", _sqlite.DataSource, null, null);
         }
@@ -47,8 +47,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns the names of the columns of a table, in order.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The table's name as the schema exposes it.</param>
+        /// <returns>The column names in the order of the table's row type.</returns>
         List<string> Columns(string tableName)
         {
             var fields = Table(tableName).getRowType(_types).getFieldList();
@@ -61,10 +61,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns a table by name.
+        /// Returns a table by name, failing the test if there is none.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The table's name, matched exactly.</param>
+        /// <returns>The Calcite table the schema holds under that name.</returns>
         org.apache.calcite.schema.Table Table(string tableName)
         {
             return (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
@@ -74,7 +74,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns every table name the schema exposes.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The names of all the schema's tables, used to explain a failed lookup.</returns>
         IEnumerable<string> TableNames()
         {
             var names = _schema.tables().getNames(org.apache.calcite.schema.lookup.LikePattern.any());
@@ -87,11 +87,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns the Calcite type of a named column.
+        /// Returns the Calcite type of a column, matched case-insensitively.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The table's name as the schema exposes it.</param>
+        /// <param name="columnName">The column's name, in any case.</param>
+        /// <returns>The column's type in the table's row type.</returns>
         RelDataType TypeOf(string tableName, string columnName)
         {
             var fields = Table(tableName).getRowType(_types).getFieldList();
@@ -181,8 +181,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Nullability is carried onto the Calcite type, which is what lets the planner reason about null
-        /// rather than discovering one at runtime.
+        /// A column's declared nullability is carried onto its Calcite type.
         /// </summary>
         [Fact]
         public void NullabilityIsCarriedOntoTheType()
@@ -205,8 +204,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Metadata selection
 
         /// <summary>
-        /// The factory picks a metadata provider from the connection type, which is what lets one adapter
-        /// serve providers that describe themselves differently.
+        /// The factory picks the metadata provider from the provider behind the data source.
         /// </summary>
         [Fact]
         public void ASqliteConnectionSelectsTheSqliteMetadata()
@@ -227,8 +225,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Change
 
         /// <summary>
-        /// A table created after the schema was built is still reachable: a schema that cached its first
-        /// answer forever would make a long-lived connection wrong.
+        /// A schema created after a table is added to the database finds that table.
         /// </summary>
         [Fact]
         public void ATableAddedLaterCanBeFound()

@@ -18,7 +18,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorConditionalCorrelateRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorConditionalCorrelateRule Create()
         {
             return (ClrCursorConditionalCorrelateRule)Config.INSTANCE
@@ -30,7 +30,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorConditionalCorrelateRule(Config config) :
             base(config)
         {

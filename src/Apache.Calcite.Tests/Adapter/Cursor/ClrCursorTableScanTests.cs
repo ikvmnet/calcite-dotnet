@@ -27,17 +27,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs queries over the table SPI these conventions add, and requires the same rows Calcite's own SPI
-    /// gives.
+    /// Runs queries over each kind of table in this project's table SPI, and requires the rows Calcite's own
+    /// SPI gives for the same data.
     /// </summary>
     /// <remarks>
-    /// Four interfaces were added and nothing implemented any of them, so they compiled and had never run.
-    /// These are the smallest queries that make each one produce a row.
-    ///
-    /// <para>The oracle is the same table's rows read through Calcite's <see cref="ScannableTable"/>, which
-    /// <c>ClrCursorConventionDifferentialTests</c> already checks against Calcite itself. What is under test is the
-    /// route, not the rows: a scannable table is called, a queryable one hands back an expression the scan
-    /// composes, and neither goes through linq4j.</para>
+    /// The expected rows are those of the same data read through Calcite's <see cref="ScannableTable"/>, which
+    /// <c>ClrCursorConventionDifferentialTests</c> checks against Calcite itself. What these check is the route
+    /// to the rows: a scannable table is called, a queryable table returns an expression the scan composes into
+    /// the plan, and a cursor table's cursor becomes the plan's leaf.
     /// </remarks>
     public class ClrCursorTableScanTests
     {
@@ -48,7 +45,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of this convention's own synchronous SPI, whose rows never become a linq4j sequence.
+        /// A table of this project's scannable SPI, returning its rows as an <see cref="IEnumerable{T}"/>.
         /// </summary>
         sealed class ClrRowsTable : AbstractTable, IClrScannableTable
         {
@@ -62,7 +59,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of this convention's own synchronous SPI that hands back an expression.
+        /// A table of this project's queryable SPI whose expression reads its rows synchronously.
         /// </summary>
         sealed class ClrQueryableRowsTable : AbstractTable, IClrQueryableTable
         {
@@ -75,9 +72,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             /// <inheritdoc />
             /// <remarks>
-            /// The whole point of the interface: the reading is composed into the plan rather than reached
-            /// through an interface call. Here it is a constant, which is the simplest expression that
-            /// yields rows; a real table would inline a provider read.
+            /// The expression is composed into the plan rather than reached through an interface call. A constant
+            /// is the simplest expression that yields rows; a real table would return an expression that reads
+            /// its store.
             /// </remarks>
             public Expression GetExpression(SchemaPlus? schema, string tableName) =>
                 Expression.Constant(AsyncTestRows.Sorted, typeof(IEnumerable<object?[]>));
@@ -85,7 +82,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of the asynchronous SPI that hands back an expression.
+        /// A table of this project's queryable SPI whose rows are available only as an
+        /// <see cref="IAsyncEnumerable{T}"/>.
         /// </summary>
         sealed class AsyncQueryableRowsTable : AbstractTable, IClrQueryableTable
         {
@@ -102,10 +100,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             /// <inheritdoc />
             /// <remarks>
-            /// Written from the awaiting half, because there is no pulled reading of these rows to offer.
-            /// The other order, which the interface would have supplied for free, is the one this table
-            /// cannot use. The drain is the test's own, because the convention's is internal and an adapter
-            /// outside this repository would have to write its own too.
+            /// Written in terms of the awaiting expression, because the rows have no synchronous source; the
+            /// interface's default goes the other way. The drain is the test's own, as an adapter outside this
+            /// repository would have to write, because the convention's is internal.
             /// </remarks>
             public Expression GetExpression(SchemaPlus? schema, string tableName) =>
                 Expression.Call(null, DrainMethod.MakeGenericMethod(ElementType), GetAsyncExpression(schema, tableName));
@@ -117,8 +114,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 typeof(AsyncQueryableRowsTable).GetMethod(nameof(Rows), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
 
             /// <summary>
-            /// The rows, suspending on each, so that a plan reading this really is asynchronous.
+            /// The rows, yielding the thread before each, so that a plan reading them suspends.
             /// </summary>
+            /// <param name="cancellationToken">The token the enumeration is cancelled by, checked before each row.</param>
+            /// <returns>The rows of <c>AsyncTestRows.Sorted</c>, in order.</returns>
             public static async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
             {
                 foreach (var row in AsyncTestRows.Sorted)
@@ -133,12 +132,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table that breaks the SPI's contract, holding its values boxed the CLR way.
+        /// A table that breaks the SPI's contract by holding CLR-boxed values, as ordinary C# produces, where the
+        /// type factory expects Java-boxed ones.
         /// </summary>
-        /// <remarks>
-        /// What an implementer writing ordinary C# would produce, and what
-        /// <see cref="ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys"/> exists to pin.
-        /// </remarks>
         sealed class ClrBoxedRowsTable : AbstractTable, IClrScannableTable
         {
 
@@ -155,20 +151,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table whose values are not the type factory's fails, and fails at once.
+        /// A query over a table whose values are not of the types the type factory declares fails on the first
+        /// row.
         /// </summary>
         /// <remarks>
-        /// The contract on <see cref="IClrScannableTable"/> is Calcite's own contract on
-        /// <see cref="ScannableTable"/>: the values in a row are what the type factory says they are, which
-        /// is to say Java's. Nothing checks it, and nothing needs to -- what reads a field is
-        /// <c>SqlFunctions.toInt</c> and a cast to <c>java.lang.Integer</c>, both of them Calcite's own and
-        /// neither of them able to see a <see cref="int"/> boxed the CLR way. So the simplest query there is
-        /// over such a table stops on its first row.
-        ///
-        /// <para>Recorded as a test because the failure is the correct behaviour and should stay correct. It
-        /// would be easy to read "Cannot convert 1 to int" as a defect in the scan and to answer it by
-        /// converting every row on the way in — an adapter on a boundary that does not have one, paid for by
-        /// every table that was already right.</para>
+        /// <see cref="IClrScannableTable"/> has Calcite's contract for <see cref="ScannableTable"/>: a row's
+        /// values are the Java types the type factory declares. The scan does not convert them. What reads a
+        /// field is <c>SqlFunctions.toInt</c> or a cast to <c>java.lang.Integer</c>, neither of which accepts an
+        /// <see cref="int"/> boxed by the CLR. This failure is the intended behaviour; converting every row in
+        /// the scan would cost every table that already meets the contract.
         /// </remarks>
         [Fact]
         public void ShouldFailOverATableWhoseValuesAreNotTheTypeFactorys()
@@ -176,10 +167,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var scan = () => Run("SELECT \"K\" FROM \"T\"", new ClrBoxedRowsTable(), false);
             var distinct = () => Run("SELECT DISTINCT \"K\" FROM \"T\"", new ClrBoxedRowsTable(), false);
 
-            // SqlFunctions.toInt, which knows java.lang.Number and nothing else
+            // SqlFunctions.toInt, which accepts only java.lang.Number
             scan.Should().Throw<org.apache.calcite.runtime.CalciteException>().WithMessage("*Cannot convert 1 to int*");
 
-            // and the group key, which casts the field to the boxed type the row type declares
+            // the group key, which casts the field to the boxed type the row type declares
             distinct.Should().Throw<InvalidCastException>().WithMessage("*System.Int32*java.lang.Integer*");
         }
 
@@ -250,7 +241,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
 
         /// <summary>
-        /// A table of this project's cursor SPI, recording the token of each advance it was given.
+        /// A table of this project's cursor SPI that counts its opens of each kind and records the token of
+        /// each awaiting advance.
         /// </summary>
         sealed class CursorRowsTable : AbstractTable, IClrCursorTable
         {
@@ -329,7 +321,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         const string Sql = "SELECT K, V FROM T ORDER BY K, V";
 
         /// <summary>
-        /// The rows Calcite's own SPI gives, which every other case is measured against.
+        /// A table of Calcite's own SPI gives the expected rows, against which every other case is compared.
         /// </summary>
         [Fact]
         public void ShouldReadACalciteScannableTable()
@@ -349,7 +341,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A cursor table is opened by the open of the plan's kind and its cursor is the plan's leaf.
+        /// A cursor table is opened by the open of the same kind as the plan's, synchronous or awaiting.
         /// </summary>
         [Fact]
         public void ShouldReadAClrCursorTable()
@@ -369,9 +361,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Each advance's token reaches the cursor table, which is what the SPI exists for: a sequence
-        /// takes its token once, at its enumerator, and a cursor takes one per advance.
+        /// The token given to each awaiting advance of the plan reaches the cursor table's advance. A sequence
+        /// takes one token, when it is enumerated; a cursor takes one per advance.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldHandEachAdvancesTokenToAClrCursorTable()
         {
@@ -379,7 +372,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var rootSchema = Frameworks.createRootSchema(true);
             rootSchema.add("T", table);
 
-            // no sort: a sort drains its input at the open, and then no advance of the plan reaches the table
+            // no sort: a sort drains its input at the open, so no advance of the plan would reach the table
             var physical = Plan("SELECT K, V FROM T WHERE K > 0", rootSchema);
             var parameters = new java.util.HashMap();
             var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters).ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
@@ -423,16 +416,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of Calcite's is read by this convention's own scan, without a converter.
-        /// </summary>
-        /// <remarks>
-        /// The point of reaching Calcite's tables the way Calcite reaches them: a query over a
-        /// <see cref="ScannableTable"/> is one node rather than a Calcite subtree under
+        /// A table of Calcite's SPI is read by this convention's own scan, not by a Calcite scan under
         /// <c>EnumerableToClrCursorConverter</c>.
-        ///
-        /// <para>The converter is still needed for what this convention has no node for — a
-        /// MATCH_RECOGNIZE, and a recursive query's transient scan.</para>
-        /// </remarks>
+        /// </summary>
         [Fact]
         public void ShouldReadACalciteTableWithoutAConverter()
         {
@@ -445,12 +431,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Each of the four deduces the element type its Calcite counterpart would.
+        /// <c>ClrCursorTableScan.DeduceElementType</c> gives each of this project's table kinds the element type
+        /// Calcite's <c>EnumerableTableScan.deduceElementType</c> gives its counterpart, and gives a table of
+        /// Calcite's SPI Calcite's own answer.
         /// </summary>
         /// <remarks>
-        /// The thing that decides the row format, and the reason both scans have a <c>DeduceElementType</c>
-        /// of the same name and shape as <c>EnumerableTableScan.deduceElementType</c>: a scannable table
-        /// yields arrays, a queryable one names its own type, and everything else is Calcite's answer.
+        /// The element type decides the row format: a scannable table yields arrays, a queryable table names its
+        /// own element type, and anything else takes Calcite's answer.
         /// </remarks>
         [Fact]
         public void ShouldDeduceTheElementTypeCalciteWould()
@@ -462,7 +449,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             ClrCursorTableScan.DeduceElementType(new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)).Should().Be(arrays);
             ClrCursorTableScan.DeduceElementType(new AsyncQueryableRowsTable()).Should().Be(arrays);
 
-            // and a table of Calcite's own SPI is still Calcite's answer, unchanged
+            // a table of Calcite's own SPI gets Calcite's answer
             ClrCursorTableScan.DeduceElementType(new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))
                 .Should().Be(org.apache.calcite.adapter.enumerable.EnumerableTableScan.deduceElementType(new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)));
         }

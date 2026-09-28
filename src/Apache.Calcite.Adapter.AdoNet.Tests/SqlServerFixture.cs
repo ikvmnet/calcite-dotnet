@@ -11,20 +11,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// A SQL Server LocalDB database, populated, and dropped with the test.
+    /// A populated SQL Server LocalDB database, dropped on dispose.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// LocalDB is the only SQL Server a test run can assume it can create for itself, and it exists on
-    /// Windows alone. <see cref="IsAvailable"/> answers whether one is reachable; a suite running anywhere
-    /// else skips rather than fails.
+    /// LocalDB exists only on Windows. <see cref="IsAvailable"/> reports whether an instance is reachable,
+    /// and tests that need one skip where it is not.
     /// </para>
     /// <para>
-    /// The same database is reachable through three drivers, and the fixture offers all three:
-    /// <see cref="DataSource"/> is SqlClient, <see cref="OdbcDataSource"/> is whichever SQL Server ODBC
-    /// driver is installed, and <see cref="OleDbDataSource"/> whichever OLE DB provider is registered. One
-    /// server described three ways is the only thing that shows a metadata provider reading its own
-    /// driver's collections wrongly, because the right answer is the same for all three.
+    /// The database is reachable through three drivers: <see cref="DataSource"/> is SqlClient,
+    /// <see cref="OdbcDataSource"/> the first SQL Server ODBC driver that connects, and
+    /// <see cref="OleDbDataSource"/> the first OLE DB provider that connects. Since the right answer is the
+    /// same for all three, comparing them exposes a metadata provider that misreads its driver.
     /// </para>
     /// </remarks>
     sealed class SqlServerFixture : IDisposable
@@ -33,10 +31,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         const string Instance = @"(localdb)\MSSQLLocalDB";
 
         /// <summary>
-        /// Returns a connection string to the named database on the local instance.
+        /// Returns a SqlClient connection string to the named database on the local instance.
         /// </summary>
-        /// <param name="database"></param>
-        /// <returns></returns>
+        /// <param name="database">The database to make the initial catalog.</param>
+        /// <returns>A connection string using integrated security and trusting the server certificate.</returns>
         static string ConnectionStringFor(string database)
         {
             return new SqlConnectionStringBuilder()
@@ -52,18 +50,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         static SqlServerFixture? _shared;
 
         /// <summary>
-        /// Gets the one database the suite shares, made on first use.
+        /// Gets the database the suite shares, created on first use.
         /// </summary>
         /// <remarks>
-        /// Shared rather than made per test because <c>CREATE DATABASE</c> against LocalDB costs a second or
-        /// two and there are some two hundred tests behind it — per test that is ten minutes of a suite that
-        /// otherwise runs in forty seconds. Nothing that reads it writes to it. <see cref="DisposeShared"/>
-        /// is called from the assembly cleanup.
+        /// Shared because creating a LocalDB database is slow. Tests only read it. <see cref="DisposeShared"/>
+        /// is called from the assembly fixture.
         /// </remarks>
         public static SqlServerFixture Shared => _shared ??= new SqlServerFixture();
 
         /// <summary>
-        /// Drops the shared database, if one was ever made.
+        /// Drops the shared database, if one was created.
         /// </summary>
         public static void DisposeShared()
         {
@@ -78,15 +74,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// there is none.
         /// </summary>
         /// <remarks>
-        /// Asked once: a failing connection waits out the timeout, and doing that per test would cost more
-        /// than the suite.
+        /// Probed once, because a failing connection waits out the timeout.
         /// </remarks>
         public static bool IsAvailable => _available ??= Probe();
 
         /// <summary>
-        /// Opens a connection to <c>master</c> and reports whether it worked.
+        /// Opens a connection to <c>master</c> and reports whether it worked; always false off Windows.
         /// </summary>
-        /// <returns></returns>
+        /// <returns><see langword="true"/> if a connection to <c>master</c> opened; otherwise
+        /// <see langword="false"/>.</returns>
         static bool Probe()
         {
             if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows) == false)
@@ -155,11 +151,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns the first of the candidates a connection can be opened with.
+        /// Returns the first of the candidates a connection can be opened with, or <see langword="null"/>.
         /// </summary>
-        /// <param name="candidates"></param>
-        /// <param name="connect"></param>
-        /// <returns></returns>
+        /// <param name="candidates">The driver or provider names to try, in order of preference.</param>
+        /// <param name="connect">Builds an unopened connection for a candidate.</param>
+        /// <returns>The first candidate whose connection opened, or <see langword="null"/> if none did.</returns>
         static string? FirstThatConnects(string[] candidates, Func<string, DbConnection> connect)
         {
             foreach (var candidate in candidates)
@@ -182,22 +178,22 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns an ODBC connection string to the named database on the local instance.
         /// </summary>
-        /// <param name="driver"></param>
-        /// <param name="database"></param>
-        /// <returns></returns>
+        /// <param name="driver">The installed ODBC driver's name.</param>
+        /// <param name="database">The database to connect to.</param>
+        /// <returns>A connection string using Windows authentication and trusting the server
+        /// certificate.</returns>
         static string OdbcConnectionStringFor(string driver, string database)
         {
-            // TrustServerCertificate matters to driver 18, which defaults to encrypting and then refuses
-            // LocalDB's self-signed certificate
+            // driver 18 encrypts by default and otherwise rejects LocalDB's self-signed certificate
             return $"Driver={{{driver}}};Server={Instance};Database={database};Trusted_Connection=yes;TrustServerCertificate=yes;";
         }
 
         /// <summary>
         /// Returns an OLE DB connection string to the named database on the local instance.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <param name="database"></param>
-        /// <returns></returns>
+        /// <param name="provider">The registered OLE DB provider's name.</param>
+        /// <param name="database">The database to connect to.</param>
+        /// <returns>A connection string using Windows authentication.</returns>
         static string OleDbConnectionStringFor(string provider, string database)
         {
             return $"Provider={provider};Data Source={Instance};Initial Catalog={database};Integrated Security=SSPI;";
@@ -206,7 +202,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         readonly string _database;
 
         /// <summary>
-        /// Creates a database holding the tables the tests query.
+        /// Creates a uniquely named database holding the tables the tests query.
         /// </summary>
         public SqlServerFixture()
         {
@@ -215,8 +211,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             DataSource = new Source(ConnectionStringFor(_database));
 
-            // the table from the report this fixture exists for: a scan of it read the information schema,
-            // and the INT column's tinyint precision is what threw
+            // a scan reads the column types from the information schema, which reports a precision for the
+            // INT column
             Execute("""
                 CREATE TABLE dbo.SUPPLIERS (
                     PRODUCT   VARCHAR(64)  NOT NULL PRIMARY KEY,
@@ -250,9 +246,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             Execute("CREATE TABLE dbo.DEPTS (DEPTNO INT NOT NULL PRIMARY KEY, DNAME NVARCHAR(64) NOT NULL)");
             Execute("INSERT INTO dbo.DEPTS (DEPTNO, DNAME) VALUES (10, 'Sales'), (20, 'Engineering'), (30, 'Empty')");
 
-            // two short strings and a null one, which is the table concatenation was measured over: the
-            // operator has to reach the server as something it will parse, and it has to keep the meaning
-            // it had, which is that a null operand makes the whole expression null
+            // concatenation operands, one row with a null: the operator must reach the server in a form it
+            // parses, and a null operand must still make the whole expression null
             Execute("""
                 CREATE TABLE dbo.CAT (
                     ID INT         NOT NULL PRIMARY KEY,
@@ -261,8 +256,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
                 """);
             Execute("INSERT INTO dbo.CAT (ID, A, B) VALUES (1, 'aa', 'bb'), (2, 'cc', NULL), (3, 'dd', 'ee')");
 
-            // one column of every type the server's information schema names differently, so that a gap in
-            // the type mapping shows up as a failing test rather than as a table nobody can read
+            // one column of each type the information schema names differently, so a gap in the type mapping
+            // fails a test; row 1 holds values and row 2 only nulls
             Execute("""
                 CREATE TABLE dbo.TYPES (
                     ID          INT              NOT NULL PRIMARY KEY,
@@ -352,7 +347,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Runs a statement against the fixture's database.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The statement to run.</param>
         public void Execute(string sql)
         {
             using var connection = DataSource.CreateConnection();
@@ -364,9 +359,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a statement against <c>master</c>, which is where a database is created and dropped from.
+        /// Runs a statement against <c>master</c>, where a database is created and dropped from.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The statement to run, typically <c>CREATE DATABASE</c> or <c>DROP
+        /// DATABASE</c>.</param>
         static void ExecuteOnMaster(string sql)
         {
             using var connection = new SqlConnection(ConnectionStringFor("master"));
@@ -387,19 +383,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
             try
             {
-                // a connection of our own still open would make the drop wait for it
+                // SINGLE_USER closes any connection still open, which would otherwise block the drop
                 ExecuteOnMaster($"ALTER DATABASE [{_database}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{_database}]");
             }
             catch (SqlException)
             {
-                // a database left behind on a developer's LocalDB is not worth failing a test over
+                // a database left behind on LocalDB is not a test failure
             }
         }
 
         /// <summary>
-        /// The <see cref="DbDataSource"/> Microsoft.Data.SqlClient does not ship.
+        /// A <see cref="DbDataSource"/> over SqlClient connections.
         /// </summary>
-        /// <param name="connectionString"></param>
+        /// <param name="connectionString">The connection string each connection is created with.</param>
         sealed class Source(string connectionString) : DbDataSource
         {
 
@@ -412,11 +408,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The <see cref="DbDataSource"/> neither System.Data.Odbc nor System.Data.OleDb ships.
+        /// A <see cref="DbDataSource"/> over ODBC or OLE DB connections, which System.Data.Odbc and
+        /// System.Data.OleDb do not provide.
         /// </summary>
-        /// <typeparam name="TConnection">The connection type, which is what the metadata factory dispatches on.</typeparam>
-        /// <param name="connectionString"></param>
-        /// <param name="create"></param>
+        /// <typeparam name="TConnection">The connection type, which the metadata factory dispatches
+        /// on.</typeparam>
+        /// <param name="connectionString">The connection string each connection is created with.</param>
+        /// <param name="create">Creates a connection from the connection string.</param>
         sealed class Source<TConnection>(string connectionString, Func<string, TConnection> create) : DbDataSource
             where TConnection : DbConnection
         {

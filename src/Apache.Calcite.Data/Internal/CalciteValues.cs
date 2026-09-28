@@ -11,36 +11,25 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Converts a value between the representation Calcite's runtime holds and the representation an
-    /// ADO.NET caller reads and writes.
+    /// Converts values between the Java representations Calcite's runtime holds and the .NET values an
+    /// ADO.NET caller reads and writes, recursing into collections, maps and rows.
     /// </summary>
     /// <remarks>
-    /// Calcite's runtime is Java's, and it is reached through IKVM, so a value arriving from a plan is a
-    /// Java object: <c>java.lang.Integer</c> for an <c>INTEGER</c>, <c>java.math.BigDecimal</c> for a
-    /// <c>DECIMAL</c>, <c>java.util.List</c> for an <c>ARRAY</c> or a <c>MULTISET</c>,
-    /// <c>java.util.Map</c> for a <c>MAP</c>, <c>Object[]</c> for a <c>ROW</c>. None of those is a type a
-    /// .NET consumer of a <c>DbDataReader</c> expects to be handed, so none of them leaves this class.
-    ///
-    /// <para><b>The SQL type decides where it can.</b> Calcite's stored form for the temporal types is a
-    /// count — days since the epoch for <c>DATE</c>, milliseconds for <c>TIME</c> and <c>TIMESTAMP</c> —
-    /// so a <c>java.lang.Integer</c> means a date only because the column says <c>DATE</c>. The
-    /// <see cref="RelDataType"/> is threaded through the whole conversion for that reason, and descends
-    /// into a collection's component, a map's key and value, and a row's fields: without it
-    /// <c>ARRAY[DATE '2020-01-01']</c> would materialize as a number.</para>
-    ///
-    /// <para><b>Where it cannot, the runtime type decides.</b> That is <see cref="SqlTypeName.ANY"/>,
-    /// whose runtime representation is <c>java.lang.Object</c> and whose value is therefore whatever the
-    /// table, the user-defined function or the schema put there. There is nothing in the type to read, so
-    /// the value's own class is what the conversion goes on. This is also what happens inside an
-    /// <c>ANY</c> — a map held in an <c>ANY</c> column has no key or value type either.</para>
-    ///
-    /// <para><b>An element type is measured, not declared.</b> A <c>java.util.List</c> becomes an array
-    /// whose element type is the one every converted element shares — <c>int[]</c> for a list of
-    /// <c>java.lang.Integer</c>, <c>Nullable{Int32}[]</c> where one of them is null, <c>object[]</c> where
-    /// they disagree — and a <c>java.util.Map</c> becomes a <see cref="Dictionary{TKey, TValue}"/> the
-    /// same way. A caller that wants different element types names them:
-    /// <see cref="TryConvertTo"/> is what <c>GetFieldValue{T}</c>
-    /// reaches for.</para>
+    /// <para>
+    /// Where a <see cref="RelDataType"/> is known it decides the conversion, and it is carried into a
+    /// collection's component type, a map's key and value types and a row's field types. Calcite stores
+    /// temporal values as counts (days since the epoch for <c>DATE</c>, milliseconds for <c>TIME</c> and
+    /// <c>TIMESTAMP</c>), so a <c>java.lang.Integer</c> is a date only because its type says <c>DATE</c>.
+    /// Where no type is known — an <see cref="SqlTypeName.ANY"/> value, or anything inside one — the value's
+    /// own Java class decides.
+    /// </para>
+    /// <para>
+    /// A <c>java.util.List</c> becomes an array whose element type is the type every converted element
+    /// shares: <c>int[]</c> for a list of <c>java.lang.Integer</c>, <c>int?[]</c> where one is null,
+    /// <c>object[]</c> where they differ. A <c>java.util.Map</c> becomes a
+    /// <see cref="Dictionary{TKey, TValue}"/> by the same rule. <see cref="TryConvertTo"/> produces the
+    /// element types a caller names instead, and is what <c>GetFieldValue&lt;T&gt;</c> uses.
+    /// </para>
     /// </remarks>
     internal static class CalciteValues
     {
@@ -53,17 +42,17 @@ namespace Apache.Calcite.Data.Internal
         const long NanosecondsPerTick = 100;
 
         /// <summary>
-        /// The instant a zoned <c>TIME</c> is anchored at. Calcite carries a count of milliseconds since
-        /// midnight and no offset per row, so the date half is the one IKVM.Jdbc's <c>OffsetTime</c> path
-        /// uses.
+        /// The date a zoned <c>TIME</c> is placed on, 0001-01-01 at offset zero. Calcite holds such a value as
+        /// milliseconds since midnight with no date and no per-row offset.
         /// </summary>
         static readonly DateTimeOffset TimeEpoch = new(1, 1, 1, 0, 0, 0, TimeSpan.Zero);
 
         /// <summary>
-        /// Returns the .NET value an ADO.NET caller reads for a value Calcite's runtime produced.
+        /// Returns the .NET value for a value Calcite's runtime produced.
         /// </summary>
         /// <param name="value">The value as the plan produced it, or <see langword="null"/>.</param>
-        /// <param name="type">The type the row type gives the value, or <see langword="null"/> where there is none.</param>
+        /// <param name="type">The type the row type gives the value, or <see langword="null"/> where there is
+        /// none.</param>
         /// <returns>The .NET value, or <see langword="null"/> where <paramref name="value"/> is null.</returns>
         public static object? ToClr(object? value, RelDataType? type)
         {
@@ -105,16 +94,14 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns the .NET value for a value whose SQL type is named but is not a collection.
         /// </summary>
-        /// <param name="name">The SQL type's name, as <see cref="SqlTypeName.name"/> gives it.</param>
+        /// <param name="name">The SQL type's name, as <c>SqlTypeName.name()</c> gives it.</param>
         /// <param name="value">The value as the plan produced it, or <see langword="null"/>.</param>
         /// <returns>The .NET value.</returns>
         /// <remarks>
-        /// The name and not the type, because a variant carries its payload's type as one and has no
-        /// <see cref="RelDataType"/> to offer — and it is the same table either way, since the names
-        /// <c>RuntimeSqlTypeName</c> uses for the temporal and binary types are <see cref="SqlTypeName"/>'s
-        /// own. Those are the types this exists for: Calcite stores a <c>DATE</c> as a count of days and a
-        /// <c>TIMESTAMP</c> as a count of milliseconds, so an integer is one or the other only because the
-        /// type says so. Everything else is decided by the value's class.
+        /// Takes the type's name rather than a <see cref="RelDataType"/> because a variant names its payload's
+        /// type and has no <see cref="RelDataType"/>; the names <c>RuntimeSqlTypeName</c> uses for the temporal
+        /// and binary types are <see cref="SqlTypeName"/>'s. The name decides the temporal and binary types,
+        /// whose stored forms are counts and byte strings; the value's class decides everything else.
         /// </remarks>
         internal static object? FromScalar(string name, object? value)
         {
@@ -196,14 +183,9 @@ namespace Apache.Calcite.Data.Internal
         /// <param name="value">The non-null value as the plan produced it.</param>
         /// <returns>The .NET value, or <paramref name="value"/> itself where nothing corresponds to it.</returns>
         /// <remarks>
-        /// This is the <see cref="SqlTypeName.ANY"/> case and the inside of one. The last arm hands the
-        /// value back untouched, which is the only answer for a class the framework has no counterpart
-        /// for — a user-defined function returning its own type reaches it. Everything Calcite's own
-        /// runtime produces is named above it.
-        ///
-        /// <para>A value that is already a .NET one falls through the same arm, which is what a table of
-        /// this runtime supplies: its rows hold a CLR <c>int</c> where the plan's row type says
-        /// <c>java.lang.Integer</c>.</para>
+        /// Used for <see cref="SqlTypeName.ANY"/> and everything inside one. A value of a class with no .NET
+        /// counterpart, such as a user-defined function's own type, and a value that is already a .NET one,
+        /// are returned unchanged.
         /// </remarks>
         static object? FromRuntime(object value)
         {
@@ -242,7 +224,7 @@ namespace Apache.Calcite.Data.Internal
                 java.time.OffsetDateTime odt => FromInstant(odt.toInstant(), odt.getOffset()),
                 java.time.ZonedDateTime zdt => FromInstant(zdt.toInstant(), zdt.getOffset()),
                 java.time.Duration du => TimeSpan.FromTicks(du.getSeconds() * TimeSpan.TicksPerSecond + du.getNano() / NanosecondsPerTick),
-                // a variant carries its payload's type with it, which is the whole of what it is for
+                // a variant carries its payload's type with it
                 org.apache.calcite.runtime.variant.VariantValue variant => CalciteVariants.ToClr(variant),
                 java.util.Map m => FromMap(m, null, null),
                 java.util.Collection col => FromCollection(col, null),
@@ -255,6 +237,8 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns a <c>java.time.LocalDateTime</c> as the <see cref="DateTime"/> holding the same fields.
         /// </summary>
+        /// <param name="value">The Java local date and time.</param>
+        /// <returns>A <see cref="DateTime"/> of unspecified kind, truncated to the 100-nanosecond tick.</returns>
         static DateTime FromLocalDateTime(java.time.LocalDateTime value)
         {
             return new DateTime(value.getYear(), value.getMonthValue(), value.getDayOfMonth(), value.getHour(), value.getMinute(), value.getSecond())
@@ -264,6 +248,9 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns an instant and an offset as the <see cref="DateTimeOffset"/> naming the same moment.
         /// </summary>
+        /// <param name="instant">The instant; anything below a millisecond is dropped.</param>
+        /// <param name="offset">The offset the result is expressed at.</param>
+        /// <returns>The same moment, expressed at <paramref name="offset"/>.</returns>
         static DateTimeOffset FromInstant(java.time.Instant instant, java.time.ZoneOffset offset)
         {
             var span = TimeSpan.FromSeconds(offset.getTotalSeconds());
@@ -274,9 +261,13 @@ namespace Apache.Calcite.Data.Internal
         /// Returns a row as an array of its converted fields.
         /// </summary>
         /// <remarks>
-        /// A row stays <c>object[]</c> however alike its fields happen to be: a <c>ROW(1, 2)</c> is two
-        /// fields rather than an array of two, and unifying its element type would say otherwise.
+        /// A row is always <c>object[]</c>, even where its fields share a type: <c>ROW(1, 2)</c> is two fields,
+        /// not an array of two integers.
         /// </remarks>
+        /// <param name="fields">The row's fields as Calcite holds them.</param>
+        /// <param name="type">The row type, which supplies each field's type; <see langword="null"/> where
+        /// unknown.</param>
+        /// <returns>A new array holding each field converted, in field order.</returns>
         static object?[] FromRow(object[] fields, RelDataType? type)
         {
             var list = type is not null && type.isStruct() ? type.getFieldList() : null;
@@ -293,6 +284,10 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns a Java collection as an array of its converted elements.
         /// </summary>
+        /// <param name="source">The Java collection.</param>
+        /// <param name="component">The element type, or <see langword="null"/> where unknown.</param>
+        /// <returns>An array of the converted elements in iteration order, typed as <see cref="Pack"/>
+        /// decides.</returns>
         static Array FromCollection(java.util.Collection source, RelDataType? component)
         {
             var items = new object?[source.size()];
@@ -306,6 +301,10 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns a Java map as a dictionary of its converted entries.
         /// </summary>
+        /// <param name="source">The Java map.</param>
+        /// <param name="keyType">The key type, or <see langword="null"/> where unknown.</param>
+        /// <param name="valueType">The value type, or <see langword="null"/> where unknown.</param>
+        /// <returns>What <see cref="PackMap"/> makes of the converted entries.</returns>
         static object FromMap(java.util.Map source, RelDataType? keyType, RelDataType? valueType)
         {
             var count = source.size();
@@ -328,11 +327,14 @@ namespace Apache.Calcite.Data.Internal
         /// Returns converted entries as a dictionary of the types they share.
         /// </summary>
         /// <remarks>
-        /// A map holding a null key becomes an array of pairs instead: no dictionary the framework ships
-        /// accepts one — <see cref="Dictionary{TKey, TValue}"/> throws for a null key whatever its key
-        /// type is — and dropping the entry would lose a row's contents. Calcite reaches the case, as
-        /// <c>MAP[CAST(NULL AS VARCHAR), 1]</c> validates and runs.
+        /// A map with a null key becomes a <see cref="KeyValuePair{TKey, TValue}"/> array instead, because
+        /// <see cref="Dictionary{TKey, TValue}"/> rejects a null key and Calcite allows one
+        /// (<c>MAP[CAST(NULL AS VARCHAR), 1]</c>).
         /// </remarks>
+        /// <param name="keys">The converted keys.</param>
+        /// <param name="values">The converted values, parallel to <paramref name="keys"/>.</param>
+        /// <returns>A <see cref="Dictionary{TKey, TValue}"/>, or a <c>KeyValuePair&lt;object?,
+        /// object?&gt;[]</c> where a key is null.</returns>
         internal static object PackMap(object?[] keys, object?[] values)
         {
             var count = keys.Length;
@@ -356,6 +358,9 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns the converted elements as an array of the type they share.
         /// </summary>
+        /// <param name="items">The converted elements.</param>
+        /// <returns><paramref name="items"/> itself where the elements share no type, otherwise a new array
+        /// of the shared type.</returns>
         internal static Array Pack(object?[] items)
         {
             var element = Unify(items);
@@ -373,10 +378,11 @@ namespace Apache.Calcite.Data.Internal
         /// Returns the type every element has, or <see cref="object"/> where they do not agree on one.
         /// </summary>
         /// <remarks>
-        /// A null among elements of a value type makes the type nullable rather than
-        /// <see cref="object"/>, so an <c>ARRAY[1, NULL]</c> is <c>Nullable{Int32}[]</c> and still names
-        /// what it holds. An empty sequence has no type to read and is <see cref="object"/>.
+        /// A null among elements of a value type makes the type nullable, so <c>ARRAY[1, NULL]</c> gives
+        /// <c>int?</c>. An empty or all-null sequence gives <see cref="object"/>.
         /// </remarks>
+        /// <param name="items">The converted elements; any may be <see langword="null"/>.</param>
+        /// <returns>The shared runtime type, its nullable form, or <see cref="object"/>.</returns>
         static Type Unify(object?[] items)
         {
             Type? common = null;
@@ -404,30 +410,28 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the value shaped as <paramref name="target"/> where that names element types the
-        /// measured conversion could not have known about.
+        /// Converts a collection or map to the element types <paramref name="target"/> names, where the
+        /// default conversion chose different ones.
         /// </summary>
         /// <param name="value">The value as the plan produced it.</param>
-        /// <param name="type">The type the row type gives the value, or <see langword="null"/>.</param>
-        /// <param name="target">The type the caller asked for.</param>
-        /// <param name="result">The shaped value.</param>
-        /// <returns><see langword="true"/> where the value was shaped.</returns>
+        /// <param name="type">The value's Calcite type, or <see langword="null"/>.</param>
+        /// <param name="target">The type asked for.</param>
+        /// <param name="result">The converted value.</param>
+        /// <returns><see langword="true"/> where the value was converted.</returns>
+        /// <exception cref="InvalidCastException">An element is not of the named element type, or is null and
+        /// the element type cannot hold null.</exception>
         /// <remarks>
-        /// <c>GetFieldValue{T}</c> is the caller, and only after its first attempt has failed — anything the
-        /// converted value already is comes back from that. So this is for a shape the conversion did not
-        /// produce, and there are two: an array of a different element type, and a dictionary of different
-        /// key and value types.
-        ///
-        /// <para><b>A collection answers an array and nothing else.</b> Building a
-        /// <see cref="List{T}"/> or a <see cref="HashSet{T}"/> here was offered and is not: a collection
-        /// materializes as an array, an array is already an <c>IList&lt;T&gt;</c>, an
-        /// <c>IReadOnlyList&lt;T&gt;</c>, an <c>ICollection&lt;T&gt;</c> and an
-        /// <c>IEnumerable&lt;T&gt;</c>, so every one of those is answered by the attempt before this one
-        /// without a second shape being built. What a concrete list would add is a copy the caller did not
-        /// ask for and a second answer to what a collection is.</para>
-        ///
-        /// <para>The element types named here are used instead of the measured ones — and only where the
-        /// values already have them, which is <see cref="Coerce"/>'s rule.</para>
+        /// <para>
+        /// Handles two targets: a one-dimensional array over a <c>java.util.Collection</c>, and
+        /// <see cref="Dictionary{TKey, TValue}"/>, <see cref="IDictionary{TKey, TValue}"/> or
+        /// <see cref="IReadOnlyDictionary{TKey, TValue}"/> over a <c>java.util.Map</c>. A list or set type is
+        /// not built: the default conversion's array already satisfies <c>IList&lt;T&gt;</c>,
+        /// <c>IReadOnlyList&lt;T&gt;</c>, <c>ICollection&lt;T&gt;</c> and <c>IEnumerable&lt;T&gt;</c>.
+        /// </para>
+        /// <para>
+        /// Naming an element type selects among the types the elements already have; it does not convert
+        /// them (see <see cref="Coerce"/>). A map with a null key is not converted.
+        /// </para>
         /// </remarks>
         public static bool TryConvertTo(object? value, RelDataType? type, Type target, out object? result)
         {
@@ -484,6 +488,10 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Reads a Java collection as its elements converted to <paramref name="element"/>.
         /// </summary>
+        /// <param name="source">The Java collection.</param>
+        /// <param name="component">The element type, or <see langword="null"/> where unknown.</param>
+        /// <param name="element">The CLR element type the caller asked for.</param>
+        /// <returns>The elements in iteration order, each converted and checked by <see cref="Coerce"/>.</returns>
         static List<object?> Read(java.util.Collection source, RelDataType? component, Type element)
         {
             var items = new List<object?>(source.size());
@@ -494,16 +502,17 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns a converted element where <paramref name="target"/> holds it, and refuses it where it
-        /// does not.
+        /// Returns a converted element unchanged where it is an instance of <paramref name="target"/> (or its
+        /// underlying type, for a nullable target), and throws otherwise.
         /// </summary>
+        /// <exception cref="InvalidCastException">The element is not an instance of the target type.</exception>
         /// <remarks>
-        /// Naming an element type says which of the types the values already have is wanted, not that
-        /// they should be converted into it. An <c>IList&lt;long&gt;</c> over an <c>INTEGER ARRAY</c> is
-        /// the refusal <c>GetInt64</c> makes over an <c>INTEGER</c> column, and for the same reason;
-        /// <c>IList&lt;object&gt;</c> and <c>IDictionary&lt;string, object&gt;</c> are what a caller
-        /// reaches for where the element types are not all one thing.
+        /// Asking for <c>long[]</c> over an <c>INTEGER ARRAY</c> is refused, as <c>GetInt64</c> refuses an
+        /// <c>INTEGER</c> column; <c>object</c> is the element type for mixed contents.
         /// </remarks>
+        /// <param name="value">A converted element, or <see langword="null"/>.</param>
+        /// <param name="target">The element type asked for.</param>
+        /// <returns><paramref name="value"/> unchanged.</returns>
         static object? Coerce(object? value, Type target)
         {
             if (value is null)
@@ -517,17 +526,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the value Calcite's runtime holds for a value an ADO.NET caller supplied.
+        /// Returns the Java representation Calcite's runtime holds for a .NET value, chosen by the value's
+        /// own type and applied recursively to dictionaries and sequences.
         /// </summary>
-        /// <param name="value">The value as the caller supplied it, or <see langword="null"/>.</param>
-        /// <returns>The Java value, or <see langword="null"/> where the value is null or <see cref="DBNull"/>.</returns>
+        /// <param name="value">The .NET value, or <see langword="null"/>.</param>
+        /// <returns>The Java value, or <see langword="null"/> where the value is null or <see cref="DBNull"/>.
+        /// A value of a type not listed is returned unchanged.</returns>
         /// <remarks>
-        /// The direction that matters more, because a CLR value left loose in a plan is a second
-        /// representation of something Calcite already has one for, and whatever compares the two fails.
-        /// A parameter carrying a <see cref="System.Data.DbType"/> is converted from that instead — see
-        /// <see cref="ParameterBinder"/> — and this is what is left: a parameter of
-        /// <see cref="System.Data.DbType.Object"/>, which is what a value of a type
-        /// <see cref="CalciteTypeMap.ToDbType"/> has no name for infers, and every element inside one.
+        /// A <see cref="DateTime"/> of unspecified kind is taken as UTC. A dictionary becomes a
+        /// <c>java.util.Map</c> and any other sequence except a string a <c>java.util.List</c>.
         /// </remarks>
         public static object? ToJava(object? value)
         {
@@ -595,6 +602,8 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns the milliseconds since the epoch of a UTC <see cref="DateTime"/>.
         /// </summary>
+        /// <param name="value">A UTC date and time.</param>
+        /// <returns>The whole milliseconds since the epoch, truncated toward zero.</returns>
         static long Milliseconds(DateTime value)
         {
             return (long)(value - UnixEpoch).TotalMilliseconds;
@@ -604,10 +613,10 @@ namespace Apache.Calcite.Data.Internal
         /// Returns a dictionary as the <c>java.util.Map</c> Calcite's runtime holds a <c>MAP</c> as.
         /// </summary>
         /// <remarks>
-        /// A <c>LinkedHashMap</c> because Calcite's own <c>SqlFunctions.map</c> builds one: the entries of
-        /// a map come out in the order they went in, and a <c>HashMap</c> would reorder a value on its way
-        /// through a parameter.
+        /// A <c>LinkedHashMap</c>, as Calcite's <c>SqlFunctions.map</c> builds, so entries keep their order.
         /// </remarks>
+        /// <param name="source">The dictionary; each key and value is converted with <see cref="ToJava"/>.</param>
+        /// <returns>A new <c>java.util.LinkedHashMap</c> in the dictionary's enumeration order.</returns>
         static java.util.Map ToJavaMap(IDictionary source)
         {
             var map = new java.util.LinkedHashMap();
@@ -621,6 +630,8 @@ namespace Apache.Calcite.Data.Internal
         /// Returns a sequence as the <c>java.util.List</c> Calcite's runtime holds an <c>ARRAY</c> or a
         /// <c>MULTISET</c> as.
         /// </summary>
+        /// <param name="source">The sequence; each item is converted with <see cref="ToJava"/>.</param>
+        /// <returns>A new <c>java.util.ArrayList</c> in enumeration order.</returns>
         static java.util.List ToJavaList(IEnumerable source)
         {
             var list = new java.util.ArrayList();

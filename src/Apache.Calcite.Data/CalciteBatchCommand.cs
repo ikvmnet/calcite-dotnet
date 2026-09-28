@@ -9,10 +9,9 @@ namespace Apache.Calcite.Data
     /// Represents a single SQL statement within a <see cref="CalciteBatch"/>. This class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// Set <see cref="DbBatchCommand.CommandText"/> to the SQL text to run and add any parameters to
-    /// <see cref="Parameters"/>. Only <see cref="CommandType.Text"/> is supported. Parameter
-    /// placeholders are positional <c>?</c> markers, bound in the order parameters were added to
-    /// <see cref="Parameters"/>.
+    /// Set <see cref="CommandText"/> to the SQL text to run and add any parameters to <see cref="Parameters"/>.
+    /// Only <see cref="CommandType.Text"/> is supported. Parameter placeholders are positional <c>?</c>
+    /// markers, bound in the order the parameters appear in <see cref="Parameters"/>.
     /// </remarks>
     public sealed class CalciteBatchCommand : DbBatchCommand
     {
@@ -40,13 +39,19 @@ namespace Apache.Calcite.Data
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Setting <see langword="null"/> sets the empty string.
+        /// </remarks>
         public override string CommandText
         {
             get => _commandText;
             set => _commandText = value ?? string.Empty;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets or sets how <see cref="CommandText"/> is interpreted. Only <see cref="CommandType.Text"/> is supported.
+        /// </summary>
+        /// <exception cref="NotSupportedException">The value is not <see cref="CommandType.Text"/>.</exception>
         public override CommandType CommandType
         {
             get => _commandType;
@@ -58,18 +63,24 @@ namespace Apache.Calcite.Data
             }
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Gets the number of rows this command affected when its batch last executed.
+        /// </summary>
+        /// <remarks>
+        /// After <see cref="DbBatch.ExecuteNonQuery"/>: the number of rows affected for a data modification, 0 for
+        /// DDL, -1 for a query. After <see cref="DbBatch.ExecuteReader(CommandBehavior)"/>: 0. Before the batch executes: 0.
+        /// </remarks>
         public override int RecordsAffected => _recordsAffected;
 
         /// <inheritdoc />
         protected override DbParameterCollection DbParameterCollection => _parameters;
 
         /// <summary>
-        /// Gets the strongly typed parameter collection for this command.
+        /// Gets the parameters of the command.
         /// </summary>
         /// <remarks>
-        /// Add <see cref="CalciteParameter"/> instances in the order they correspond to <c>?</c>
-        /// placeholders in <see cref="DbBatchCommand.CommandText"/>.
+        /// Add <see cref="CalciteParameter"/> instances in the order of the <c>?</c> placeholders in
+        /// <see cref="CommandText"/>.
         /// </remarks>
         public new CalciteParameterCollection Parameters => _parameters;
 

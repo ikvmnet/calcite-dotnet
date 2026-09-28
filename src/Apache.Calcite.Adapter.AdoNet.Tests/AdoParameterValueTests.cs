@@ -15,17 +15,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A value leaves the plan in Calcite's representation, which is a boxed Java type, and no ADO.NET
-    /// provider knows what one of those is; <c>AdoEnumerable.ToProviderValue</c> unwraps each to the .NET
-    /// value it stands for. <see cref="GenericProviderCorrelationTests"/> proves the comparisons those
-    /// values take part in answer correctly against a real server, which is the stronger claim. This reads
-    /// the bound value itself, which is where a representation that a comparison happens not to notice
-    /// shows up — and it needs no server.
+    /// A value leaves the plan as a boxed Java type, which <c>AdoEnumerable.ToProviderValue</c> unwraps to a
+    /// .NET value. <see cref="GenericProviderCorrelationTests"/> checks query results against a real server;
+    /// these read the bound value itself, which catches a wrong representation a comparison would not
+    /// notice, and need no server.
     /// </para>
     /// <para>
-    /// The enricher is reached the way the generated code reaches it: a correlation variable is a parameter
-    /// numbered from <see cref="AdoCorrelationDataContext.Offset"/>, so the context resolves it from its
-    /// own array and never consults the context it wraps.
+    /// A correlation variable is numbered from <see cref="AdoCorrelationDataContext.Offset"/>, so the context
+    /// resolves it from its own array and never consults the context it wraps.
     /// </para>
     /// </remarks>
     public class AdoParameterValueTests
@@ -43,9 +40,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns the value the given plan value is bound as, under the given SQL type.
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="typeName"></param>
-        /// <returns></returns>
+        /// <param name="value">The plan value to bind, as the correlation data context would hold it.</param>
+        /// <param name="typeName">The Calcite type the enricher is told the parameter has.</param>
+        /// <returns>The value placed on the command's first parameter.</returns>
         static object? Bound(object? value, SqlTypeName typeName)
         {
             var source = new Source();
@@ -64,9 +61,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The case the sign is lost in: Java's <c>byte</c> is signed and IKVM's is not, so
-        /// <c>byteValue()</c> answers the two's complement bits as an unsigned CLR <see cref="byte"/> and
-        /// -56 would reach the provider as 200.
+        /// Java's <c>byte</c> is signed and IKVM's is not, so <c>byteValue()</c> returns the two's complement
+        /// bits as an unsigned CLR <see cref="byte"/>, and -56 would reach the provider as 200.
         /// </summary>
         [Fact]
         public void ANegativeTinyIntKeepsItsSign()
@@ -76,9 +72,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         /// <summary>
         /// A <c>TINYINT</c> is bound as a <see cref="short"/> rather than as the <see cref="sbyte"/> its
-        /// range would suggest: SqlClient refuses that type outright — "The parameter data type of SByte is
-        /// invalid" — which is the same wall the unsigned types run into, and a <see cref="short"/> holds
-        /// the whole of a signed byte's range exactly.
+        /// range would suggest, because SqlClient rejects an <see cref="sbyte"/> parameter ("The parameter data
+        /// type of SByte is invalid").
         /// </summary>
         [Fact]
         public void ATinyIntIsBoundAsAShort()
@@ -87,8 +82,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The unsigned tinyint every real backend actually reports, which travels as a joou value and is
-        /// the arm a signed one must not be confused with: 200 is 200 and not -56.
+        /// An unsigned tinyint travels as a joou value and binds as its unsigned value: 200, not -56.
         /// </summary>
         [Fact]
         public void AUTinyIntStaysUnsigned()
@@ -115,8 +109,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A null is bound rather than skipped, which is what a driver matching parameters by position
-        /// requires.
+        /// A null is bound as <see cref="DBNull"/> rather than skipped, so parameters matched by position stay
+        /// aligned.
         /// </summary>
         [Fact]
         public void ANullIsBoundAsDbNull()

@@ -7,23 +7,24 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// A <c>ROW</c>, mapped by mapping each field and wrapping the result in an <c>object[]</c>.
+    /// The mapping for a <c>ROW</c> (a struct type), which presents it as an <c>object[]</c> with one element
+    /// per field, each converted with its field type's mapping.
     /// </summary>
     /// <remarks>
-    /// A row stays <c>object[]</c> however alike its fields happen to be: <c>ROW(1, 2)</c> is two fields and
-    /// not an array of two, and unifying its element type would say otherwise. Each field is resolved
-    /// through the registry, so a field that is itself a row, a collection or a caller's own type needs
-    /// nothing here.
+    /// A row is an <c>object[]</c> even where its fields share a type: <c>ROW(1, 2)</c> is two fields, not an
+    /// array of two integers. Field mappings are resolved through <see cref="ClrTypeContext.Registry"/>, so a
+    /// field that is itself a row, a collection or a type added by a caller's resolver is handled the same way.
     /// </remarks>
     public sealed class RowClrTypeMapping : ClrTypeMapping
     {
 
         /// <summary>
-        /// Resolves one mapping per field through the registry, which is the recursion.
+        /// Resolves each field type's default mapping, in field order.
         /// </summary>
-        /// <param name="context"></param>
+        /// <exception cref="ClrTypeMappingException">A field type has no mapping.</exception>
+        /// <param name="context">The context whose registry resolves the field mappings.</param>
         /// <param name="relType">The <c>ROW</c> type.</param>
-        /// <returns>The mappings, in the order the row carries its fields.</returns>
+        /// <returns>One mapping per field, in field order.</returns>
         static ClrTypeMapping[] Fields(ClrTypeContext context, RelDataType relType)
         {
             var list = relType.getFieldList();
@@ -39,8 +40,9 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="context"></param>
+        /// <param name="context">The context the mapping is resolved in.</param>
         /// <param name="relType">The <c>ROW</c> type.</param>
+        /// <exception cref="ClrTypeMappingException">A field type has no mapping.</exception>
         public RowClrTypeMapping(ClrTypeContext context, RelDataType relType) :
             base(context, relType, typeof(object[]))
         {
@@ -48,18 +50,15 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Gets the mapping each field is carried across by, in the order the row carries them.
+        /// Gets the mapping each field is converted with, in field order.
         /// </summary>
         public IReadOnlyList<ClrTypeMapping> FieldMappings => _fields;
 
         /// <inheritdoc />
         /// <remarks>
-        /// <b>The one place <c>getJavaClass</c> describes a different form from the one that arrives here.</b>
-        /// Asked about a <c>ROW</c> it answers <c>createSyntheticType</c>'s generated class — a
-        /// <c>Record2_0_1</c> with a field per column — because that is what a row is <em>inside</em> a plan,
-        /// where a physical type has been chosen and the fields are read by name. What crosses this boundary
-        /// is an <c>Object[]</c>: measured, for a <c>ROW</c> column and for a row inside a collection alike.
-        /// Taking the factory's answer here would refuse every row that is actually produced.
+        /// Always <c>object[]</c>. For a <c>ROW</c>, <c>getJavaClass</c> answers the synthetic record class
+        /// Calcite uses inside a plan, but a row value at this boundary, whether a column or inside a
+        /// collection, is an <c>Object[]</c>.
         /// </remarks>
         public override Type RepresentationType => typeof(object[]);
 
@@ -90,9 +89,11 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the mapping for a position, or throws where the value has more of them than the type
+        /// Returns the mapping for a field position, throwing where the value has more fields than the type
         /// declares.
         /// </summary>
+        /// <param name="i">The zero-based field position.</param>
+        /// <returns>The mapping for that field.</returns>
         ClrTypeMapping Mapping(int i)
         {
             return i < _fields.Length ? _fields[i] : throw new ClrTypeMappingException($"A {RelType} declares {_fields.Length} fields and a value carried more.");

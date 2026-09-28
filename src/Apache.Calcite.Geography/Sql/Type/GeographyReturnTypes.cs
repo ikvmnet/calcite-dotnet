@@ -8,48 +8,33 @@ namespace Apache.Calcite.Geography.Sql.Type
 {
 
     /// <summary>
-    /// The return type strategies the <c>CLR_ST_GEOG_*</c> operators use, for the two types Calcite has no
-    /// strategy of its own for.
+    /// Return type inferences for the <c>CLR_ST_GEOG_*</c> operators.
     /// </summary>
     /// <remarks>
-    /// The rest come from <c>ReturnTypes</c> unchanged: a predicate is <c>BOOLEAN_NULLABLE</c> and a
-    /// measurement is <c>DOUBLE_NULLABLE</c>.
+    /// Each gives the type the type factory creates for a Java class, which is how Calcite types a function declared
+    /// through a schema and so how its own <c>ST_*</c> functions are typed. A few operators use
+    /// <c>ReturnTypes.BOOLEAN_NULLABLE</c> or <c>ReturnTypes.DOUBLE_NULLABLE</c> instead. Every result is nullable.
     ///
-    /// <para>Neither runs through <c>SqlTypeTransforms.TO_NULLABLE</c>, and nothing turns on that any
-    /// more. It mattered when a geography was a <c>JavaType</c> subclass, because the transform calls
-    /// <c>createTypeWithNullability</c> and <c>copySimpleType</c> answers that on a <c>JavaType</c> by
-    /// constructing a plain one, dropping the subclass. There is no subclass now. The transform is left off
-    /// because it would not change the answer: nullable is right for every one of these whatever the operands
-    /// are.</para>
-    ///
-    /// <para><b>Which is not the same as each answering null exactly when an argument is null</b>, and a
-    /// remark here used to say that it was. Most do; a great many do not. A typed reader answers null for
-    /// text naming a different shape, <c>CLR_ST_GEOG_X</c> answers null for anything but a point,
-    /// <c>ST_X</c> being <c>geom instanceof Point ? … : null</c>, and <c>POINTN</c>, <c>INTERIORRING</c> and
-    /// <c>STARTPOINT</c> answer null off the end or off the shape. The distinction is load bearing rather
-    /// than pedantic — it is <c>Strong.Policy.ANY</c>, which Calcite reads in both directions — and
-    /// <see cref="GeographyOperatorTable.IsStrict"/> is where the operators it actually holds of are
-    /// listed.</para>
+    /// <para>A nullable result does not mean the operator returns null only for a null argument; many return null
+    /// for other inputs too. <see cref="GeographyOperatorTable.IsStrict"/> lists those that do not.</para>
     /// </remarks>
     public static class GeographyReturnTypes
     {
 
         /// <summary>
-        /// Returns <c>GEOGRAPHY</c>.
+        /// Infers the geography type, <see cref="GeographyTypes.Of"/>.
         /// </summary>
         public static readonly SqlReturnTypeInference Geography = new GeographyReturnTypeInference();
 
         /// <summary>
-        /// Returns the type the type factory gives a Java class, which is how Calcite's own spatial
-        /// functions are typed.
+        /// Returns an inference that gives the type the type factory creates for a Java class.
         /// </summary>
-        /// <param name="clazz"></param>
-        /// <returns></returns>
+        /// <param name="clazz">The Java class.</param>
+        /// <returns>The inference.</returns>
         /// <remarks>
-        /// A function declared through a schema is typed by <c>createJavaType</c> over the return type of the
-        /// method behind it, so <c>ST_ASTEXT</c> is <c>JavaType(String)</c> and not <c>VARCHAR(2000)</c>.
-        /// Naming the class rather than picking a <c>SqlTypeName</c> and a precision is what keeps an
-        /// <c>CLR_ST_GEOG_</c> operator typed exactly as the <c>ST_</c> one it mirrors.
+        /// A function declared through a schema is typed by <c>createJavaType</c> over its method's return type, so
+        /// <c>ST_ASTEXT</c> is <c>JavaType(String)</c> rather than <c>VARCHAR(2000)</c>. Naming the class keeps each
+        /// <c>CLR_ST_GEOG_*</c> operator typed as the <c>ST_*</c> function it mirrors.
         /// </remarks>
         public static SqlReturnTypeInference Of(java.lang.Class clazz)
         {
@@ -57,36 +42,36 @@ namespace Apache.Calcite.Geography.Sql.Type
         }
 
         /// <summary>
-        /// Returns <c>DOUBLE</c>.
+        /// Infers the type of <c>java.lang.Double</c>, a nullable <c>DOUBLE</c>.
         /// </summary>
         public static readonly SqlReturnTypeInference Double = Of((java.lang.Class)typeof(java.lang.Double));
 
         /// <summary>
-        /// Returns <c>INTEGER</c>.
+        /// Infers the type of <c>java.lang.Integer</c>, a nullable <c>INTEGER</c>.
         /// </summary>
         public static readonly SqlReturnTypeInference Integer = Of((java.lang.Class)typeof(java.lang.Integer));
 
         /// <summary>
-        /// Returns <c>BOOLEAN</c>.
+        /// Infers the type of <c>java.lang.Boolean</c>, a nullable <c>BOOLEAN</c>.
         /// </summary>
         public static readonly SqlReturnTypeInference Boolean = Of((java.lang.Class)typeof(java.lang.Boolean));
 
         /// <summary>
-        /// Returns <c>VARCHAR</c>.
+        /// Infers the type of <c>java.lang.String</c>, a <c>VARCHAR</c>.
         /// </summary>
         public static readonly SqlReturnTypeInference Text = Of((java.lang.Class)typeof(string));
 
         /// <summary>
-        /// Returns <c>VARBINARY</c>.
+        /// Infers the type of <c>ByteString</c>, a <c>VARBINARY</c>.
         /// </summary>
         public static readonly SqlReturnTypeInference Binary = Of((java.lang.Class)typeof(org.apache.calcite.avatica.util.ByteString));
 
         /// <summary>
-        /// The half of <c>SqlReturnTypeInference</c> that is the same whatever the type is.
+        /// The members of <c>SqlReturnTypeInference</c> that do not depend on the type.
         /// </summary>
         /// <remarks>
-        /// IKVM does not project a Java default method as a C# default interface member, so an implementer
-        /// written here has to restate every one of them. These are Calcite's own bodies.
+        /// IKVM does not project a Java default method as a C# default interface member, so an implementer restates
+        /// them. These are Calcite's own bodies.
         /// </remarks>
         abstract class ReturnTypeInference : SqlReturnTypeInference
         {

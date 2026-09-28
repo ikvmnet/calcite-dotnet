@@ -28,11 +28,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
     {
 
         /// <summary>
-        /// Translates an expression, compiles it, and runs it.
+        /// Translates an expression, converts it to <typeparamref name="T"/>, compiles it, and runs it.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <typeparam name="T">The type the result is converted to.</typeparam>
+        /// <param name="expression">A linq4j expression with no free parameters.</param>
+        /// <returns>The expression's value.</returns>
         static T Run<T>(J.Expression expression)
         {
             var translated = new LixToClrTranslator().Translate(expression);
@@ -41,11 +41,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// Translates a block as a function body, compiles it, and runs it.
+        /// Translates a block as the body of a function returning <typeparamref name="T"/>, compiles it, and
+        /// runs it.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="block"></param>
-        /// <returns></returns>
+        /// <typeparam name="T">The function's return type.</typeparam>
+        /// <param name="block">A linq4j block that ends in a return of <typeparamref name="T"/>.</param>
+        /// <returns>The value the block returns.</returns>
         static T RunBody<T>(J.BlockStatement block)
         {
             var translated = new LixToClrTranslator().TranslateBody(block, typeof(T));
@@ -72,7 +73,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldPromoteNarrowOperandsToInt()
         {
-            // Java promotes byte and short to int before it adds them, and the result is an int
+            // Java promotes byte and short to int before adding them, so the result is an int
             var e = J.Expressions.add(
                 J.Expressions.constant(java.lang.Byte.valueOf((byte)1)),
                 J.Expressions.constant(java.lang.Short.valueOf((short)2)));
@@ -112,8 +113,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldUnboxThroughTheBoxClassRatherThanUnboxAny()
         {
-            // the value at runtime is a java.lang.Integer instance; a straight Convert would emit unbox.any and
-            // demand a boxed CLR int, which is never what is there
+            // the value at run time is a java.lang.Integer; Expression.Convert would emit unbox.any, which
+            // requires a boxed CLR int
             var e = J.Expressions.convert_(
                 J.Expressions.constant(Integer.valueOf(3), (Class)typeof(java.lang.Object)),
                 Integer.TYPE);
@@ -124,8 +125,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldSignExtendAByteBeingWidened()
         {
-            // Java's byte is signed and the CLR byte it is stored in is not, so widening without going by way
-            // of an sbyte turns -1 into 255
+            // Java's byte is signed and the CLR byte IKVM maps it to is not, so widening has to go by way of
+            // sbyte or -1 becomes 255
             var e = J.Expressions.convert_(
                 J.Expressions.constant(java.lang.Byte.valueOf(unchecked((byte)-1))),
                 Integer.TYPE);
@@ -157,11 +158,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// Boxes a primitive constant and unboxes it again, which is the pair of conversions the CLR has neither of.
+        /// Converts a primitive constant to its Java box class and back, neither of which is a CLR conversion.
         /// </summary>
-        /// <param name="value"></param>
-        /// <param name="primitive"></param>
-        /// <param name="box"></param>
+        /// <param name="value">The constant, as a Java box.</param>
+        /// <param name="primitive">The Java primitive class the value is converted back to.</param>
+        /// <param name="box">The Java box class the value is converted to first.</param>
         static void RoundTrip(java.lang.Object value, Class primitive, Class box)
         {
             var e = J.Expressions.convert_(J.Expressions.convert_(J.Expressions.constant(value), box), primitive);
@@ -188,8 +189,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldTranslateCallToMethodOfRemappedClass()
         {
-            // String.toUpperCase is static on a helper and takes the receiver first, so what linq4j calls the
-            // target has to move into argument zero
+            // IKVM implements String.toUpperCase as a static helper taking the receiver first, so linq4j's
+            // target becomes the first argument
             var e = J.Expressions.call(
                 J.Expressions.constant("abc"),
                 ((Class)typeof(java.lang.String)).getDeclaredMethod("toUpperCase", []));
@@ -198,9 +199,9 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// A method with no CLR method to call at all. IKVM answered String.length() with a property, so
-        /// nothing of that name and arity is on the type, on a helper, or on anything the search reaches —
-        /// ClrTypes.TryResolve says so, and the call goes through a delegate over the method instead.
+        /// A Java method with no CLR method of its name: IKVM exposes <c>String.length()</c> as a property, so
+        /// <see cref="ClrTypes.TryResolve"/> finds nothing and the call goes through a delegate over the Java
+        /// method.
         /// </summary>
         [Fact]
         public void ShouldTranslateCallToMethodWithNoClrMethod()
@@ -212,8 +213,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// The same, for a method whose receiver is the one type the CLR does not keep Java's methods on, and
-        /// which returns a primitive: the value comes back as an int rather than as a java.lang.Integer.
+        /// A method of <c>java.lang.Object</c>, which IKVM maps onto <see cref="object"/>, called through a
+        /// delegate; its primitive result comes back as an <see cref="int"/>, not a <c>java.lang.Integer</c>.
         /// </summary>
         [Fact]
         public void ShouldTranslateCallToMethodOfObject()
@@ -228,7 +229,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// One with an argument, so the delegate's parameters are being filled in the right order.
+        /// A call through a delegate with an argument, which has to follow the receiver.
         /// </summary>
         [Fact]
         public void ShouldTranslateCallToMethodWithNoClrMethodAndAnArgument()
@@ -318,7 +319,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
                 J.Expressions.block(J.Expressions.return_(null, J.Expressions.multiply(v, J.Expressions.constant(Integer.valueOf(2))))),
                 v);
 
-            // a lambda linq4j declared as a Function1 is one, so the delegate is asked for back
+            // a lambda linq4j declares as a Function1 is wrapped as one, so the delegate is unwrapped here
             var translated = AnonymousClasses.Unwrap(new LixToClrTranslator().Translate(e))!;
 
             translated.Should().NotBeNull();
@@ -328,7 +329,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldTranslateAnonymousClassAsLambda()
         {
-            // what PhysType returns for a comparator, and what an expression tree cannot declare
+            // the anonymous class PhysType returns for a comparator, which an expression tree cannot declare
             var v0 = J.Expressions.parameter(Integer.TYPE, "v0");
             var v1 = J.Expressions.parameter(Integer.TYPE, "v1");
 
@@ -348,14 +349,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 
             var translated = new LixToClrTranslator().Translate(e);
 
-            // the lambda is wrapped back into the interface the class was declared against, because the same
-            // operator takes a comparator that never was an anonymous class
+            // the lambda is wrapped in the interface the class implements, because the operators that take a
+            // comparator take the interface
             translated.Type.Should().Be(typeof(java.util.Comparator));
 
             var comparator = Expression.Lambda<Func<java.util.Comparator>>(translated).Compile()();
 
-            // the adapter casts each argument to the type the declaration gave its parameters, exactly as the
-            // erased compare(Object, Object) of the class it stands for would have
+            // the adapter converts each argument to its declared parameter type, as the erased
+            // compare(Object, Object) of the Java class would
             comparator.compare(5, 3).Should().Be(2);
         }
 
@@ -374,16 +375,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// A Java varargs call passes its trailing arguments individually and lets the compiler collect
-        /// them into an array. Janino does that collecting; an expression tree has no step that would, so
-        /// it is the translator's.
+        /// A Java varargs call passes its trailing arguments individually and the Java compiler collects them
+        /// into an array; an expression tree has no such step, so the translator does it.
         /// </summary>
         /// <remarks>
-        /// These drive the generator that actually reaches it rather than a tree written to look like one.
-        /// <c>CAST(x AS VARIANT)</c> compiles the payload's type into the plan through
-        /// <c>RuntimeTypeInformation.createExpression</c>, and the constructor that builds one for a
-        /// parameterised type is varargs — which is why no variant of a collection could be planned under
-        /// either convention.
+        /// These use the generator that produces such a call. <c>CAST(x AS VARIANT)</c> compiles the payload's
+        /// type into the plan through <c>RuntimeTypeInformation.createExpression</c>, and the constructor it
+        /// uses for a parameterised type is varargs.
         /// </remarks>
         [Fact]
         public void ShouldTranslateVarArgsConstructorGivenOneArgument()
@@ -392,7 +390,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             var type = factory.createArrayType(factory.createSqlType(SqlTypeName.INTEGER), -1);
 
             // new GenericSqlTypeRtti(ARRAY, new BasicSqlTypeRtti(INTEGER)): two arguments against two
-            // parameters, the second of them a RuntimeTypeInformation[], which coercion refused
+            // parameters, the second a RuntimeTypeInformation[] the single argument has to be wrapped in
             var rtti = Run<GenericSqlTypeRtti>(RuntimeTypeInformation.createExpression(type));
 
             rtti.getArgumentCount().Should().Be(1);
@@ -405,8 +403,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
             var factory = new JavaTypeFactoryImpl();
             var type = factory.createMapType(factory.createSqlType(SqlTypeName.VARCHAR), factory.createSqlType(SqlTypeName.INTEGER));
 
-            // new GenericSqlTypeRtti(MAP, key, value): three arguments against two parameters, which did
-            // not reach the coercion at all -- no constructor has that arity
+            // new GenericSqlTypeRtti(MAP, key, value): three arguments against two parameters, so no
+            // constructor matches by arity
             var rtti = Run<GenericSqlTypeRtti>(RuntimeTypeInformation.createExpression(type));
 
             rtti.getArgumentCount().Should().Be(2);
@@ -415,8 +413,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// The elements are converted on the way into the array, which a row's RTTI is what needs: its
-        /// arguments are <c>AbstractMap.SimpleEntry</c> where the array is of <c>Map.Entry</c>.
+        /// The trailing arguments are converted to the array's element type, as a row's RTTI needs: its
+        /// arguments are <c>AbstractMap.SimpleEntry</c> and the array is of <c>Map.Entry</c>.
         /// </summary>
         [Fact]
         public void ShouldConvertTheElementsOfAVarArgsArray()

@@ -13,10 +13,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Implementation of <see cref="Minus"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// linq4j's <c>except</c> drains its first source and then acquires its second, so the second input is
-    /// deferred within the body's own kind, through <see cref="ClrCursorRelImplementor.Opener"/> or
-    /// <see cref="ClrCursorRelImplementor.OpenerAsync"/>, as <see cref="ClrCursorUnion"/> defers
-    /// the second input of a <c>UNION</c>.
+    /// Mirrors <c>EnumerableMinus</c>. linq4j's <c>except</c> drains its first source before acquiring the
+    /// next, so every input after the first is passed as an opener of the body's own kind, as in
+    /// <see cref="ClrCursorUnion"/>.
     /// </remarks>
     public class ClrCursorMinus : Minus, ClrCursorRel
     {
@@ -24,10 +23,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="inputs">The inputs, a list of <see cref="org.apache.calcite.rel.RelNode"/>; rows of the
+        /// first that appear in any later one are removed.</param>
+        /// <param name="all">Whether duplicates are kept (<c>EXCEPT ALL</c>).</param>
         public ClrCursorMinus(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {

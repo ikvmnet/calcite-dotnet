@@ -9,9 +9,8 @@ namespace Apache.Calcite.Extensions.Linq4j
     /// A linq4j <see cref="AbstractEnumerable"/> backed by a delegate.
     /// </summary>
     /// <remarks>
-    /// The other half of what Calcite generates around a sub-plan: an enumerable whose one job is to hand out
-    /// a fresh <see cref="DelegateEnumerator"/> each time it is asked. It is a class rather than an interface,
-    /// so the adapter derives from it, but it has a single method and is otherwise an ordinary one.
+    /// What an anonymous <c>AbstractEnumerable</c> in a Calcite-generated block becomes when translated; its
+    /// one method usually returns a new <see cref="DelegateEnumerator"/>.
     /// </remarks>
     sealed class DelegateEnumerable : AbstractEnumerable
     {
@@ -21,7 +20,7 @@ namespace Apache.Calcite.Extensions.Linq4j
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="enumerator"></param>
+        /// <param name="enumerator">Called for each <c>enumerator()</c> call.</param>
         public DelegateEnumerable(Func<Enumerator> enumerator)
         {
             onEnumerator = enumerator ?? throw new ArgumentNullException(nameof(enumerator));

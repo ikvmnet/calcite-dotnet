@@ -15,43 +15,29 @@ namespace Apache.Calcite.Geography.Sql
 {
 
     /// <summary>
-    /// The <c>CLR_ST_GEOG_*</c> operators.
+    /// The operator table holding the <c>CLR_ST_GEOG_*</c> operators.
     /// </summary>
     /// <remarks>
-    /// Chained by a host onto whatever it already has:
+    /// A host that configures its own validator chains the table onto the one it already has:
     ///
     /// <code>
     /// SqlOperatorTables.chain(SqlStdOperatorTable.instance(), GeographyOperatorTable.Instance())
     /// </code>
     ///
-    /// <para><see cref="Schema.GeographySchema"/> is the other way in, and is the one an adapter uses,
-    /// because a schema is what brings functions along with tables. It costs something: what
-    /// <c>CalciteCatalogReader.toOp</c> builds around a schema declaration is a plain
-    /// <c>SqlUserDefinedFunction</c> over the bare <c>Function</c>, so the checker, the return type strategy
-    /// and every fact <see cref="GeographyFunction"/> declares are Calcite's own from there on.
-    /// <see cref="Rebind"/> is how a call that came in that way gets this table's declaration back, and
-    /// <c>GeographyRules</c> is what runs it.</para>
+    /// <para>Alternatively <see cref="Schema.GeographySchema.AddTo"/> declares the same functions on a schema, which
+    /// works through Calcite's JDBC driver without configuring anything. A call resolved that way carries an operator
+    /// Calcite builds itself, which lacks the strictness and symmetry declared here; <see cref="Rebind"/>, run by
+    /// <c>GeographyRules</c>, restores them.</para>
     ///
-    /// <para>Each operator is a <c>SqlUserDefinedFunction</c> over a <c>ScalarFunctionImpl</c>, which is what
-    /// gives the call an implementor: <c>RexImpTable.get</c> answers a user-defined function by asking its
-    /// <c>Function</c> for one, and its own map is private with no <c>RexImplementorTable</c> to add to until
-    /// 1.43. The body is a .NET method and no class name is written out — this convention's translator holds
-    /// the method itself, and Calcite's own engine reaches a CLR class through the class-loader stamp
-    /// <c>IKVM.Maven.Sdk</c> puts on <c>calcite-core</c>.</para>
+    /// <para>Each operator is a <c>SqlUserDefinedFunction</c> over a <c>ScalarFunctionImpl</c> of a method on
+    /// <see cref="GeographyFunctions"/>, so both Calcite's code generation and this repository's convention can
+    /// implement a call. Arguments shown as <c>DOUBLE</c> accept any numeric type, and <c>NULL</c> is accepted in
+    /// every position.</para>
     ///
-    /// <para>Each operator is also a public field, which <c>SqlSpatialTypeOperatorTable</c> is not, and the
-    /// reason is that Calcite has a handle we cannot have. Its own spatial pushdown rules recognise a call by
-    /// <c>SqlKind</c> — <c>SpatialRules</c> matches <c>SqlKind.ST_DWITHIN</c> and <c>SqlKind.ST_CONTAINS</c>,
-    /// which reach the operator from a <c>@Hints({"SqlKind:ST_DWITHIN"})</c> annotation on the method that
-    /// <c>CalciteCatalogReader.toOp</c> reads. <c>SqlKind</c> is a closed enum, so <c>CLR_ST_GEOG_DWITHIN</c>
-    /// cannot be added to it, and taking <c>ST_DWITHIN</c> would be worse than having nothing: Calcite's own
-    /// rules would then match a geodesic call and plan it as a planar one. So an adapter that wants to push
-    /// one of these down has the operator itself or its name, and the field is the exact one.</para>
-    ///
-    /// <para>Calcite's spatial library is about 144 names and every one it reads geodesically needs a
-    /// <c>CLR_ST_GEOG_</c> declaration of its own, because Calcite's own read the plane. What is here is the
-    /// constructors, the two crossings, the relations, the measurements, the accessors, the editing
-    /// operations and every format both ways; the package's README says what is not, and why.</para>
+    /// <para>Each operator is also a public field, so that an adapter pushing calls down can recognise them. Calcite
+    /// recognises its own spatial calls by <c>SqlKind</c>, but <c>SqlKind</c> is a closed enum, and reusing a kind
+    /// such as <c>ST_DWITHIN</c> would let Calcite's planar rules match a geodesic call. Compare by name with
+    /// <see cref="Matches"/>, since a call resolved through a schema carries a different operator object.</para>
     /// </remarks>
     public sealed class GeographyOperatorTable : SqlOperatorTable
     {
@@ -71,8 +57,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["wkt"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_GEOMFROMWKT(VARCHAR)</c>. Reads a geography from WKT; Calcite's alias for the same
-        /// thing, mirrored.
+        /// <c>CLR_ST_GEOG_GEOMFROMWKT(VARCHAR)</c>. Reads a geography from WKT; an alias of
+        /// <c>CLR_ST_GEOG_GEOMFROMTEXT</c>.
         /// </summary>
         public static readonly SqlFunction ClrStGeogGeomFromWkt =
             Function("CLR_ST_GEOG_GEOMFROMWKT", nameof(GeographyFunctions.FromWkt), GeographyReturnTypes.Geography,
@@ -93,323 +79,332 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character, GeographyOperand.Integral], ["wkt", "srid"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASGEOM(GEOGRAPHY)</c>. Reads a geography as a geometry.
+        /// <c>CLR_ST_GEOG_ASGEOM(GEOMETRY)</c>. Marks a geography as a geometry to be read on the plane; converts
+        /// nothing.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsGeom =
             Function("CLR_ST_GEOG_ASGEOM", nameof(GeographyFunctions.AsGeometry), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOM_ASGEOG(GEOMETRY)</c>. Reads a geometry as a geography.
+        /// <c>CLR_ST_GEOM_ASGEOG(GEOMETRY)</c>. Marks a geometry as a geography to be read geodesically; converts
+        /// nothing.
         /// </summary>
         public static readonly SqlFunction ClrStGeomAsGeog =
             Function("CLR_ST_GEOM_ASGEOG", nameof(GeographyFunctions.AsGeography), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geom"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_DISTANCE(GEOGRAPHY, GEOGRAPHY)</c>. The distance between two geographies, in metres.
+        /// <c>CLR_ST_GEOG_DISTANCE(GEOMETRY, GEOMETRY)</c>. Returns the geodesic distance between two geographies
+        /// in metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogDistance =
             Function("CLR_ST_GEOG_DISTANCE", nameof(GeographyFunctions.Distance), ReturnTypes.DOUBLE_NULLABLE,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_DWITHIN(GEOGRAPHY, GEOGRAPHY, DOUBLE)</c>. Whether two geographies are within the given
-        /// distance in metres.
+        /// <c>CLR_ST_GEOG_DWITHIN(GEOMETRY, GEOMETRY, DOUBLE)</c>. Returns whether two geographies are within a
+        /// distance in metres of one another.
         /// </summary>
         public static readonly SqlFunction ClrStGeogDWithin =
             Function("CLR_ST_GEOG_DWITHIN", nameof(GeographyFunctions.DWithin), ReturnTypes.BOOLEAN_NULLABLE,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog1", "geog2", "distance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_WITHIN(GEOGRAPHY, GEOGRAPHY)</c>. Whether the first geography lies within the second.
+        /// <c>CLR_ST_GEOG_WITHIN(GEOMETRY, GEOMETRY)</c>. Returns whether the first geography lies within the
+        /// second.
         /// </summary>
         public static readonly SqlFunction ClrStGeogWithin =
             Function("CLR_ST_GEOG_WITHIN", nameof(GeographyFunctions.Within), ReturnTypes.BOOLEAN_NULLABLE,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_INTERSECTS(GEOGRAPHY, GEOGRAPHY)</c>. Whether two geographies have any point in common.
+        /// <c>CLR_ST_GEOG_INTERSECTS(GEOMETRY, GEOMETRY)</c>. Returns whether two geographies have any point in
+        /// common.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIntersects =
             Function("CLR_ST_GEOG_INTERSECTS", nameof(GeographyFunctions.Intersects), ReturnTypes.BOOLEAN_NULLABLE,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ISVALID(GEOGRAPHY)</c>. Whether the geography is valid on the sphere.
+        /// <c>CLR_ST_GEOG_ISVALID(GEOMETRY)</c>. Returns whether the geography is valid on the sphere.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIsValid =
             Function("CLR_ST_GEOG_ISVALID", nameof(GeographyFunctions.IsValid), ReturnTypes.BOOLEAN_NULLABLE,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_X(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_X(GEOMETRY)</c>. Returns the longitude of a point, or null for any other shape.
         /// </summary>
         public static readonly SqlFunction ClrStGeogX =
             Function("CLR_ST_GEOG_X", nameof(GeographyFunctions.X), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_Y(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_Y(GEOMETRY)</c>. Returns the latitude of a point, or null for any other shape.
         /// </summary>
         public static readonly SqlFunction ClrStGeogY =
             Function("CLR_ST_GEOG_Y", nameof(GeographyFunctions.Y), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_Z(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_Z(GEOMETRY)</c>. Returns the third ordinate of a point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogZ =
             Function("CLR_ST_GEOG_Z", nameof(GeographyFunctions.Z), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_XMIN(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_XMIN(GEOMETRY)</c>. Returns the least longitude among the coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogXMin =
             Function("CLR_ST_GEOG_XMIN", nameof(GeographyFunctions.XMin), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_XMAX(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_XMAX(GEOMETRY)</c>. Returns the greatest longitude among the coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogXMax =
             Function("CLR_ST_GEOG_XMAX", nameof(GeographyFunctions.XMax), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_YMIN(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_YMIN(GEOMETRY)</c>. Returns the least latitude among the coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogYMin =
             Function("CLR_ST_GEOG_YMIN", nameof(GeographyFunctions.YMin), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_YMAX(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_YMAX(GEOMETRY)</c>. Returns the greatest latitude among the coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogYMax =
             Function("CLR_ST_GEOG_YMAX", nameof(GeographyFunctions.YMax), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ZMIN(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ZMIN(GEOMETRY)</c>. Returns the least third ordinate among the coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogZMin =
             Function("CLR_ST_GEOG_ZMIN", nameof(GeographyFunctions.ZMin), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ZMAX(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ZMAX(GEOMETRY)</c>. Returns the greatest third ordinate among the coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogZMax =
             Function("CLR_ST_GEOG_ZMAX", nameof(GeographyFunctions.ZMax), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_COORDDIM(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_COORDDIM(GEOMETRY)</c>. Returns how many ordinates each coordinate carries.
         /// </summary>
         public static readonly SqlFunction ClrStGeogCoordDim =
             Function("CLR_ST_GEOG_COORDDIM", nameof(GeographyFunctions.CoordDim), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_DIMENSION(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_DIMENSION(GEOMETRY)</c>. Returns the topological dimension: 0, 1 or 2.
         /// </summary>
         public static readonly SqlFunction ClrStGeogDimension =
             Function("CLR_ST_GEOG_DIMENSION", nameof(GeographyFunctions.Dimension), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_GEOMETRYTYPE(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_GEOMETRYTYPE(GEOMETRY)</c>. Returns the name of the kind of shape.
         /// </summary>
         public static readonly SqlFunction ClrStGeogGeometryType =
             Function("CLR_ST_GEOG_GEOMETRYTYPE", nameof(GeographyFunctions.GeometryType), GeographyReturnTypes.Text,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_GEOMETRYTYPECODE(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_GEOMETRYTYPECODE(GEOMETRY)</c>. Returns the numeric code of the kind of shape.
         /// </summary>
         public static readonly SqlFunction ClrStGeogGeometryTypeCode =
             Function("CLR_ST_GEOG_GEOMETRYTYPECODE", nameof(GeographyFunctions.GeometryTypeCode), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_NPOINTS(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_NPOINTS(GEOMETRY)</c>. Returns how many coordinates the geography has; an alias of
+        /// CLR_ST_GEOG_NUMPOINTS.
         /// </summary>
         public static readonly SqlFunction ClrStGeogNPoints =
             Function("CLR_ST_GEOG_NPOINTS", nameof(GeographyFunctions.NPoints), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_NUMPOINTS(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_NUMPOINTS(GEOMETRY)</c>. Returns how many coordinates the geography has.
         /// </summary>
         public static readonly SqlFunction ClrStGeogNumPoints =
             Function("CLR_ST_GEOG_NUMPOINTS", nameof(GeographyFunctions.NumPoints), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_NUMGEOMETRIES(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_NUMGEOMETRIES(GEOMETRY)</c>. Returns how many parts the geography has.
         /// </summary>
         public static readonly SqlFunction ClrStGeogNumGeometries =
             Function("CLR_ST_GEOG_NUMGEOMETRIES", nameof(GeographyFunctions.NumGeometries), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_NUMINTERIORRING(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_NUMINTERIORRING(GEOMETRY)</c>. Returns how many holes the geography's polygons have.
         /// </summary>
         public static readonly SqlFunction ClrStGeogNumInteriorRing =
             Function("CLR_ST_GEOG_NUMINTERIORRING", nameof(GeographyFunctions.NumInteriorRing), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_NUMINTERIORRINGS(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_NUMINTERIORRINGS(GEOMETRY)</c>. Returns how many holes the geography's polygons have; an
+        /// alias of CLR_ST_GEOG_NUMINTERIORRING.
         /// </summary>
         public static readonly SqlFunction ClrStGeogNumInteriorRings =
             Function("CLR_ST_GEOG_NUMINTERIORRINGS", nameof(GeographyFunctions.NumInteriorRings), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_STARTPOINT(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_STARTPOINT(GEOMETRY)</c>. Returns the first coordinate of a line as a point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogStartPoint =
             Function("CLR_ST_GEOG_STARTPOINT", nameof(GeographyFunctions.StartPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ENDPOINT(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ENDPOINT(GEOMETRY)</c>. Returns the last coordinate of a line as a point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogEndPoint =
             Function("CLR_ST_GEOG_ENDPOINT", nameof(GeographyFunctions.EndPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_EXTERIORRING(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_EXTERIORRING(GEOMETRY)</c>. Returns the shell of a polygon.
         /// </summary>
         public static readonly SqlFunction ClrStGeogExteriorRing =
             Function("CLR_ST_GEOG_EXTERIORRING", nameof(GeographyFunctions.ExteriorRing), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_BOUNDARY(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_BOUNDARY(GEOMETRY)</c>. Returns the boundary of the geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogBoundary =
             Function("CLR_ST_GEOG_BOUNDARY", nameof(GeographyFunctions.Boundary), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_HOLES(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_HOLES(GEOMETRY)</c>. Returns the holes of the geography's polygons.
         /// </summary>
         public static readonly SqlFunction ClrStGeogHoles =
             Function("CLR_ST_GEOG_HOLES", nameof(GeographyFunctions.Holes), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ISEMPTY(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ISEMPTY(GEOMETRY)</c>. Returns whether the geography has no coordinates.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIsEmpty =
             Function("CLR_ST_GEOG_ISEMPTY", nameof(GeographyFunctions.IsEmpty), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_IS3D(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_IS3D(GEOMETRY)</c>. Returns whether the coordinates carry a third ordinate.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIs3D =
             Function("CLR_ST_GEOG_IS3D", nameof(GeographyFunctions.Is3D), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ISCLOSED(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ISCLOSED(GEOMETRY)</c>. Returns whether a line ends where it begins.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIsClosed =
             Function("CLR_ST_GEOG_ISCLOSED", nameof(GeographyFunctions.IsClosed), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_SRID(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_SRID(GEOMETRY)</c>. Returns the SRID the geography is stamped with.
         /// </summary>
         public static readonly SqlFunction ClrStGeogSrid =
             Function("CLR_ST_GEOG_SRID", nameof(GeographyFunctions.Srid), GeographyReturnTypes.Integer,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASTEXT(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASTEXT(GEOMETRY)</c>. Writes the geography as WKT.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsText =
             Function("CLR_ST_GEOG_ASTEXT", nameof(GeographyFunctions.AsText), GeographyReturnTypes.Text,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASWKT(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASWKT(GEOMETRY)</c>. Writes the geography as WKT; an alias of CLR_ST_GEOG_ASTEXT.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsWkt =
             Function("CLR_ST_GEOG_ASWKT", nameof(GeographyFunctions.AsWkt), GeographyReturnTypes.Text,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASEWKT(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASEWKT(GEOMETRY)</c>. Writes the geography as EWKT, which carries the SRID.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsEwkt =
             Function("CLR_ST_GEOG_ASEWKT", nameof(GeographyFunctions.AsEwkt), GeographyReturnTypes.Text,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASGEOJSON(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASGEOJSON(GEOMETRY)</c>. Writes the geography as GeoJSON.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsGeoJson =
             Function("CLR_ST_GEOG_ASGEOJSON", nameof(GeographyFunctions.AsGeoJson), GeographyReturnTypes.Text,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASGML(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASGML(GEOMETRY)</c>. Writes the geography as GML.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsGml =
             Function("CLR_ST_GEOG_ASGML", nameof(GeographyFunctions.AsGml), GeographyReturnTypes.Text,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASBINARY(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASBINARY(GEOMETRY)</c>. Writes the geography as WKB.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsBinary =
             Function("CLR_ST_GEOG_ASBINARY", nameof(GeographyFunctions.AsBinary), GeographyReturnTypes.Binary,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASWKB(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASWKB(GEOMETRY)</c>. Writes the geography as WKB; an alias of CLR_ST_GEOG_ASBINARY.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsWkb =
             Function("CLR_ST_GEOG_ASWKB", nameof(GeographyFunctions.AsWkb), GeographyReturnTypes.Binary,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ASEWKB(GEOGRAPHY)</c>.
+        /// <c>CLR_ST_GEOG_ASEWKB(GEOMETRY)</c>. Writes the geography as Calcite's ST_ASEWKB does, which is the same
+        /// bytes as WKB.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAsEwkb =
             Function("CLR_ST_GEOG_ASEWKB", nameof(GeographyFunctions.AsEwkb), GeographyReturnTypes.Binary,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POINTN(GEOGRAPHY, INTEGER)</c>. Returns the nth coordinate of a line.
+        /// <c>CLR_ST_GEOG_POINTN(GEOMETRY, INTEGER)</c>. Returns the nth coordinate of a line.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPointN =
             Function("CLR_ST_GEOG_POINTN", nameof(GeographyFunctions.PointN), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Integral], ["geog", "n"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_GEOMETRYN(GEOGRAPHY, INTEGER)</c>. Returns the nth part of the geography.
+        /// <c>CLR_ST_GEOG_GEOMETRYN(GEOMETRY, INTEGER)</c>. Returns the nth part of the geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogGeometryN =
             Function("CLR_ST_GEOG_GEOMETRYN", nameof(GeographyFunctions.GeometryN), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Integral], ["geog", "n"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_INTERIORRING(GEOGRAPHY, INTEGER)</c>. Returns the nth hole of a polygon.
+        /// <c>CLR_ST_GEOG_INTERIORRING(GEOMETRY, INTEGER)</c>. Returns the nth hole of a polygon.
         /// </summary>
         public static readonly SqlFunction ClrStGeogInteriorRing =
             Function("CLR_ST_GEOG_INTERIORRING", nameof(GeographyFunctions.InteriorRing), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Integral], ["geog", "n"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ORDERINGEQUALS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies name the same coordinates in the same order.
+        /// <c>CLR_ST_GEOG_ORDERINGEQUALS(GEOMETRY, GEOMETRY)</c>. Returns whether two geographies name the same
+        /// coordinates in the same order.
         /// </summary>
         public static readonly SqlFunction ClrStGeogOrderingEquals =
             Function("CLR_ST_GEOG_ORDERINGEQUALS", nameof(GeographyFunctions.OrderingEquals), GeographyReturnTypes.Boolean,
@@ -430,7 +425,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Binary], ["wkb"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_GEOMFROMWKB(VARBINARY, INTEGER)</c>. Returns a geography read from WKB; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_GEOMFROMWKB(VARBINARY, INTEGER)</c>. Returns a geography read from WKB; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogGeomFromWkbWithSrid =
             Function("CLR_ST_GEOG_GEOMFROMWKB", nameof(GeographyFunctions.FromWkb), GeographyReturnTypes.Geography,
@@ -451,252 +447,273 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["gml"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_GEOMFROMGML(VARCHAR, INTEGER)</c>. Returns a geography read from GML; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_GEOMFROMGML(VARCHAR, INTEGER)</c>. Returns a geography read from GML; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogGeomFromGmlWithSrid =
             Function("CLR_ST_GEOG_GEOMFROMGML", nameof(GeographyFunctions.FromGml), GeographyReturnTypes.Geography,
                 [GeographyOperand.Character, GeographyOperand.Integral], ["gml", "srid"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_FLIPCOORDINATES(GEOGRAPHY)</c>. Returns the geography with longitude and latitude swapped.
+        /// <c>CLR_ST_GEOG_FLIPCOORDINATES(GEOMETRY)</c>. Returns the geography with longitude and latitude swapped.
         /// </summary>
         public static readonly SqlFunction ClrStGeogFlipCoordinates =
             Function("CLR_ST_GEOG_FLIPCOORDINATES", nameof(GeographyFunctions.FlipCoordinates), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_FORCE2D(GEOGRAPHY)</c>. Returns the geography with any third ordinate dropped.
+        /// <c>CLR_ST_GEOG_FORCE2D(GEOMETRY)</c>. Returns the geography with any third ordinate dropped.
         /// </summary>
         public static readonly SqlFunction ClrStGeogForce2D =
             Function("CLR_ST_GEOG_FORCE2D", nameof(GeographyFunctions.Force2D), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_FORCE3D(GEOGRAPHY)</c>. Returns the geography with a third ordinate on every coordinate.
+        /// <c>CLR_ST_GEOG_FORCE3D(GEOMETRY)</c>. Returns the geography with a third ordinate on every coordinate.
         /// </summary>
         public static readonly SqlFunction ClrStGeogForce3D =
             Function("CLR_ST_GEOG_FORCE3D", nameof(GeographyFunctions.Force3D), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_NORMALIZE(GEOGRAPHY)</c>. Returns the geography in its canonical form.
+        /// <c>CLR_ST_GEOG_NORMALIZE(GEOMETRY)</c>. Returns the geography in its canonical form.
         /// </summary>
         public static readonly SqlFunction ClrStGeogNormalize =
             Function("CLR_ST_GEOG_NORMALIZE", nameof(GeographyFunctions.Normalize), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_REMOVEHOLES(GEOGRAPHY)</c>. Returns the geography with the holes taken out of its polygons.
+        /// <c>CLR_ST_GEOG_REMOVEHOLES(GEOMETRY)</c>. Returns the geography with the holes taken out of its
+        /// polygons.
         /// </summary>
         public static readonly SqlFunction ClrStGeogRemoveHoles =
             Function("CLR_ST_GEOG_REMOVEHOLES", nameof(GeographyFunctions.RemoveHoles), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_REMOVEREPEATEDPOINTS(GEOGRAPHY)</c>. Returns the geography with repeated coordinates dropped.
+        /// <c>CLR_ST_GEOG_REMOVEREPEATEDPOINTS(GEOMETRY)</c>. Returns the geography with repeated coordinates
+        /// dropped.
         /// </summary>
         public static readonly SqlFunction ClrStGeogRemoveRepeatedPoints =
             Function("CLR_ST_GEOG_REMOVEREPEATEDPOINTS", nameof(GeographyFunctions.RemoveRepeatedPoints), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_REVERSE(GEOGRAPHY)</c>. Returns the geography with its coordinates in the opposite order.
+        /// <c>CLR_ST_GEOG_REVERSE(GEOMETRY)</c>. Returns the geography with its coordinates in the opposite order.
         /// </summary>
         public static readonly SqlFunction ClrStGeogReverse =
             Function("CLR_ST_GEOG_REVERSE", nameof(GeographyFunctions.Reverse), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_TOMULTILINE(GEOGRAPHY)</c>. Returns the lines of the geography as a multi-line.
+        /// <c>CLR_ST_GEOG_TOMULTILINE(GEOMETRY)</c>. Returns the lines of the geography as a multi-line.
         /// </summary>
         public static readonly SqlFunction ClrStGeogToMultiLine =
             Function("CLR_ST_GEOG_TOMULTILINE", nameof(GeographyFunctions.ToMultiLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_TOMULTIPOINT(GEOGRAPHY)</c>. Returns the coordinates of the geography as a multi-point.
+        /// <c>CLR_ST_GEOG_TOMULTIPOINT(GEOMETRY)</c>. Returns the coordinates of the geography as a multi-point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogToMultiPoint =
             Function("CLR_ST_GEOG_TOMULTIPOINT", nameof(GeographyFunctions.ToMultiPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_TOMULTISEGMENTS(GEOGRAPHY)</c>. Returns the edges of the geography as a multi-line.
+        /// <c>CLR_ST_GEOG_TOMULTISEGMENTS(GEOMETRY)</c>. Returns the edges of the geography as a multi-line.
         /// </summary>
         public static readonly SqlFunction ClrStGeogToMultiSegments =
             Function("CLR_ST_GEOG_TOMULTISEGMENTS", nameof(GeographyFunctions.ToMultiSegments), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ADDPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line with the coordinate added at its end.
+        /// <c>CLR_ST_GEOG_ADDPOINT(GEOMETRY, GEOMETRY)</c>. Returns the line with the coordinate added at its end.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAddPoint =
             Function("CLR_ST_GEOG_ADDPOINT", nameof(GeographyFunctions.AddPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["line", "point"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ADDPOINT(GEOGRAPHY, GEOGRAPHY, INTEGER)</c>. Returns the line with the coordinate added at the given index.
+        /// <c>CLR_ST_GEOG_ADDPOINT(GEOMETRY, GEOMETRY, INTEGER)</c>. Returns the line with the coordinate added at
+        /// the given index.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAddPointAtIndex =
             Function("CLR_ST_GEOG_ADDPOINT", nameof(GeographyFunctions.AddPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Integral], ["line", "point", "index"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_REMOVEPOINT(GEOGRAPHY, INTEGER)</c>. Returns the line with the coordinate at the given index taken out.
+        /// <c>CLR_ST_GEOG_REMOVEPOINT(GEOMETRY, INTEGER)</c>. Returns the line with the coordinate at the given
+        /// index taken out.
         /// </summary>
         public static readonly SqlFunction ClrStGeogRemovePoint =
             Function("CLR_ST_GEOG_REMOVEPOINT", nameof(GeographyFunctions.RemovePoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Integral], ["line", "index"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ADDZ(GEOGRAPHY, NUMERIC)</c>. Returns the geography with the given amount added to every third ordinate.
+        /// <c>CLR_ST_GEOG_ADDZ(GEOMETRY, DOUBLE)</c>. Returns the geography with the given amount added to every
+        /// third ordinate.
         /// </summary>
         public static readonly SqlFunction ClrStGeogAddZ =
             Function("CLR_ST_GEOG_ADDZ", nameof(GeographyFunctions.AddZ), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "z"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_REMOVEREPEATEDPOINTS(GEOGRAPHY, NUMERIC)</c>. Returns the geography with coordinates closer together than the tolerance dropped.
+        /// <c>CLR_ST_GEOG_REMOVEREPEATEDPOINTS(GEOMETRY, DOUBLE)</c>. Returns the geography with coordinates closer
+        /// together than the tolerance dropped.
         /// </summary>
         public static readonly SqlFunction ClrStGeogRemoveRepeatedPointsWithTolerance =
             Function("CLR_ST_GEOG_REMOVEREPEATEDPOINTS", nameof(GeographyFunctions.RemoveRepeatedPoints), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "tolerance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POINT(NUMERIC, NUMERIC)</c>. Returns the place at the given longitude and latitude.
+        /// <c>CLR_ST_GEOG_POINT(DOUBLE, DOUBLE)</c>. Returns the point at the given longitude and latitude.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPoint =
             Function("CLR_ST_GEOG_POINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
                 [GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POINT(NUMERIC, NUMERIC, NUMERIC)</c>. Returns the place at the given longitude, latitude and third ordinate.
+        /// <c>CLR_ST_GEOG_POINT(DOUBLE, DOUBLE, DOUBLE)</c>. Returns the point at the given longitude, latitude and
+        /// third ordinate.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPoint3D =
             Function("CLR_ST_GEOG_POINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
                 [GeographyOperand.Fractional, GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y", "z"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOINT(NUMERIC, NUMERIC)</c>. Returns the place at the given longitude and latitude.
+        /// <c>CLR_ST_GEOG_MAKEPOINT(DOUBLE, DOUBLE)</c>. Returns the point at the given longitude and latitude.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePoint =
             Function("CLR_ST_GEOG_MAKEPOINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
                 [GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOINT(NUMERIC, NUMERIC, NUMERIC)</c>. Returns the place at the given longitude, latitude and third ordinate.
+        /// <c>CLR_ST_GEOG_MAKEPOINT(DOUBLE, DOUBLE, DOUBLE)</c>. Returns the point at the given longitude, latitude
+        /// and third ordinate.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePoint3D =
             Function("CLR_ST_GEOG_MAKEPOINT", nameof(GeographyFunctions.Point), GeographyReturnTypes.Geography,
                 [GeographyOperand.Fractional, GeographyOperand.Fractional, GeographyOperand.Fractional], ["x", "y", "z"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 2 places.
+        /// <c>CLR_ST_GEOG_MAKELINE(GEOMETRY, GEOMETRY)</c>. Returns the line through 2 points.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakeLine2 =
             Function("CLR_ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 3 places.
+        /// <c>CLR_ST_GEOG_MAKELINE(GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the line through 3 points.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakeLine3 =
             Function("CLR_ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2", "geog3"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 4 places.
+        /// <c>CLR_ST_GEOG_MAKELINE(GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the line through 4 points.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakeLine4 =
             Function("CLR_ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2", "geog3", "geog4"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 5 places.
+        /// <c>CLR_ST_GEOG_MAKELINE(GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the line through
+        /// 5 places.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakeLine5 =
             Function("CLR_ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2", "geog3", "geog4", "geog5"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKELINE(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the line through 6 places.
+        /// <c>CLR_ST_GEOG_MAKELINE(GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the
+        /// line through 6 points.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakeLine6 =
             Function("CLR_ST_GEOG_MAKELINE", nameof(GeographyFunctions.MakeLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2", "geog3", "geog4", "geog5", "geog6"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY)</c>. Returns the polygon with the given shell and no holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOMETRY)</c>. Returns the polygon with the given shell and no holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon1 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["shell"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and one hole.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOMETRY, GEOMETRY)</c>. Returns the polygon with the given shell and one
+        /// hole.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon2 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 2 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the polygon with the given shell
+        /// and 2 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon3 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 3 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the polygon with the
+        /// given shell and 3 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon4 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 4 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the polygon
+        /// with the given shell and 4 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon5 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2", "hole3"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 5 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY, GEOMETRY)</c>. Returns the
+        /// polygon with the given shell and 5 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon6 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 6 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>, 7 <c>GEOMETRY</c> arguments. Returns the polygon with the given shell
+        /// and 6 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon7 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 7 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>, 8 <c>GEOMETRY</c> arguments. Returns the polygon with the given shell
+        /// and 7 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon8 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 8 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>, 9 <c>GEOMETRY</c> arguments. Returns the polygon with the given shell
+        /// and 8 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon9 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6", "hole7"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 9 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>, 10 <c>GEOMETRY</c> arguments. Returns the polygon with the given shell
+        /// and 9 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon10 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry, GeographyOperand.Geometry], ["shell", "hole0", "hole1", "hole2", "hole3", "hole4", "hole5", "hole6", "hole7", "hole8"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEPOLYGON(GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY, GEOGRAPHY)</c>. Returns the polygon with the given shell and 10 holes.
+        /// <c>CLR_ST_GEOG_MAKEPOLYGON</c>, 11 <c>GEOMETRY</c> arguments. Returns the polygon with the given shell
+        /// and 10 holes.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakePolygon11 =
             Function("CLR_ST_GEOG_MAKEPOLYGON", nameof(GeographyFunctions.MakePolygon), GeographyReturnTypes.Geography,
@@ -738,7 +755,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["wkt"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MLINEFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-line read from WKT; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_MLINEFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-line read from WKT; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMLineFromTextWithSrid =
             Function("CLR_ST_GEOG_MLINEFROMTEXT", nameof(GeographyFunctions.MLineFromText), GeographyReturnTypes.Geography,
@@ -752,7 +770,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["wkt"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MPOINTFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-point read from WKT; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_MPOINTFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-point read from WKT; the SRID must
+        /// be 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMPointFromTextWithSrid =
             Function("CLR_ST_GEOG_MPOINTFROMTEXT", nameof(GeographyFunctions.MPointFromText), GeographyReturnTypes.Geography,
@@ -766,7 +785,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["wkt"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MPOLYFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-polygon read from WKT; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_MPOLYFROMTEXT(VARCHAR, INTEGER)</c>. Returns a multi-polygon read from WKT; the SRID must
+        /// be 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMPolyFromTextWithSrid =
             Function("CLR_ST_GEOG_MPOLYFROMTEXT", nameof(GeographyFunctions.MPolyFromText), GeographyReturnTypes.Geography,
@@ -780,7 +800,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["wkt"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POINTFROMTEXT(VARCHAR, INTEGER)</c>. Returns a point read from WKT; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_POINTFROMTEXT(VARCHAR, INTEGER)</c>. Returns a point read from WKT; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPointFromTextWithSrid =
             Function("CLR_ST_GEOG_POINTFROMTEXT", nameof(GeographyFunctions.PointFromText), GeographyReturnTypes.Geography,
@@ -794,7 +815,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Binary], ["wkb"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POINTFROMWKB(VARBINARY, INTEGER)</c>. Returns a point read from WKB; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_POINTFROMWKB(VARBINARY, INTEGER)</c>. Returns a point read from WKB; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPointFromWkbWithSrid =
             Function("CLR_ST_GEOG_POINTFROMWKB", nameof(GeographyFunctions.PointFromWkb), GeographyReturnTypes.Geography,
@@ -808,7 +830,8 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Character], ["wkt"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POLYFROMTEXT(VARCHAR, INTEGER)</c>. Returns a polygon read from WKT; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_POLYFROMTEXT(VARCHAR, INTEGER)</c>. Returns a polygon read from WKT; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPolyFromTextWithSrid =
             Function("CLR_ST_GEOG_POLYFROMTEXT", nameof(GeographyFunctions.PolyFromText), GeographyReturnTypes.Geography,
@@ -822,14 +845,16 @@ namespace Apache.Calcite.Geography.Sql
                 [GeographyOperand.Binary], ["wkb"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_POLYFROMWKB(VARBINARY, INTEGER)</c>. Returns a polygon read from WKB; the SRID must be 4326.
+        /// <c>CLR_ST_GEOG_POLYFROMWKB(VARBINARY, INTEGER)</c>. Returns a polygon read from WKB; the SRID must be
+        /// 4326.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPolyFromWkbWithSrid =
             Function("CLR_ST_GEOG_POLYFROMWKB", nameof(GeographyFunctions.PolyFromWkb), GeographyReturnTypes.Geography,
                 [GeographyOperand.Binary, GeographyOperand.Integral], ["wkb", "srid"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_CONTAINS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the first geography contains the second.
+        /// <c>CLR_ST_GEOG_CONTAINS(GEOMETRY, GEOMETRY)</c>. Returns whether the first geography contains the
+        /// second.
         /// </summary>
         public static readonly SqlFunction ClrStGeogContains =
             Function("CLR_ST_GEOG_CONTAINS", nameof(GeographyFunctions.Contains), GeographyReturnTypes.Boolean,
@@ -838,14 +863,16 @@ namespace Apache.Calcite.Geography.Sql
 
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_COVERS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether no point of the second geography is outside the first.
+        /// <c>CLR_ST_GEOG_COVERS(GEOMETRY, GEOMETRY)</c>. Returns whether no point of the second geography is
+        /// outside the first.
         /// </summary>
         public static readonly SqlFunction ClrStGeogCovers =
             Function("CLR_ST_GEOG_COVERS", nameof(GeographyFunctions.Covers), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_COVEREDBY(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether no point of the first geography is outside the second.
+        /// <c>CLR_ST_GEOG_COVEREDBY(GEOMETRY, GEOMETRY)</c>. Returns whether no point of the first geography is
+        /// outside the second.
         /// </summary>
         public static readonly SqlFunction ClrStGeogCoveredBy =
             Function("CLR_ST_GEOG_COVEREDBY", nameof(GeographyFunctions.CoveredBy), GeographyReturnTypes.Boolean,
@@ -854,14 +881,16 @@ namespace Apache.Calcite.Geography.Sql
 
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_DISJOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies have no point in common.
+        /// <c>CLR_ST_GEOG_DISJOINT(GEOMETRY, GEOMETRY)</c>. Returns whether two geographies have no point in
+        /// common.
         /// </summary>
         public static readonly SqlFunction ClrStGeogDisjoint =
             Function("CLR_ST_GEOG_DISJOINT", nameof(GeographyFunctions.Disjoint), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_EQUALS(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether two geographies are the same set of places.
+        /// <c>CLR_ST_GEOG_EQUALS(GEOMETRY, GEOMETRY)</c>. Returns whether two geographies are the same set of
+        /// places.
         /// </summary>
         public static readonly SqlFunction ClrStGeogEquals =
             Function("CLR_ST_GEOG_EQUALS", nameof(GeographyFunctions.Equals), GeographyReturnTypes.Boolean,
@@ -872,203 +901,223 @@ namespace Apache.Calcite.Geography.Sql
 
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ENVELOPESINTERSECT(GEOGRAPHY, GEOGRAPHY)</c>. Returns whether the bounding boxes of two geographies meet.
+        /// <c>CLR_ST_GEOG_ENVELOPESINTERSECT(GEOMETRY, GEOMETRY)</c>. Returns whether the bounding boxes of two
+        /// geographies meet.
         /// </summary>
         public static readonly SqlFunction ClrStGeogEnvelopesIntersect =
             Function("CLR_ST_GEOG_ENVELOPESINTERSECT", nameof(GeographyFunctions.EnvelopesIntersect), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_AREA(GEOGRAPHY)</c>. Returns the area of the geography in square metres.
+        /// <c>CLR_ST_GEOG_AREA(GEOMETRY)</c>. Returns the area of the geography in square metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogArea =
             Function("CLR_ST_GEOG_AREA", nameof(GeographyFunctions.Area), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_LENGTH(GEOGRAPHY)</c>. Returns the length of the geography in metres.
+        /// <c>CLR_ST_GEOG_LENGTH(GEOMETRY)</c>. Returns the length of the geography in metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogLength =
             Function("CLR_ST_GEOG_LENGTH", nameof(GeographyFunctions.Length), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_PERIMETER(GEOGRAPHY)</c>. Returns the perimeter of the areal part of the geography in metres.
+        /// <c>CLR_ST_GEOG_PERIMETER(GEOMETRY)</c>. Returns the perimeter of the areal part of the geography in
+        /// metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogPerimeter =
             Function("CLR_ST_GEOG_PERIMETER", nameof(GeographyFunctions.Perimeter), GeographyReturnTypes.Double,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_OFFSETCURVE(GEOGRAPHY, DOUBLE)</c>. Returns the line drawn a distance in metres to one side of this one.
+        /// <c>CLR_ST_GEOG_OFFSETCURVE(GEOMETRY, DOUBLE)</c>. Returns the line drawn a distance in metres to one
+        /// side of this one.
         /// </summary>
         public static readonly SqlFunction ClrStGeogOffsetCurve =
             Function("CLR_ST_GEOG_OFFSETCURVE", nameof(GeographyFunctions.OffsetCurve), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["line", "distance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAKEELLIPSE(GEOGRAPHY, DOUBLE, DOUBLE)</c>. Returns an ellipse of the given width and height in metres about a point.
+        /// <c>CLR_ST_GEOG_MAKEELLIPSE(GEOMETRY, DOUBLE, DOUBLE)</c>. Returns an ellipse of the given width and
+        /// height in metres about a point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMakeEllipse =
             Function("CLR_ST_GEOG_MAKEELLIPSE", nameof(GeographyFunctions.MakeEllipse), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional, GeographyOperand.Fractional], ["point", "width", "height"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_LOCATEALONG(GEOGRAPHY, DOUBLE, DOUBLE)</c>. Returns a point on every segment, a fraction of the way along it and offset sideways by a distance in metres.
+        /// <c>CLR_ST_GEOG_LOCATEALONG(GEOMETRY, DOUBLE, DOUBLE)</c>. Returns a point on every segment, a fraction
+        /// of the way along it and offset sideways by a distance in metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogLocateAlong =
             Function("CLR_ST_GEOG_LOCATEALONG", nameof(GeographyFunctions.LocateAlong), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional, GeographyOperand.Fractional], ["geog", "fraction", "offset"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MINIMUMDIAMETER(GEOGRAPHY)</c>. Returns the shortest line across the geography's width.
+        /// <c>CLR_ST_GEOG_MINIMUMDIAMETER(GEOMETRY)</c>. Returns the shortest line across the geography's width.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMinimumDiameter =
             Function("CLR_ST_GEOG_MINIMUMDIAMETER", nameof(GeographyFunctions.MinimumDiameter), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_BOUNDINGCIRCLE(GEOGRAPHY)</c>. Returns the smallest circle containing the geography.
+        /// <c>CLR_ST_GEOG_BOUNDINGCIRCLE(GEOMETRY)</c>. Returns a circle on the ground containing the geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogBoundingCircle =
             Function("CLR_ST_GEOG_BOUNDINGCIRCLE", nameof(GeographyFunctions.BoundingCircle), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ISSIMPLE(GEOGRAPHY)</c>. Returns whether the geography touches itself nowhere it should not.
+        /// <c>CLR_ST_GEOG_ISSIMPLE(GEOMETRY)</c>. Returns whether the geography touches itself nowhere it should
+        /// not.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIsSimple =
             Function("CLR_ST_GEOG_ISSIMPLE", nameof(GeographyFunctions.IsSimple), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ISRING(GEOGRAPHY)</c>. Returns whether the geography is a line that is closed and simple.
+        /// <c>CLR_ST_GEOG_ISRING(GEOMETRY)</c>. Returns whether the geography is a line that is closed and simple.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIsRing =
             Function("CLR_ST_GEOG_ISRING", nameof(GeographyFunctions.IsRing), GeographyReturnTypes.Boolean,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_BUFFER(GEOGRAPHY, DOUBLE)</c>. Returns the region within the given distance in metres of the geography.
+        /// <c>CLR_ST_GEOG_BUFFER(GEOMETRY, DOUBLE)</c>. Returns the region within the given distance in metres of
+        /// the geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogBuffer =
             Function("CLR_ST_GEOG_BUFFER", nameof(GeographyFunctions.Buffer), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "distance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_CENTROID(GEOGRAPHY)</c>. Returns the centre of the geography.
+        /// <c>CLR_ST_GEOG_CENTROID(GEOMETRY)</c>. Returns the centre of the geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogCentroid =
             Function("CLR_ST_GEOG_CENTROID", nameof(GeographyFunctions.Centroid), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_CONVEXHULL(GEOGRAPHY)</c>. Returns the smallest convex geography containing this one.
+        /// <c>CLR_ST_GEOG_CONVEXHULL(GEOMETRY)</c>. Returns the smallest convex geography containing this one.
         /// </summary>
         public static readonly SqlFunction ClrStGeogConvexHull =
             Function("CLR_ST_GEOG_CONVEXHULL", nameof(GeographyFunctions.ConvexHull), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_SIMPLIFY(GEOGRAPHY, DOUBLE)</c>. Returns the geography with vertices removed that move its boundary by no more than the given distance in metres.
+        /// <c>CLR_ST_GEOG_SIMPLIFY(GEOMETRY, DOUBLE)</c>. Returns the geography with vertices removed that move its
+        /// boundary by no more than the given distance in metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogSimplify =
             Function("CLR_ST_GEOG_SIMPLIFY", nameof(GeographyFunctions.Simplify), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "tolerance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_INTERSECTION(GEOGRAPHY, GEOGRAPHY)</c>. Returns the area common to two geographies.
+        /// <c>CLR_ST_GEOG_INTERSECTION(GEOMETRY, GEOMETRY)</c>. Returns the area two geographies' polygons share.
         /// </summary>
         public static readonly SqlFunction ClrStGeogIntersection =
             Function("CLR_ST_GEOG_INTERSECTION", nameof(GeographyFunctions.Intersection), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_DIFFERENCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the part of the first geography that is not in the second.
+        /// <c>CLR_ST_GEOG_DIFFERENCE(GEOMETRY, GEOMETRY)</c>. Returns the part of the first geography that is not
+        /// in the second.
         /// </summary>
         public static readonly SqlFunction ClrStGeogDifference =
             Function("CLR_ST_GEOG_DIFFERENCE", nameof(GeographyFunctions.Difference), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_SYMDIFFERENCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the parts of two geographies that are in one and not the other.
+        /// <c>CLR_ST_GEOG_SYMDIFFERENCE(GEOMETRY, GEOMETRY)</c>. Returns the parts of two geographies that are in
+        /// one and not the other.
         /// </summary>
         public static readonly SqlFunction ClrStGeogSymDifference =
             Function("CLR_ST_GEOG_SYMDIFFERENCE", nameof(GeographyFunctions.SymDifference), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_UNARYUNION(GEOGRAPHY)</c>. Returns the geography with its overlapping parts merged.
+        /// <c>CLR_ST_GEOG_UNARYUNION(GEOMETRY)</c>. Returns the union of the geography's polygons.
         /// </summary>
         public static readonly SqlFunction ClrStGeogUnaryUnion =
             Function("CLR_ST_GEOG_UNARYUNION", nameof(GeographyFunctions.UnaryUnion), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_DENSIFY(GEOGRAPHY, DOUBLE)</c>. Returns the geography with vertices inserted along its geodesics so that no edge is longer than the given distance in metres.
+        /// <c>CLR_ST_GEOG_DENSIFY(GEOMETRY, DOUBLE)</c>. Returns the geography with vertices inserted along its
+        /// geodesics so that no edge is longer than the given distance in metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogDensify =
             Function("CLR_ST_GEOG_DENSIFY", nameof(GeographyFunctions.Densify), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "tolerance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_PROJECTPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the point of the line nearest the given point.
+        /// <c>CLR_ST_GEOG_PROJECTPOINT(GEOMETRY, GEOMETRY)</c>. Returns the point of the line nearest the given
+        /// point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogProjectPoint =
             Function("CLR_ST_GEOG_PROJECTPOINT", nameof(GeographyFunctions.ProjectPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "line"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_ENVELOPE(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// <c>CLR_ST_GEOG_ENVELOPE(GEOMETRY)</c>. Returns the smallest latitude-longitude rectangle containing the
+        /// geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogEnvelope =
             Function("CLR_ST_GEOG_ENVELOPE", nameof(GeographyFunctions.Envelope), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_EXTENT(GEOGRAPHY)</c>. Returns the smallest latitude-longitude rectangle containing the geography.
+        /// <c>CLR_ST_GEOG_EXTENT(GEOMETRY)</c>. Returns the smallest latitude-longitude rectangle containing the
+        /// geography.
         /// </summary>
         public static readonly SqlFunction ClrStGeogExtent =
             Function("CLR_ST_GEOG_EXTENT", nameof(GeographyFunctions.Extent), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry], ["geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_EXPAND(GEOGRAPHY, DOUBLE)</c>. Returns the geography's rectangle grown by a distance in metres.
+        /// <c>CLR_ST_GEOG_EXPAND(GEOMETRY, DOUBLE)</c>. Returns the geography's rectangle grown by a distance in
+        /// metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogExpand =
             Function("CLR_ST_GEOG_EXPAND", nameof(GeographyFunctions.Expand), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Fractional], ["geog", "distance"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_CLOSESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography nearest the given point.
+        /// <c>CLR_ST_GEOG_CLOSESTCOORDINATE(GEOMETRY, GEOMETRY)</c>. Returns the coordinate or coordinates of the
+        /// geography nearest the given point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogClosestCoordinate =
             Function("CLR_ST_GEOG_CLOSESTCOORDINATE", nameof(GeographyFunctions.ClosestCoordinate), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_FURTHESTCOORDINATE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the coordinate or coordinates of the geography furthest from the given point.
+        /// <c>CLR_ST_GEOG_FURTHESTCOORDINATE(GEOMETRY, GEOMETRY)</c>. Returns the coordinate or coordinates of the
+        /// geography furthest from the given point.
         /// </summary>
         public static readonly SqlFunction ClrStGeogFurthestCoordinate =
             Function("CLR_ST_GEOG_FURTHESTCOORDINATE", nameof(GeographyFunctions.FurthestCoordinate), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["point", "geog"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_CLOSESTPOINT(GEOGRAPHY, GEOGRAPHY)</c>. Returns the point of the first geography nearest the second.
+        /// <c>CLR_ST_GEOG_CLOSESTPOINT(GEOMETRY, GEOMETRY)</c>. Returns the point of the first geography nearest
+        /// the second.
         /// </summary>
         public static readonly SqlFunction ClrStGeogClosestPoint =
             Function("CLR_ST_GEOG_CLOSESTPOINT", nameof(GeographyFunctions.ClosestPoint), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_LONGESTLINE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the line between the two coordinates, one from each geography, that are furthest apart.
+        /// <c>CLR_ST_GEOG_LONGESTLINE(GEOMETRY, GEOMETRY)</c>. Returns the line between the two coordinates, one
+        /// from each geography, that are furthest apart.
         /// </summary>
         public static readonly SqlFunction ClrStGeogLongestLine =
             Function("CLR_ST_GEOG_LONGESTLINE", nameof(GeographyFunctions.LongestLine), GeographyReturnTypes.Geography,
                 [GeographyOperand.Geometry, GeographyOperand.Geometry], ["geog1", "geog2"]);
 
         /// <summary>
-        /// <c>CLR_ST_GEOG_MAXDISTANCE(GEOGRAPHY, GEOGRAPHY)</c>. Returns the greatest distance between a coordinate of one geography and a coordinate of the other, in metres.
+        /// <c>CLR_ST_GEOG_MAXDISTANCE(GEOMETRY, GEOMETRY)</c>. Returns the greatest distance between a coordinate
+        /// of one geography and a coordinate of the other, in metres.
         /// </summary>
         public static readonly SqlFunction ClrStGeogMaxDistance =
             Function("CLR_ST_GEOG_MAXDISTANCE", nameof(GeographyFunctions.MaxDistance), GeographyReturnTypes.Double,
@@ -1078,19 +1127,17 @@ namespace Apache.Calcite.Geography.Sql
         /// Declares one operator.
         /// </summary>
         /// <param name="name">The SQL name.</param>
-        /// <param name="method">The name of the method on <see cref="GeographyFunctions"/> that implements
-        /// it.</param>
-        /// <param name="returnType"></param>
+        /// <param name="method">The name of the method on <see cref="GeographyFunctions"/> that implements it.</param>
+        /// <param name="returnType">How the call's type is inferred.</param>
         /// <param name="operands">What each position takes.</param>
         /// <param name="names">The name of each position.</param>
-        /// <returns></returns>
+        /// <returns>The operator.</returns>
+        /// <exception cref="InvalidOperationException">No method of that name matches the operands.</exception>
         static SqlFunction Function(string name, string method, SqlReturnTypeInference returnType, GeographyOperand[] operands, string[] names)
         {
-            // by signature and not by name. ScalarFunctionImpl.create(class, name) goes through
-            // ReflectiveFunctionBase.findMethod, which answers the first method of that name and would pick
-            // between two arities of a constructor at random. Deriving the signature from the operands is
-            // also what keeps the declaration and the body from drifting apart: a position that takes a
-            // geography is a Geometry parameter, and there is one place that says so.
+            // looked up by signature rather than by name: ScalarFunctionImpl.create(class, name) takes the first
+            // method of that name, which is arbitrary among overloads. Deriving the signature from the operands
+            // also keeps the declaration and the method in step.
             var parameters = new java.lang.Class[operands.Length];
             for (var i = 0; i < operands.Length; i++)
                 parameters[i] = ClassOf(operands[i]);
@@ -1108,25 +1155,19 @@ namespace Apache.Calcite.Geography.Sql
         }
 
         /// <summary>
-        /// Determines whether an operator answers null whenever an argument is null, and only then.
+        /// Determines whether an operator returns null if and only if an argument is null.
         /// </summary>
         /// <param name="name">The SQL name.</param>
         /// <returns><c>true</c> where the operator is strict.</returns>
         /// <remarks>
-        /// <para>This is <c>Strong.Policy.ANY</c>, and Calcite reads it <b>both ways</b>:
-        /// <c>RexSimplify.simplifyIsNull</c> rewrites <c>f(a, b) IS NULL</c> to <c>a IS NULL OR b IS NULL</c>,
-        /// which asserts that a call over non-null arguments cannot be null. So the list is the operators
-        /// whose body wraps a primitive — <c>java.lang.Boolean.valueOf(…)</c>, <c>Double.valueOf(…)</c>,
-        /// <c>Integer.valueOf(…)</c> — behind a guard that answers null for a null argument, which is a
-        /// mechanical proof of both directions at once.</para>
+        /// <para>A strict operator declares <c>Strong.Policy.ANY</c>, which Calcite reads in both directions:
+        /// <c>RexSimplify.simplifyIsNull</c> rewrites <c>f(a, b) IS NULL</c> to <c>a IS NULL OR b IS NULL</c>, which
+        /// assumes a call over non-null arguments is never null. So only operators whose implementation boxes a
+        /// primitive result behind a null check on its arguments are listed.</para>
         ///
-        /// <para><b>Most of the surface is not strict and must not say it is.</b> A reader answers null for
-        /// text naming a different shape, so <c>CLR_ST_GEOG_POINTFROMTEXT('LINESTRING(0 0, 1 1)')</c> is null
-        /// over a non-null argument; so is <c>CLR_ST_GEOG_X</c> of anything but a point, <c>ST_X</c> being
-        /// <c>geom instanceof Point ? … : null</c>; so are <c>POINTN</c> and <c>INTERIORRING</c> out of range,
-        /// and <c>STARTPOINT</c> of a polygon. A remark on <c>GeographyReturnTypes</c> used to say every body
-        /// here answers null exactly when an argument is null, which is why this is written out rather than
-        /// derived from the return type.</para>
+        /// <para>The rest can return null for non-null arguments and must not be listed: a typed reader such as
+        /// <c>CLR_ST_GEOG_POINTFROMTEXT('LINESTRING(0 0, 1 1)')</c>, <c>CLR_ST_GEOG_X</c> of anything but a point,
+        /// <c>POINTN</c> and <c>INTERIORRING</c> out of range, and <c>STARTPOINT</c> of a polygon.</para>
         /// </remarks>
         static bool IsStrict(string name)
         {
@@ -1148,20 +1189,16 @@ namespace Apache.Calcite.Geography.Sql
         }
 
         /// <summary>
-        /// Determines whether an operator answers the same with its two operands the other way round.
+        /// Determines whether an operator returns the same with its two operands swapped.
         /// </summary>
         /// <param name="name">The SQL name.</param>
         /// <returns><c>true</c> where the operator is symmetrical.</returns>
         /// <remarks>
-        /// <para>What this buys is one digest for two spellings, so <c>CLR_ST_GEOG_DISTANCE(a, b)</c> and
-        /// <c>CLR_ST_GEOG_DISTANCE(b, a)</c> in one statement are one expression rather than two.
-        /// <c>RexNormalize</c> is where it is read, and only for a call of exactly two operands — which is why
-        /// <c>CLR_ST_GEOG_DWITHIN</c>, symmetrical in the two it measures between, is not here.</para>
-        ///
-        /// <para>Each is symmetrical in <c>S2Geographies</c> by construction rather than by inspection:
-        /// <c>Disjoint</c> is <c>Intersects</c> negated, <c>Intersects</c> is <c>Angle</c> which considers
-        /// both enclosures, <c>Equals</c> is <c>Covers</c> both ways, and the two distances are over a pair
-        /// chosen by extremum.</para>
+        /// <c>RexNormalize</c> uses this to give <c>f(a, b)</c> and <c>f(b, a)</c> one digest, and only for calls of
+        /// exactly two operands, so <c>CLR_ST_GEOG_DWITHIN</c> is not listed although it is symmetrical in its first
+        /// two. Each listed operator is symmetrical by construction in <c>S2Geographies</c>: <c>Disjoint</c> negates
+        /// <c>Intersects</c>, <c>Intersects</c> tests both enclosures, <c>Equals</c> is <c>Covers</c> both ways, and
+        /// both distances take an extremum over all pairs.
         /// </remarks>
         static bool IsSymmetrical(string name)
         {
@@ -1175,50 +1212,44 @@ namespace Apache.Calcite.Geography.Sql
         }
 
         /// <summary>
-        /// Determines whether an operator is the named one, whichever route resolved it.
+        /// Determines whether an operator is the given one of these, however it was resolved.
         /// </summary>
-        /// <remarks>
-        /// <b>By name, and never by identity.</b> A call resolved through <see cref="Schema.GeographySchema"/>
-        /// carries a <c>SqlUserDefinedFunction</c> Calcite built around the declaration — same name, different
-        /// object — so an identity test recognises a call reached through a chained operator table and
-        /// silently fails to recognise the same call reached through a connection.
-        /// </remarks>
         /// <param name="op">The operator to test.</param>
-        /// <param name="function">The operator it should be.</param>
-        /// <returns><c>true</c> where the operator is that one.</returns>
+        /// <param name="function">One of the operator fields of this class.</param>
+        /// <returns><c>true</c> where the two have the same name.</returns>
+        /// <remarks>
+        /// The test is by name. A call resolved through <see cref="Schema.GeographySchema"/> carries an operator Calcite
+        /// built around the same function, with the same name but a different identity.
+        /// </remarks>
         public static bool Matches(SqlOperator? op, SqlFunction function)
         {
             return op is not null && function is not null && op.getName() == function.getName();
         }
 
         /// <summary>
-        /// Determines whether an operator is one of these, whichever route resolved it.
+        /// Determines whether an operator is one of these, however it was resolved.
         /// </summary>
         /// <param name="op">The operator to test.</param>
-        /// <returns><c>true</c> where the operator is a geography operator.</returns>
+        /// <returns><c>true</c> where this table declares an operator of the same name and arity.</returns>
         public static bool IsGeography(SqlOperator? op)
         {
             return op?.getName().StartsWith("CLR_ST_GEO", StringComparison.Ordinal) == true && Lookup(op) is not null;
         }
 
         /// <summary>
-        /// Returns this table's declaration of the given operator, where the two are the same operator.
+        /// Returns this table's operator for an operator that Calcite built around the same function.
         /// </summary>
         /// <param name="op">The operator a plan carries.</param>
-        /// <returns>The declaration, or <c>null</c> where it is not one of these.</returns>
+        /// <returns>
+        /// This table's operator, or <c>null</c> where <paramref name="op"/> is not a <c>SqlUserDefinedFunction</c> over
+        /// the function this table declared under that name and arity.
+        /// </returns>
         /// <remarks>
-        /// <para><b>What this is for.</b> The facts <see cref="GeographyFunction"/> declares — strictness,
-        /// symmetry — live on the operator object, and a name resolved through
-        /// <see cref="Schema.GeographySchema"/> arrives as something Calcite built:
-        /// <c>CalciteCatalogReader.toOp</c> takes the bare <c>Function</c> out of the schema and wraps it in a
-        /// plain <c>SqlUserDefinedFunction</c>. Putting this table's operator back in its place is what makes
-        /// those facts reach a plan that came in that way.</para>
-        ///
-        /// <para><b>Matched by name and confirmed by the body.</b> The name finds the candidate and the
-        /// <c>Function</c> being the same object is what says the two are the same operator — which it is,
-        /// because <c>GeographySchema.AddTo</c> registers the very <c>ScalarFunctionImpl</c> this table
-        /// built. A host that declared a <c>CLR_ST_GEOG_</c> name over a body of its own is left alone, which
-        /// a name test would not do.</para>
+        /// A name resolved through <see cref="Schema.GeographySchema"/> becomes a <c>SqlUserDefinedFunction</c> that
+        /// <c>CalciteCatalogReader.toOp</c> wraps around the bare <c>Function</c>, and so lacks the strictness and
+        /// symmetry this table's operators declare. Replacing it with this table's operator restores them. The
+        /// candidate is found by name and arity and accepted only if it wraps the same <c>Function</c> object, which
+        /// <see cref="Schema.GeographySchema.AddTo"/> guarantees; a host's own function of the same name is left alone.
         /// </remarks>
         public static SqlFunction? Rebind(SqlOperator? op)
         {
@@ -1233,29 +1264,27 @@ namespace Apache.Calcite.Geography.Sql
         }
 
         /// <summary>
-        /// Returns this table's operator of the given one's name and arity.
+        /// Returns this table's operator of the given operator's name and arity, or <c>null</c>.
         /// </summary>
-        /// <param name="op"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Keyed by name and arity together, because the overloads of one name here differ only by arity —
-        /// <c>CLR_ST_GEOG_GEOMFROMTEXT</c> with and without an SRID, <c>CLR_ST_GEOG_MAKELINE</c> five ways —
-        /// and a call in a plan has settled on one.
+        /// Overloads here differ only by arity, and a call in a plan has settled on one.
         /// </remarks>
+        /// <param name="op">The operator whose name and least operand count are matched.</param>
+        /// <returns>This table's function, or <c>null</c> where it declares none of that name and arity.</returns>
         static SqlFunction? Lookup(SqlOperator op)
         {
             return Instance().index.TryGetValue((op.getName(), op.getOperandCountRange().getMin()), out var found) ? found : null;
         }
 
         /// <summary>
-        /// The parameter class a position of the given kind is passed as.
+        /// Returns the Java parameter class a position of the given kind is declared as.
         /// </summary>
-        /// <param name="operand"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A number is a <c>Number</c> rather than a <c>Double</c> because a literal arrives as whatever type
-        /// it had, and <c>2.0</c> is a <c>BigDecimal</c>; see <c>GeographyFunctions.DWithin</c>.
+        /// A number is <c>Object</c>, because a literal arrives as whatever type it has; see
+        /// <c>GeographyFunctions.Decimal</c>.
         /// </remarks>
+        /// <param name="operand">The kind of parameter.</param>
+        /// <returns>The Java class the parameter is declared as.</returns>
         static java.lang.Class ClassOf(GeographyOperand operand)
         {
             return operand switch
@@ -1270,18 +1299,17 @@ namespace Apache.Calcite.Geography.Sql
         }
 
         /// <summary>
-        /// The one instance.
+        /// The single instance.
         /// </summary>
         /// <remarks>
-        /// Declared after the operators deliberately: a static field initializer runs in textual order, and
-        /// one placed above them builds the table out of ten nulls.
+        /// Static field initializers run in textual order, so this must stay below the operator fields it collects.
         /// </remarks>
         static readonly GeographyOperatorTable instance = new();
 
         /// <summary>
         /// Returns the operator table.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The single instance.</returns>
         public static GeographyOperatorTable Instance()
         {
             return instance;
@@ -1290,12 +1318,12 @@ namespace Apache.Calcite.Geography.Sql
         readonly SqlOperatorTable operators;
 
         /// <summary>
-        /// Each operator by its name and arity, for <see cref="Lookup"/>.
+        /// Each operator by name and arity, for <see cref="Lookup"/>.
         /// </summary>
         readonly Dictionary<(string Name, int Arity), SqlFunction> index = [];
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes the single instance.
         /// </summary>
         GeographyOperatorTable()
         {

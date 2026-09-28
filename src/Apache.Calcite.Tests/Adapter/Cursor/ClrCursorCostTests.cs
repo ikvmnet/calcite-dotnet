@@ -22,23 +22,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Plans the same statement in this convention and in Calcite's, and requires the same plan with the
-    /// node names mapped across.
+    /// Tests that this convention's nodes cost and answer metadata as Calcite's do: the same statement planned
+    /// in each convention must give the same plan, with <c>Enumerable</c> read as <c>ClrCursor</c>, and the same
+    /// row counts, bounds, collations and cumulative costs.
     /// </summary>
     /// <remarks>
-    /// The differential tests compare rows, and a plan that costs its nodes differently from Calcite's still
-    /// returns the right ones. <c>ClrCursorMergeJoin</c> did: it cost its output rows alone where
-    /// <c>EnumerableMergeJoin</c> costs its inputs as well, so a join of a million rows to a thousand sorted
-    /// both inputs and merged them where Calcite built a hash table over the thousand, and ran ten times
-    /// slower. A cost is part of the port, and the plan is where it shows.
-    ///
-    /// <para>The tables say how many rows they hold and nothing else, and are never read.</para>
+    /// The differential tests compare rows, which a plan chosen by different costs still returns correctly, so
+    /// cost is checked here. The tables state only their row counts and are never read.
     /// </remarks>
     public class ClrCursorCostTests
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts Calcite's JDBC assembly on the boot class path.
         /// </summary>
         static ClrCursorCostTests()
         {
@@ -46,9 +42,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of two integer columns that states its row count, and that its rows arrive sorted by the
-        /// first where <paramref name="sorted"/> says so.
+        /// A table of two integer columns that states its row count and, where <paramref name="sorted"/> is
+        /// true, that its rows are sorted by the first column. It holds no rows.
         /// </summary>
+        /// <param name="rowCount">The row count the table's statistic states.</param>
+        /// <param name="sorted">Whether the statistic states a collation on the first column.</param>
         sealed class CountedTable(double rowCount, bool sorted = false) : AbstractTable, ScannableTable
         {
 
@@ -80,17 +78,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Plans <paramref name="sql"/> rooted in <paramref name="convention"/>.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="convention"></param>
-        /// <param name="batch">Whether to offer the convention's batch nested loop join rule, which neither
+        /// <param name="sql">The statement.</param>
+        /// <param name="convention">The convention to request for the root.</param>
+        /// <param name="batch">Whether to add the convention's batch nested loop join rule, which neither
         /// convention registers by default.</param>
-        /// <returns></returns>
+        /// <returns>The physical root the planner chose.</returns>
         /// <remarks>
-        /// Calcite's side runs <c>Programs.standard</c> over the rules the planner already carries, which is
-        /// <c>Prepare.getProgram</c>; this convention's adds its rules first and its calc pass after, and gives
-        /// both <c>ClrCursorRelMetadata.Provider</c>, which is <c>ClrPrepare.GetProgram</c>. Nothing sets the
-        /// cluster's query supplier: <c>standard</c>'s sub-query pass sets the thread's provider, and that is
-        /// what the planner pass costs with.
+        /// Calcite's side runs <c>Programs.standard</c> over the rules the planner already carries, as
+        /// <c>Prepare.getProgram</c> does. This convention's side adds its rules first and its calc pass after,
+        /// and gives both passes <c>ClrCursorRelMetadata.Provider</c>, as <c>ClrPrepare.GetProgram</c> does. The
+        /// cluster's query supplier is not set: <c>standard</c>'s sub-query pass sets the thread's provider,
+        /// and the planner pass costs with that.
         /// </remarks>
         static RelNode PlanRel(string sql, Convention convention, bool batch)
         {
@@ -140,28 +138,30 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans <paramref name="sql"/> rooted in <paramref name="convention"/> and returns the plan as text.
+        /// Plans <paramref name="sql"/> rooted in <paramref name="convention"/> and returns the plan as text,
+        /// followed by each node's metadata.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="convention"></param>
-        /// <param name="batch"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="convention">The convention to request for the root.</param>
+        /// <param name="batch">Whether to add the convention's batch nested loop join rule.</param>
+        /// <returns>The plan as <c>RelOptUtil.toString</c> writes it, followed by one line per node from
+        /// <see cref="Metadata"/>.</returns>
         static string Plan(string sql, Convention convention, bool batch = false)
         {
             var rel = PlanRel(sql, convention, batch);
             var text = new System.Text.StringBuilder(RelOptUtil.toString(rel));
 
-            // a fresh query, because the cluster caches one and a plan that fired no rule after the sub-query
-            // pass set the thread's provider is still holding the one it made before
+            // a fresh query: the cluster caches one, and if no rule fired after the sub-query pass set the
+            // thread's provider, the cached query predates that provider
             rel.getCluster().invalidateMetadataQuery();
             Metadata(rel, rel.getCluster().getMetadataQuery(), 0, text);
             return text.ToString();
         }
 
         /// <summary>
-        /// Gives <paramref name="cluster"/> the query supplier <c>ClrPrepareImpl</c> gives its own.
+        /// Gives <paramref name="cluster"/> the metadata query supplier <c>ClrPrepareImpl</c> gives its own.
         /// </summary>
-        /// <param name="cluster"></param>
+        /// <param name="cluster">The cluster whose metadata query supplier is replaced.</param>
         static void Install(RelOptCluster cluster)
         {
             cluster.setMetadataQuerySupplier(ClrRelMetadataProvider.QuerySupplier(ClrCursorRelMetadata.Provider));
@@ -169,13 +169,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Writes what the metadata query answers for every node of <paramref name="rel"/>: the row count and
-        /// its bounds, the collations and the cumulative cost, which is what a plan is chosen from.
+        /// Appends to <paramref name="text"/> what the metadata query answers for every node of
+        /// <paramref name="rel"/>: the row count and its bounds, the collations and the cumulative cost.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <param name="mq"></param>
-        /// <param name="depth"></param>
-        /// <param name="text"></param>
+        /// <param name="rel">The node to describe, followed by its inputs.</param>
+        /// <param name="mq">The metadata query to ask.</param>
+        /// <param name="depth">The node's depth in the plan, which sets the line's indentation.</param>
+        /// <param name="text">The text the lines are appended to.</param>
         static void Metadata(RelNode rel, org.apache.calcite.rel.metadata.RelMetadataQuery mq, int depth, System.Text.StringBuilder text)
         {
             text.Append(new string(' ', depth * 2))
@@ -219,12 +219,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The batch nested loop join, which neither convention registers by default, offered to both.
+        /// With the batch nested loop join rule added to both conventions, both choose the same plan.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">A join of two tables of different sizes.</param>
         /// <remarks>
-        /// Both choose it in every one of these, so this holds the plan and cannot tell the rescan charge
-        /// apart: see <see cref="ShouldCostABatchNestedLoopJoinAsCalciteDoes"/>.
+        /// Both choose the batch nested loop join for every one of these, so the plan does not reveal a
+        /// difference in its rescan charge; <see cref="ShouldCostABatchNestedLoopJoinAsCalciteDoes"/> compares
+        /// that directly.
         /// </remarks>
         [Theory]
         [InlineData("SELECT TINY.A, BIG.B FROM TINY JOIN BIG ON TINY.B = BIG.A")]
@@ -243,13 +244,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Builds this convention's batch nested loop join over the inputs of the one Calcite planned, and
         /// requires the two to cost the same.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">A join Calcite plans as a batch nested loop join.</param>
         /// <remarks>
-        /// A batch nested loop join rescans its right input once per batch after the first, and Calcite
-        /// charges <c>max(1, batches - 1)</c> rescans, so at least one however few batches the left fills.
-        /// This one charged <c>max(1, batches) - 1</c>, which is none below two batches: fifty rows is half a
-        /// batch of a hundred. Only the node is compared, because the plans in
-        /// <see cref="ShouldPlanTheSameBatchNestedLoopJoinAsCalcite"/> choose it either way.
+        /// A batch nested loop join rescans its right input once per batch after the first, and Calcite charges
+        /// <c>max(1, batches - 1)</c> rescans, so at least one however few batches the left input fills.
+        /// <c>TINY</c>'s fifty rows are half a batch of a hundred, which exercises that lower bound.
         /// </remarks>
         [Theory]
         [InlineData("SELECT TINY.A, BIG.B FROM TINY JOIN BIG ON TINY.B = BIG.A")]
@@ -277,9 +276,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Calcite takes to be the interpreter's own cost with its input's left out.
         /// </summary>
         /// <remarks>
-        /// Built rather than planned, because <c>ClrCursorInterpreterRule</c> is a field a caller adds and
-        /// the planner never reaches the node otherwise. Calcite answers it from a handler keyed on
-        /// <c>EnumerableInterpreter</c>, and without one of ours the interpreter is charged its input too.
+        /// The nodes are built rather than planned, because <c>ClrCursorInterpreterRule</c> is not registered by
+        /// default. Calcite answers the cost from a handler keyed on <c>EnumerableInterpreter</c>, so this
+        /// convention's interpreter needs a handler of its own to leave its input's cost out.
         /// </remarks>
         [Fact]
         public void ShouldCostAnInterpreterAsCalciteDoes()
@@ -299,13 +298,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Asks every node of a plan every metadata question through both dispatchers over
         /// <see cref="ClrCursorRelMetadata.Provider"/>, and requires the same answers.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">A statement whose plan reaches one of the nodes <c>ClrCursorRelMetadata</c> has handlers for.</param>
         /// <remarks>
-        /// The provider reaches a plan two ways. <c>ClrPrepareImpl</c> dispatches through
-        /// <see cref="ClrRelMetadataProvider"/>; a caller driving <c>Frameworks</c> gets Janino's, because each
-        /// hep pass sets the thread's provider. The plan tests above only go the second way, so this is what
-        /// says the prepare path answers the same — handlers written in .NET included, which Janino reaches
-        /// by their <c>cli.</c> names.
+        /// <c>ClrPrepareImpl</c> dispatches through <see cref="ClrRelMetadataProvider"/>; a caller driving
+        /// <c>Frameworks</c> dispatches through Janino's, because each hep pass sets the thread's provider. The
+        /// plan tests above use only the second, so this checks that the first gives the same answers, including
+        /// from handlers written in .NET, which Janino reaches by their <c>cli.</c> names.
         /// </remarks>
         [Theory]
         [InlineData("SELECT SBIG.B, SSMALL.B FROM SBIG LEFT JOIN SSMALL ON SBIG.A = SSMALL.A ORDER BY SBIG.A")]
@@ -337,12 +335,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The handlers are reached through <see cref="ClrRelMetadataProvider"/> at all: a limit's bounds are
-        /// the handler's answer over the chain and the catch-all's over Calcite's provider alone.
+        /// <see cref="ClrRelMetadataProvider"/> reaches this convention's handlers: over
+        /// <c>ClrCursorRelMetadata.Provider</c> a limit has bounds and collations, and over Calcite's provider
+        /// alone it has neither.
         /// </summary>
         /// <remarks>
-        /// Two dispatchers agreeing would hold as well if neither reached a handler of ours. This is the
-        /// check that one does.
+        /// <see cref="ShouldAnswerTheSameThroughEitherDispatcher"/> would also pass if neither dispatcher reached
+        /// a handler of this convention; this checks that one does.
         /// </remarks>
         [Fact]
         public void ShouldReachTheHandlersThroughThePreparePathsDispatcher()
@@ -361,11 +360,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Returns the one node of type <typeparamref name="T"/> in <paramref name="rel"/>.
+        /// Returns the one node of type <typeparamref name="T"/> in <paramref name="rel"/>, failing the test if
+        /// there is not exactly one.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="rel"></param>
-        /// <returns></returns>
+        /// <typeparam name="T">The node type to look for.</typeparam>
+        /// <param name="rel">The root of the plan to search.</param>
+        /// <returns>The single node of type <typeparamref name="T"/>.</returns>
         static T Find<T>(RelNode rel) where T : RelNode
         {
             var found = new List<T>();

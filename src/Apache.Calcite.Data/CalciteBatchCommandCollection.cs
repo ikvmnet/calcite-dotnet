@@ -7,12 +7,12 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// An ordered collection of <see cref="CalciteBatchCommand"/> instances that belong to a
-    /// <see cref="CalciteBatch"/>. This class cannot be inherited.
+    /// An ordered collection of the <see cref="CalciteBatchCommand"/> instances of a <see cref="CalciteBatch"/>.
+    /// This class cannot be inherited.
     /// </summary>
     /// <remarks>
-    /// Commands are executed in the order they appear in this collection. Use the typed
-    /// <see cref="Add(CalciteBatchCommand)"/> overload to add commands without boxing.
+    /// Commands are executed in the order they appear in the collection. Only <see cref="CalciteBatchCommand"/>
+    /// instances can be added.
     /// </remarks>
     public sealed class CalciteBatchCommandCollection : DbBatchCommandCollection
     {
@@ -32,6 +32,8 @@ namespace Apache.Calcite.Data
         protected override void SetBatchCommand(int index, DbBatchCommand batchCommand) => _items[index] = AsBatchCommand(batchCommand);
 
         /// <inheritdoc />
+        /// <exception cref="ArgumentNullException"><paramref name="item"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="item"/> is not a <see cref="CalciteBatchCommand"/>.</exception>
         public override void Add(DbBatchCommand item) => _items.Add(AsBatchCommand(item));
 
         /// <summary>
@@ -73,6 +75,8 @@ namespace Apache.Calcite.Data
         public override int IndexOf(DbBatchCommand item) => item is CalciteBatchCommand c ? _items.IndexOf(c) : -1;
 
         /// <inheritdoc />
+        /// <exception cref="ArgumentNullException"><paramref name="item"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="item"/> is not a <see cref="CalciteBatchCommand"/>.</exception>
         public override void Insert(int index, DbBatchCommand item) => _items.Insert(index, AsBatchCommand(item));
 
         /// <inheritdoc />
@@ -88,6 +92,10 @@ namespace Apache.Calcite.Data
 
         internal IReadOnlyList<CalciteBatchCommand> Items => _items;
 
+        /// <summary>
+        /// Returns <paramref name="value"/> as a <see cref="CalciteBatchCommand"/>, refusing null and any other
+        /// command type.
+        /// </summary>
         static CalciteBatchCommand AsBatchCommand(DbBatchCommand value)
         {
             if (value is null)

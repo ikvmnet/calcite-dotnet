@@ -18,12 +18,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// Combines several query roots into one, which is what multi-root optimisation in the Volcano planner
-    /// needs. The output is one column per query, each row holding that query's values for that row index as
-    /// a map; the row count is the largest of the inputs, and a query with fewer rows contributes null.
+    /// Mirrors <c>EnumerableCombine</c>, which combines several query roots into one for multi-root
+    /// optimisation. The output has one column per query; row <i>n</i> holds each query's <i>n</i>th row as a
+    /// map of column name to value, or null where that query has fewer rows. The row count is the largest of
+    /// the inputs'.
     ///
-    /// <para>New in 1.42. No SQL statement produces a <see cref="Combine"/> — a caller builds one with
-    /// <c>RelBuilder.combine</c> — so the differential harness cannot reach this by parsing a query.</para>
+    /// <para>No SQL statement produces a <see cref="Combine"/>; a caller builds one with
+    /// <c>RelBuilder.combine</c>.</para>
     /// </remarks>
     public class ClrCursorCombine : Combine, ClrCursorRel
     {
@@ -31,9 +32,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="inputs">The query roots to combine.</param>
         public ClrCursorCombine(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs) :
             base(cluster, traitSet, inputs)
         {
@@ -63,8 +64,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 var fields = input.getRowType().getFieldList();
                 var fieldCount = fields.size();
 
-                // one name and one value per field, which is what SqlFunctions.map takes. A row of one field
-                // is the value itself, because its physical row format is SCALAR
+                // SqlFunctions.map takes alternating names and values. A row of one field is the value itself,
+                // its physical format being SCALAR
                 var args = new Expression[fieldCount * 2];
                 for (int i = 0; i < fieldCount; i++)
                 {
@@ -111,15 +112,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                 var source = result.Expression;
 
-                // the row type of the open, which is one type argument further in than a sequence's
+                // an awaiting open is a ValueTask of the cursor, so the row type is one generic level deeper
                 var sourceType = source.Type.GetGenericArguments()[0].GetGenericArguments()[0];
                 var row = Expression.Parameter(sourceType, $"row{ord}");
 
                 var fields = input.getRowType().getFieldList();
                 var fieldCount = fields.size();
 
-                // one name and one value per field, which is what SqlFunctions.map takes. A row of one field
-                // is the value itself, because its physical row format is SCALAR
+                // SqlFunctions.map takes alternating names and values. A row of one field is the value itself,
+                // its physical format being SCALAR
                 var args = new Expression[fieldCount * 2];
                 for (int i = 0; i < fieldCount; i++)
                 {
@@ -138,11 +139,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     source,
                     selector);
 
-                // the open itself, where the synchronous body reads it into a list here. Each read has to be
-                // awaited and an expression tree cannot await, so the reading moves into the operator and
-                // what the tree carries is the input — deferred, as OpenerAsync defers one, so that the
-                // operator opens each input only after the one before it has been read: an awaiting open is
-                // eager, and an array of them would have started every input before the first was drained
+                // the synchronous body reads each input into a list here; that read has to be awaited, which an
+                // expression tree cannot do, so the operator reads. Each input is passed as an opener so the
+                // operator opens it only after the previous one is drained: evaluating an awaiting open starts
+                // it, so an array of opens would start every input at once
                 lists.add(Expression.Lambda(
                     typeof(Func<,>).MakeGenericType(typeof(CancellationToken), mapped.Type),
                     mapped,
@@ -155,8 +155,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             for (int i = 0; i < lists.size(); i++)
                 arguments[i] = (Expression)lists.get(i);
 
-            // which function combines the lists stays this node's decision, as it is in the other
-            // convention; the operator only does the reading
+            // the node supplies the combining function, as in the synchronous body; the operator only reads
             var read = Expression.Parameter(typeof(java.util.List[]), "lists");
             var combine = Expression.Lambda<Func<java.util.List[], java.util.List>>(
                 Expression.Call(null, CombineQueryResultsMethod, read),

@@ -23,28 +23,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// calling convention.
     /// </summary>
     /// <remarks>
-    /// A correlate carrying a condition, which is what a correlated IN, SOME or EXISTS becomes when the
-    /// sub-query rules rewrite it to a mark join rather than to a plain correlate. Its join type is always
-    /// LEFT_MARK, and Calcite refuses every other, so this does too.
+    /// Mirrors <c>EnumerableConditionalCorrelate</c>: a correlate with a condition, which a correlated IN, SOME
+    /// or EXISTS becomes when the sub-query rules rewrite it to a mark join. Only <c>LEFT_MARK</c> is
+    /// implemented; as in Calcite, any other join type throws when the node is implemented.
     ///
-    /// <para>The right input is visited through both hierarchies, as <see cref="ClrCursorCorrelate"/>
-    /// visits it and for the same reason: it is opened per outer row inside an advance.</para>
-    ///
-    /// <para>New in 1.42, along with <c>JoinRelType.LEFT_MARK</c> itself.</para>
+    /// <para>The right input is opened once per left row while the cursor advances, so, as in
+    /// <see cref="ClrCursorCorrelate"/>, it is visited through both hierarchies.</para>
     /// </remarks>
     public class ClrCursorConditionalCorrelate : ConditionalCorrelate, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorConditionalCorrelate"/>.
+        /// Creates a <see cref="ClrCursorConditionalCorrelate"/>, deriving its collation as Calcite does.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="correlationId"></param>
-        /// <param name="requiredColumns"></param>
-        /// <param name="joinType"></param>
-        /// <param name="condition"></param>
-        /// <returns></returns>
+        /// <param name="left">The left (outer) input.</param>
+        /// <param name="right">The right input, which reads the correlation variable.</param>
+        /// <param name="correlationId">The correlation variable bound to each left row.</param>
+        /// <param name="requiredColumns">The left fields the right input reads.</param>
+        /// <param name="joinType">The join type; only <c>LEFT_MARK</c> can be implemented.</param>
+        /// <param name="condition">The condition that sets the mark.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorConditionalCorrelate Create(RelNode left, RelNode right, CorrelationId correlationId, ImmutableBitSet requiredColumns, JoinRelType joinType, RexNode condition)
         {
             var cluster = left.getCluster();
@@ -56,16 +54,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="correlationId"></param>
-        /// <param name="requiredColumns"></param>
-        /// <param name="joinType"></param>
-        /// <param name="condition"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traits">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="left">The left (outer) input.</param>
+        /// <param name="right">The right input, which reads the correlation variable.</param>
+        /// <param name="correlationId">The correlation variable bound to each left row.</param>
+        /// <param name="requiredColumns">The left fields the right input reads.</param>
+        /// <param name="joinType">The join type; only <c>LEFT_MARK</c> can be implemented.</param>
+        /// <param name="condition">The condition that sets the mark.</param>
         public ClrCursorConditionalCorrelate(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, CorrelationId correlationId, ImmutableBitSet requiredColumns, JoinRelType joinType, RexNode condition) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, correlationId, requiredColumns, joinType, condition)
         {
@@ -80,8 +78,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// The overload without a condition, which cannot describe this node, so Calcite refuses it and so
-        /// does this.
+        /// Always throws, as in Calcite: this overload cannot carry the condition.
         /// </remarks>
         public override Correlate copy(RelTraitSet traitSet, RelNode left, RelNode right, CorrelationId correlationId, ImmutableBitSet requiredColumns, JoinRelType joinType)
         {
@@ -90,8 +87,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// Only a collation on the left input passes down, because the left input is always the outer loop
-        /// and only it can keep an order.
+        /// Only a collation on the left input passes down: the left input is the outer loop, so only its order
+        /// is preserved.
         /// </remarks>
         public Pair? passThroughTraits(RelTraitSet required)
         {
@@ -118,28 +115,28 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)getLeft(), pref);
 
-            // the getter registered below is one Calcite's Rex translation reads the outer row through,
-            // so it is given their physical type, built here from the three values ours carries
+            // Calcite's Rex translation reads the correlation variable registered below, so it takes
+            // Calcite's physical type of the left row
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
             var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftCalcite.getJavaRowType(), getCorrelVariable());
 
             var corrParameter = Expression.Parameter(leftResult.PhysType.RowType, getCorrelVariable());
             implementor.Translator.Bind(corrArg, corrParameter);
 
-            // not optimising, for the reason ClrCursorCorrelate gives: the block is translated apart from
-            // the sub-plan that reads its variables
+            // not optimising: an optimising builder would inline a declaration used once, and the sub-plan
+            // translated separately still refers to the variable by name
             var corrBlock = new J.BlockBuilder(false);
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
             var rightResult = implementor.VisitChild(this, 1, (ClrCursorRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
-            // and the other hierarchy's visit of the same input, into a block of its own
+            // the right input again through the other hierarchy, with its own block
             var corrBlockAsync = new J.BlockBuilder(false);
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlockAsync, leftCalcite);
             var rightResultAsync = implementor.VisitChildAsync(this, 1, (ClrCursorRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
-            // three-valued, because a mark join's marker is null where a comparison was unknown
+            // three-valued: a mark is null where the comparison is unknown
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getCondition(), true);
 
 
@@ -185,28 +182,28 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)getLeft(), pref);
 
-            // the getter registered below is one Calcite's Rex translation reads the outer row through,
-            // so it is given their physical type, built here from the three values ours carries
+            // Calcite's Rex translation reads the correlation variable registered below, so it takes
+            // Calcite's physical type of the left row
             var leftCalcite = PhysTypeImpl.of(implementor.TypeFactory, leftResult.PhysType.RelRowType, leftResult.PhysType.Format, false);
             var corrArg = J.Expressions.parameter(java.lang.reflect.Modifier.FINAL, leftCalcite.getJavaRowType(), getCorrelVariable());
 
             var corrParameter = Expression.Parameter(leftResult.PhysType.RowType, getCorrelVariable());
             implementor.Translator.Bind(corrArg, corrParameter);
 
-            // not optimising, for the reason ClrCursorCorrelate gives: the block is translated apart from
-            // the sub-plan that reads its variables
+            // not optimising: an optimising builder would inline a declaration used once, and the sub-plan
+            // translated separately still refers to the variable by name
             var corrBlock = new J.BlockBuilder(false);
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlock, leftCalcite);
             var rightResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
-            // and the other hierarchy's visit of the same input, into a block of its own
+            // the right input again through the other hierarchy, with its own block
             var corrBlockSync = new J.BlockBuilder(false);
             implementor.RegisterCorrelVariable(getCorrelVariable(), corrArg, corrBlockSync, leftCalcite);
             var rightResultSync = implementor.VisitChild(this, 1, (ClrCursorRel)getRight(), pref);
             implementor.ClearCorrelVariable(getCorrelVariable());
 
-            // three-valued, because a mark join's marker is null where a comparison was unknown
+            // three-valued: a mark is null where the comparison is unknown
             var predicate = ClrEnumUtils.GeneratePredicate(implementor, getCluster().getRexBuilder(), getLeft(), getRight(), leftResult.PhysType, rightResult.PhysType, getCondition(), true);
 
 

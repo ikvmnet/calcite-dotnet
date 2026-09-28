@@ -4,20 +4,22 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Provides a callback that can customize a <see cref="DbCommand"/> before it is executed by the
-    /// Calcite ADO.NET adapter.
+    /// Prepares a <see cref="DbCommand"/> after its text is set and before it is executed.
     /// </summary>
     /// <remarks>
-    /// Implement this interface to inject provider-specific settings such as command timeout,
-    /// additional parameters, or query hints that cannot be expressed in the SQL text alone.
+    /// The adapter uses one to add a pushed-down statement's parameters (see
+    /// <see cref="AdoEnumerable.CreateEnricher"/>). The plans the adapter generates pass no enricher of the caller's;
+    /// one can be given to <see cref="AdoEnumerable.CreateReader(AdoDataSource, string, org.apache.calcite.linq4j.function.Function1, DbCommandEnricher)"/>,
+    /// <see cref="AdoEnumerable.CreateUpdate(AdoDataSource, string, org.apache.calcite.linq4j.function.Function1, DbCommandEnricher)"/>
+    /// and <see cref="AdoCursors"/> directly.
     /// </remarks>
     public interface DbCommandEnricher
     {
 
         /// <summary>
-        /// Applies customizations to the <paramref name="command"/> before it is executed.
+        /// Prepares the command, for example by adding parameters or setting a timeout.
         /// </summary>
-        /// <param name="command">The command to customize.</param>
+        /// <param name="command">The command, with its text set and on an open connection.</param>
         void Enrich(DbCommand command);
 
     }

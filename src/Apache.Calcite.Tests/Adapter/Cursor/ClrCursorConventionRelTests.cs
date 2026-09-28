@@ -21,11 +21,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// and through Calcite's, and requires the same rows.
     /// </summary>
     /// <remarks>
-    /// The same oracle as <see cref="ClrCursorConventionDifferentialTests"/>, for the plans that cannot be written
-    /// as SQL. <c>Combine</c> has no syntax; the POSIX regex operators are not in the core parser; a
-    /// recursive query over a transient table is built with <c>transientScan</c> and <c>repeatUnion</c>; and
-    /// a column with a collation of its own can only be given a type by hand. Calcite reaches all four
-    /// through <c>CalciteAssert.withRel</c>, and every test here is one of its own ported.
+    /// The same comparison as <see cref="ClrCursorConventionDifferentialTests"/>, for plans that cannot be
+    /// written as SQL: <c>Combine</c> has no syntax, the POSIX regex operators are not in the core parser, a
+    /// recursive query over a transient table is built with <c>transientScan</c> and <c>repeatUnion</c>, and a
+    /// column with its own collation can only be typed by hand. Each test ports one of Calcite's own, which
+    /// build these plans through <c>CalciteAssert.withRel</c>; the section headings name the Calcite test
+    /// class.
     /// </remarks>
     public class ClrCursorConventionRelTests
     {
@@ -35,7 +36,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         // ------------------------------------------------------------------ EnumerableCombineTest
         //
         // A combine puts one query per column and one row per position, so a shorter query contributes null.
-        // There is no SQL for it, which is why the only test this convention had was written by hand.
 
         [Fact]
         public void ShouldAgreeOnCombiningTwoQueries() =>
@@ -81,8 +81,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         // ------------------------------------------------------------------ EnumerableCalcTest
 
         /// <summary>
-        /// CALCITE-3536: a COALESCE of a nullable field and a literal, whose null strategy the implementor
-        /// gets to decide.
+        /// A COALESCE of a nullable field and a literal, whose null handling the implementor decides.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnCoalesce() =>
@@ -117,11 +116,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnANegatedCaseInsensitivePosixRegexOfTheOtherCase() => ShouldAgreeOnPosixRegex(SqlStdOperatorTable.NEGATED_POSIX_REGEX_CASE_INSENSITIVE, "e..c");
 
         /// <summary>
-        /// CALCITE-4419: the POSIX regex operators have no syntax in the core parser and are only reachable
+        /// Filters on a POSIX regex operator, which has no syntax in the core parser and is reachable only
         /// through a builder.
         /// </summary>
-        /// <param name="op"></param>
-        /// <param name="pattern"></param>
+        /// <param name="op">The POSIX regex operator, case sensitive or not and negated or not.</param>
+        /// <param name="pattern">The regular expression the employees' names are matched against.</param>
         static void ShouldAgreeOnPosixRegex(SqlOperator op, string pattern) =>
             ClrCursorConventionDifferentialTests.SameRel(builder => builder
                 .scan("HR", "emps")
@@ -131,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .build());
 
         /// <summary>
-        /// CALCITE-6680: IS EMPTY over a nullable collection, which answers on the null rather than reading it.
+        /// IS EMPTY over a nullable collection.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnIsEmptyOverACollection() =>
@@ -142,7 +141,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .build());
 
         /// <summary>
-        /// CALCITE-7357: IS DISTINCT FROM as a projection rather than as a join key.
+        /// IS DISTINCT FROM as a projection rather than as a join key.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnIsDistinctFromAsAProjection() =>
@@ -155,16 +154,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .build());
 
         /// <summary>
-        /// CALCITE-7826: IS [NOT] DISTINCT FROM over two DECIMALs of different scales.
+        /// IS [NOT] DISTINCT FROM over two DECIMALs of different scales treats 1.10 and 1.1 as equal.
         /// </summary>
         /// <remarks>
-        /// <c>RelBuilderTest.testIsNotDistinctFromDecimal</c>. Only a call built by hand reaches
-        /// <c>DistinctFromImplementor</c> — the parser and <c>RelBuilder.isNotDistinctFrom</c> both expand the
-        /// operator into <c>IS NULL</c> and <c>=</c> over operands cast to a common type — so there is no SQL
-        /// for it. <c>BigDecimal.equals</c> is sensitive to scale, and before the fix 1.10 and 1.1 were
-        /// distinct. This convention translates through Calcite's <c>RexImpTable</c>, so it takes the fix
-        /// with no change here; the test is what shows that, and the rows are held to SQL's answer as well as
-        /// to Calcite's, since agreeing with Calcite is exactly what both did while both were wrong.
+        /// Mirrors <c>RelBuilderTest.testIsNotDistinctFromDecimal</c>. Only a call built by hand reaches
+        /// <c>DistinctFromImplementor</c>: the parser and <c>RelBuilder.isNotDistinctFrom</c> both expand the
+        /// operator into <c>IS NULL</c> and <c>=</c> over operands cast to a common type. <c>BigDecimal.equals</c>
+        /// is sensitive to scale, so a correct implementation compares by value. The rows are checked against
+        /// SQL's answer as well as Calcite's, because both conventions translate through Calcite's
+        /// <c>RexImpTable</c> and would agree on a shared defect.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnIsNotDistinctFromOverDecimalsOfDifferentScales()
@@ -186,9 +184,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ EnumerableCorrelateTest
         //
-        // A correlate is only chosen when the joins are taken away and JOIN_TO_CORRELATE is put in, which is
-        // what Calcite's own tests do from Hook.PLANNER. Both sides get the same treatment here, so a
-        // correlate is what each of them plans.
+        // A correlate is chosen only when the join rules are removed and JOIN_TO_CORRELATE is added, as
+        // Calcite's own tests do from Hook.PLANNER. Both conventions are planned with the same change, so each
+        // plans a correlate.
 
         static readonly RelOptRule[] AddJoinToCorrelate = [CoreRules.JOIN_TO_CORRELATE];
 
@@ -201,7 +199,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         ];
 
         /// <summary>
-        /// CALCITE-2605: a left outer join run as a correlate.
+        /// A left outer join run as a correlate.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnALeftOuterJoinRunAsACorrelate() =>
@@ -215,7 +213,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 add: AddJoinToCorrelate, remove: RemoveTheJoins);
 
         /// <summary>
-        /// CALCITE-2621: a semi join run as a correlate.
+        /// A semi join run as a correlate.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnASemiJoinRunAsACorrelate() =>
@@ -229,7 +227,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 add: AddJoinToCorrelate, remove: RemoveTheJoins);
 
         /// <summary>
-        /// CALCITE-2920: an anti join run as a correlate.
+        /// An anti join run as a correlate.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAnAntiJoinRunAsACorrelate() =>
@@ -260,7 +258,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 add: AddJoinToCorrelate, remove: RemoveTheJoins);
 
         /// <summary>
-        /// CALCITE-2920: an anti join whose key is null on one side, which is NOT EXISTS and not NOT IN.
+        /// An anti join, run as a correlate, whose key is null on one side; it has NOT EXISTS semantics, not NOT
+        /// IN.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAnAntiJoinOverANullKeyRunAsACorrelate() =>
@@ -331,7 +330,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .build());
 
         /// <summary>
-        /// CALCITE-4139: a recursive query whose seed holds a null, which the transient table has to store.
+        /// A recursive query whose seed holds a null, which the transient table must store.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnARecursiveQueryOverANull() =>
@@ -347,22 +346,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A recursive query whose step aggregates the working table rather than reading it row by row.
         /// </summary>
         /// <remarks>
-        /// The one shape that tells Calcite's termination test apart from "stop after a round that produced
-        /// nothing". <c>EnumerableDefaults.repeatUnion</c> stops on an empty round only where its
-        /// <c>current</c> field still holds the <c>DUMMY</c> sentinel, and the sentinel is never put back
-        /// across the seed/iteration boundary -- so a seed that emitted a row leaves <c>current</c> holding
-        /// that row, and the first empty round does not stop it. It runs the iterative part once more.
+        /// <c>EnumerableDefaults.repeatUnion</c> stops on an empty round only where its <c>current</c> field
+        /// still holds the <c>DUMMY</c> sentinel, and it does not restore the sentinel between the seed and the
+        /// first round. So after a seed that emitted a row, the first empty round does not stop the sequence
+        /// and the iterative part runs once more. A step that reads the working table row by row cannot show
+        /// this, because an empty table gives an empty round either way; <c>COUNT(*)</c> yields a row over no
+        /// rows, so the extra round appears in the result.
         ///
-        /// <para>Every recursive test above reads the working table row by row, and none of them can see
-        /// this: an empty table gives an empty round whether the round runs or not. The step here is
-        /// <c>COUNT(*)</c>, which yields a row over no rows, so the extra round shows up in the answer.</para>
-        ///
-        /// <para>It is a UNION rather than a UNION ALL, and that is what makes it terminate. The spool is
-        /// cleared by the round that wrote nothing, so the step oscillates: a round that counts one is empty
-        /// and empties the table, and the round after it counts zero and emits 99 again. Under UNION ALL
-        /// that runs forever -- under Calcite too, which is worth knowing before writing a recursive test.
-        /// Deduplication stops it: the second 99 is one this sequence already returned, so that round adds
-        /// nothing new, the sentinel survives it, and the query ends. Rows 1 and 99.</para>
+        /// <para>The query must be a UNION rather than a UNION ALL to terminate. The spool is cleared by a round
+        /// that wrote nothing, so the step oscillates: a round that counts one is empty and empties the table,
+        /// and the next counts zero and emits 99 again. Under UNION ALL that never ends, under Calcite as well.
+        /// With deduplication the second 99 is a row already returned, so that round adds nothing, the
+        /// sentinel survives it, and the query ends with rows 1 and 99.</para>
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnARecursiveQueryWhoseStepAggregates() =>
@@ -376,11 +371,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .build());
 
         /// <summary>
-        /// CALCITE-4054: a repeat union whose step is a correlate with the transient scan on its right.
+        /// A repeat union whose step is a correlate with the transient scan as its right input.
         /// </summary>
         /// <remarks>
-        /// The spool is written while the correlate is reading it, which is the one shape that exercises
-        /// <c>ClrCursorDefaults.LazyCollectionSpool</c> as a write.
+        /// The transient table is read from inside the correlate's inner loop while the spool above the step
+        /// writes to it.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnARecursiveQueryWhoseStepIsACorrelate() =>
@@ -392,8 +387,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                     .project(builder.field("emps", "empid"), builder.field("emps", "name"))
                     .transientScan("#DELTA#");
 
-                // popped, so that it can be pushed back as the join's *right* input, which is the whole point
-                // of CALCITE-4054: the spool is read from inside the correlate's inner loop
+                // popped, so that it can be pushed back as the join's right input and be read from inside the
+                // correlate's inner loop
                 var transientScan = builder.build();
 
                 return builder
@@ -413,8 +408,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         // ------------------------------------------------------------------ EnumerableJoinTest
 
         /// <summary>
-        /// CALCITE-2920: an anti join whose key is null on one side, run as a hash anti join rather than as a
-        /// correlate.
+        /// An anti join whose key is null on one side, run as a hash anti join rather than as a correlate.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAnAntiJoinOverANullKey() =>
@@ -471,9 +465,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ EnumerableRepeatUnionHierarchyTest
         //
-        // One recursive query walked every way it can be: up the hierarchy and down it, from one start row
-        // and from two, with and without a depth limit, distinct and not. Calcite runs it as one parameterised
-        // test and asserts the order, which is the algorithm's; so does this.
+        // One recursive query walked up and down the hierarchy, from one start row and from two, with and
+        // without a depth limit, distinct and not. As in Calcite's parameterised test, the order of the rows is
+        // compared, since it follows from the algorithm.
 
         [Theory]
         [InlineData(true, "1", true, -1)]
@@ -531,9 +525,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ EnumerableStringComparisonTest
         //
-        // CALCITE-3951: a VARCHAR with a collation of its own compares by that collation and not by the
-        // string's own order. There is no syntax for giving a column one, so every test here builds the row
-        // type by hand, as Calcite's do.
+        // A VARCHAR with its own collation compares by that collation rather than by the string's natural
+        // order. There is no syntax for giving a column one, so these tests build the row type by hand, as
+        // Calcite's do.
 
         static readonly org.apache.calcite.sql.SqlCollation Primary = Collation(java.text.Collator.PRIMARY);
         static readonly org.apache.calcite.sql.SqlCollation Secondary = Collation(java.text.Collator.SECONDARY);
@@ -574,7 +568,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 .build());
 
         /// <summary>
-        /// CALCITE-5967: an equality on a collated column needs a comparator of its own inside the operator.
+        /// An equality on a collated column, which compares by the column's collation.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnFilteringStringsByTheirOwnCollation() =>
@@ -594,7 +588,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 remove: [EnumerableRules.ENUMERABLE_JOIN_RULE, ClrCursorRules.ClrCursorJoinRule]);
 
         /// <summary>
-        /// CALCITE-5003: a merge union of two inputs whose collations differ.
+        /// A merge union of two inputs whose string collations differ.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAMergeUnionOverTwoCollations() =>
@@ -626,10 +620,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The comparisons <c>EnumerableStringComparisonTest.testStringComparison</c> makes, which are one
-        /// test there and one row each here.
+        /// The comparisons <c>EnumerableStringComparisonTest.testStringComparison</c> makes.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Each comparison as its two operands, the operator and the collation it is made under.</returns>
         static IEnumerable<(string Left, string Right, SqlOperator Op, org.apache.calcite.sql.SqlCollation Collation)> Comparisons()
         {
             var lt = SqlStdOperatorTable.LESS_THAN;
@@ -651,10 +644,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A <see cref="java.util.function.UnaryOperator"/> reading a delegate, so that a builder's
-        /// configuration can be changed from C#.
+        /// A <see cref="java.util.function.UnaryOperator"/> over a delegate, so that a builder's configuration
+        /// can be changed from C#.
         /// </summary>
-        /// <param name="transform"></param>
+        /// <param name="transform">The function <c>apply</c> calls.</param>
         sealed class DelegateUnaryOperator(Func<object, object> transform) : java.util.function.UnaryOperator
         {
 

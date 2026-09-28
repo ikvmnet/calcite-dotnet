@@ -15,16 +15,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
 {
 
     /// <summary>
-    /// What a prepared statement says about its result, against what Calcite says.
+    /// Compares the column metadata a prepared statement reports with what Calcite's own pipeline reports.
     /// </summary>
     /// <remarks>
-    /// <c>getColumnMetaDataList</c>, <c>metaData</c>, <c>avaticaType</c> and the five helpers beneath them
-    /// are private statics of <c>CalcitePrepareImpl</c>, so they are ported rather than reused, and
-    /// everything the ADO.NET surface reports about a column comes out of them — the CLR type, the provider
-    /// type name, nullability, precision, scale. A defect there is invisible in the rows.
-    ///
-    /// <para>Calcite's own pipeline is the oracle, reached directly rather than through a connection: both
-    /// produce a list of <c>ColumnMetaData</c>, so the comparison is field for field.</para>
+    /// <c>getColumnMetaDataList</c>, <c>metaData</c>, <c>avaticaType</c> and their helpers are private to
+    /// <c>CalcitePrepareImpl</c> and are ported. What the ADO.NET surface reports about a column (CLR type,
+    /// provider type name, nullability, precision, scale) comes from them, and a defect there does not show
+    /// in the rows. Both pipelines produce <c>ColumnMetaData</c>, so the comparison is field for field.
     /// </remarks>
     public class ClrPrepareImplMetadataTests
     {
@@ -32,8 +29,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <summary>
         /// Renders one column's metadata so two lists can be compared field for field.
         /// </summary>
-        /// <param name="c"></param>
-        /// <returns></returns>
+        /// <param name="c">The column.</param>
+        /// <returns>The column's ordinal, name, label, nullability, signedness, sizes, catalog, schema, table, class name and
+        /// type, on one line.</returns>
         static string Render(ColumnMetaData c)
         {
             var sb = new StringBuilder();
@@ -55,10 +53,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Renders a column's type, descending into a component or a struct as the port does.
+        /// Renders a column's type, including an array's component type and a struct's columns.
         /// </summary>
-        /// <param name="t"></param>
-        /// <returns></returns>
+        /// <param name="t">The type.</param>
+        /// <returns>The type's id, name and representation, followed by its component or columns where it has them.</returns>
         static string Render(ColumnMetaData.AvaticaType t)
         {
             var sb = new StringBuilder();
@@ -75,10 +73,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// The columns this project's pipeline reports.
+        /// The columns <see cref="ClrPrepareImpl"/> reports for <paramref name="sql"/>.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <returns>Each column's metadata, rendered by <c>Render(ColumnMetaData)</c>.</returns>
         static List<string> Clr(string sql)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -94,10 +92,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// The columns Calcite's own pipeline reports.
+        /// The columns Calcite's own pipeline reports for <paramref name="sql"/>.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <returns>Each column's metadata, rendered by <c>Render(ColumnMetaData)</c>.</returns>
         static List<string> Calcite(string sql)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -151,11 +149,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// The cursor factory decides how a row is read back, and is deduced from the columns and the
-        /// element type. It is worth asserting separately, because a row of one column is the value rather
-        /// than a one-element array and that is the shape that has broken before.
+        /// The cursor factory, deduced from the columns and the element type, decides how a row is read back;
+        /// a one-column row is the value itself rather than a one-element array.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The statement, of one column or several.</param>
         [Theory]
         [InlineData("SELECT * FROM SALES")]
         [InlineData("SELECT ID FROM SALES")]
@@ -177,10 +174,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// <c>maxRowCount</c> lives inside <c>CalciteSignature.enumerable</c> in Calcite and inside
-        /// <see cref="IClrPrepare.Signature.Bind"/> here. Nothing else exercises it, because every caller in this
-        /// project passes -1.
+        /// <c>maxRowCount</c> limits the rows <see cref="IClrPrepare.Signature.Bind"/> returns, as it does in
+        /// Calcite's <c>CalciteSignature.enumerable</c>; a negative value means no limit.
         /// </summary>
+        /// <param name="maxRowCount">The limit passed to <c>PrepareSql</c>.</param>
+        /// <param name="expected">The number of rows the six-row table should then return.</param>
         [Theory]
         [InlineData(-1L, 6)]
         [InlineData(0L, 0)]

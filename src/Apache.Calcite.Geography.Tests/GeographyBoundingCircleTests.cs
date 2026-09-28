@@ -12,17 +12,13 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The smallest circle containing a geography, on the Earth rather than on a map.
+    /// Tests <c>CLR_ST_GEOG_BOUNDINGCIRCLE</c>, whose radius is a distance on the ellipsoid rather than in
+    /// degrees.
     /// </summary>
     /// <remarks>
-    /// A planar smallest circle measures its radius in degrees, so what it draws is an ellipse on the ground
-    /// everywhere off the equator, and the centre it picks is the one that minimises a distance nobody
-    /// travels. This is a circle of constant distance about a centre chosen by distance.
-    ///
-    /// <para>Containment is exact and minimality is approximate, which is the deliberate way round: the
-    /// centre is walked toward rather than solved for, and the radius is measured afterwards from wherever
-    /// the walk settled. A circle a fraction of a percent too wide is a worse bound and still a bound; one a
-    /// fraction too narrow is wrong.</para>
+    /// The centre is found iteratively and the radius is then measured from it, so the circle always contains
+    /// the shape and may be slightly larger than the smallest one that would. The tests hold containment
+    /// exactly and minimality within a tolerance.
     /// </remarks>
     public class GeographyBoundingCircleTests
     {
@@ -40,7 +36,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The circle holds what it was built from. Every vertex, and every edge between them.
+        /// The circle covers the geometry it was built from, edges included.
         /// </summary>
         [Fact]
         public void ShouldContainWhatItBounds()
@@ -59,12 +55,9 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Two points are bounded by the circle on the geodesic between them, centred at its middle.
+        /// The circle around two points is centred on the midpoint of the geodesic between them, with a radius
+        /// of half its length.
         /// </summary>
-        /// <remarks>
-        /// The case with a known answer. The centre is the midpoint of the geodesic and the radius is half
-        /// its length, so both can be checked against a measurement rather than against another circle.
-        /// </remarks>
         [Fact]
         public void ShouldCentreTwoPointsOnTheirMidpoint()
         {
@@ -83,18 +76,17 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The radius is metres, so the circle is the same size wherever the shape sits.
+        /// Two shapes of the same size on the ground get circles of the same area, whatever their latitude.
         /// </summary>
         /// <remarks>
-        /// The one that separates the readings. Two shapes of the same size on the ground, one at the equator
-        /// and one at sixty north, get circles of the same area. A planar bounding circle would give the
-        /// northern one a smaller area, its degrees being worth less there.
+        /// A planar bounding circle, measured in degrees, would give the pair at 60 degrees north a smaller
+        /// area.
         /// </remarks>
         [Fact]
         public void ShouldBoundTheSameSizeAtEveryLatitude()
         {
-            // a degree of longitude at 60 north is half of one at the equator, so this pair is the same
-            // width on the ground
+            // A degree of longitude at 60 north is about half of one at the equator, so the two pairs are
+            // about the same width on the ground.
             var equator = GeographyFunctions.Area(Circle("MULTIPOINT((-1 0), (1 0))"))!.doubleValue();
             var north = GeographyFunctions.Area(Circle("MULTIPOINT((-2 60), (2 60))"))!.doubleValue();
 
@@ -102,13 +94,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A circle is not much larger than it must be.
+        /// The circle's area is within ten percent of the least possible.
         /// </summary>
         /// <remarks>
-        /// For two points the least possible radius is half the distance between them, so the circle's area
-        /// has a floor of π times that squared. The walk stops a little short of the exact centre and the ring
-        /// is drawn a little wide to hold the shape between its vertices, so a few percent over is expected;
-        /// far more than that would mean the walk was not converging.
+        /// For two points the least radius is half the distance between them. The centre is approximate and
+        /// the 32-sided ring is drawn slightly outside the radius so that its edges do not cut inside it, so
+        /// the area is expected to be a few percent over.
         /// </remarks>
         [Fact]
         public void ShouldNotBeMuchLargerThanItMustBe()
@@ -123,7 +114,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// One point has no width, and nothing has no circle.
+        /// A single point gives that point, an empty geometry gives an empty polygon, and null gives null.
         /// </summary>
         [Fact]
         public void ShouldDegenerateWhereThereIsNothingToBound()

@@ -19,23 +19,23 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// by building a lookup of one input and probing it with the other.
     /// </summary>
     /// <remarks>
-    /// The hash join and the mark join drain their build side inside the open and take both inputs opened.
-    /// The semi join does not: linq4j memoizes its lookup to the first outer row (CALCITE-2909), which is
-    /// inside an advance, so its right input is handed to the operator as openers of both kinds, and each
-    /// body visits that input through both hierarchies to build them.
+    /// Mirrors <c>EnumerableHashJoin</c>. The inner, outer and mark joins build their lookup when the node's
+    /// cursor is opened and take both inputs as opens. The semi and anti joins build theirs lazily, on the first
+    /// left row, as linq4j's <c>semiJoin</c> does; that happens inside an advance, so the right input is passed
+    /// as an opener of each kind and each body visits it through both hierarchies.
     /// </remarks>
     public class ClrCursorHashJoin : Join, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorHashJoin"/>.
+        /// Creates a <see cref="ClrCursorHashJoin"/>, deriving its collation as Calcite does.
         /// </summary>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
-        /// <returns></returns>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables set by this join.</param>
+        /// <param name="joinType">The join type.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorHashJoin Create(RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType)
         {
             var cluster = left.getCluster();
@@ -47,15 +47,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="left"></param>
-        /// <param name="right"></param>
-        /// <param name="condition"></param>
-        /// <param name="variablesSet"></param>
-        /// <param name="joinType"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traits">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="left">The left input.</param>
+        /// <param name="right">The right input.</param>
+        /// <param name="condition">The join condition.</param>
+        /// <param name="variablesSet">The correlation variables set by this join.</param>
+        /// <param name="joinType">The join type.</param>
         public ClrCursorHashJoin(RelOptCluster cluster, RelTraitSet traits, RelNode left, RelNode right, RexNode condition, java.util.Set variablesSet, JoinRelType joinType) :
             base(cluster, traits, com.google.common.collect.ImmutableList.of(), left, right, condition, variablesSet, joinType)
         {
@@ -95,9 +95,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var rowCount = mq.getRowCount(this).doubleValue();
 
-            // a join can be flipped, and for many algorithms both versions are viable and cost the same. To
-            // keep the answer stable from one version of the planner to the next, one of them is made
-            // slightly more expensive.
+            // as in Calcite: a join and its flipped form often cost the same, so one of them is made slightly
+            // more expensive to keep the planner's choice stable
             switch (joinType.name())
             {
                 case nameof(JoinRelType.SEMI):
@@ -163,15 +162,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a semi or an anti join, which return the left input alone.
+        /// Implements a semi or anti join, which returns left rows only.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The right input is acquired inside the advance that reads the first left row, so it goes to the
-        /// operator as openers of both kinds, and this body visits it through the other hierarchy too.
+        /// The right input is acquired inside the advance that reads the first left row, so it is passed as an
+        /// opener of each kind and is also visited through the synchronous hierarchy.
         /// </remarks>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The awaiting open of the join, whose rows are the left input's rows.</returns>
         ClrCursorAsyncResult ImplementHashSemiJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
@@ -199,22 +198,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a mark join, which returns every left row with a marker saying whether the right side
-        /// had a match.
+        /// Implements a mark join, which returns every left row with a mark saying whether the right input had
+        /// a match: TRUE, FALSE or UNKNOWN.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>implementHashMarkJoin</c>, statement for statement. Both predicates are the
-        /// three-valued ones, because the marker is three-valued: a mark join has to tell FALSE from UNKNOWN,
-        /// which is what makes <c>x IN (…)</c> over a nullable column answer UNKNOWN.
+        /// Mirrors <c>EnumerableHashJoin.implementHashMarkJoin</c>. Both predicates are three-valued, so that
+        /// <c>x IN (...)</c> over a nullable column can answer UNKNOWN.
         ///
-        /// <para>The join keys split in two. A null-safe key is IS NOT DISTINCT FROM and answers only
-        /// TRUE or FALSE; a not null-safe one is EQUALS and answers three ways. The runtime takes both key
-        /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
-        /// hash lookup alone can decide.</para>
+        /// <para>A null-safe key (<c>IS NOT DISTINCT FROM</c>) compares TRUE or FALSE; any other key
+        /// (<c>=</c>) can compare UNKNOWN. The operator receives a selector over all keys, a selector over the
+        /// null-safe keys, and whether at most one key is not null-safe.</para>
         /// </remarks>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The awaiting open of the join, whose rows are each left row followed by its marker.</returns>
         ClrCursorAsyncResult ImplementHashMarkJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
@@ -239,8 +236,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var equiCondition = joinInfo.getEquiCondition(left, right, rexBuilder);
             var equiPredicate = ClrEnumUtils.GeneratePredicate(implementor, rexBuilder, left, right, leftResult.PhysType, rightResult.PhysType, equiCondition, true);
 
-            // the null-aware accessor yields null where a not null-safe key is null, which is how the runtime
-            // learns that a comparison is unknown rather than false
+            // the null-aware accessor yields null where a key that is not null-safe is null, which tells the
+            // operator the comparison is unknown rather than false
             var leftKeySelector = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
             var rightKeySelector = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
@@ -297,11 +294,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements every join that returns fields of both inputs.
+        /// Implements a join that returns fields of both inputs: inner, left, right or full.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The awaiting open of the join, whose rows are a left row and a right row combined.</returns>
         ClrCursorAsyncResult ImplementHashJoinAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)left, pref);
@@ -335,11 +332,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements every join that returns fields of both inputs.
+        /// Implements a join that returns fields of both inputs: inner, left, right or full.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The synchronous open of the join, whose rows are a left row and a right row combined.</returns>
         ClrCursorResult ImplementHashJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
@@ -374,15 +371,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a semi or an anti join, which return the left input alone.
+        /// Implements a semi or anti join, which returns left rows only.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The right input is acquired inside the advance that reads the first left row, so it goes to the
-        /// operator as openers of both kinds, and this body visits it through the other hierarchy too.
+        /// The right input is acquired inside the advance that reads the first left row, so it is passed as an
+        /// opener of each kind and is also visited through the awaiting hierarchy.
         /// </remarks>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The synchronous open of the join, whose rows are the left input's rows.</returns>
         ClrCursorResult ImplementHashSemiJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
@@ -411,22 +408,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a mark join, which returns every left row with a marker saying whether the right side
-        /// had a match.
+        /// Implements a mark join, which returns every left row with a mark saying whether the right input had
+        /// a match: TRUE, FALSE or UNKNOWN.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>implementHashMarkJoin</c>, statement for statement. Both predicates are the
-        /// three-valued ones, because the marker is three-valued: a mark join has to tell FALSE from UNKNOWN,
-        /// which is what makes <c>x IN (…)</c> over a nullable column answer UNKNOWN.
+        /// Mirrors <c>EnumerableHashJoin.implementHashMarkJoin</c>. Both predicates are three-valued, so that
+        /// <c>x IN (...)</c> over a nullable column can answer UNKNOWN.
         ///
-        /// <para>The join keys split in two. A null-safe key is IS NOT DISTINCT FROM and answers only
-        /// TRUE or FALSE; a not null-safe one is EQUALS and answers three ways. The runtime takes both key
-        /// selectors and a flag saying whether at most one key is not null-safe, because that is the case a
-        /// hash lookup alone can decide.</para>
+        /// <para>A null-safe key (<c>IS NOT DISTINCT FROM</c>) compares TRUE or FALSE; any other key
+        /// (<c>=</c>) can compare UNKNOWN. The operator receives a selector over all keys, a selector over the
+        /// null-safe keys, and whether at most one key is not null-safe.</para>
         /// </remarks>
+        /// <param name="implementor">The implementor, through which both inputs are visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to both inputs.</param>
+        /// <returns>The synchronous open of the join, whose rows are each left row followed by its marker.</returns>
         ClrCursorResult ImplementHashMarkJoin(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var leftResult = implementor.VisitChild(this, 0, (ClrCursorRel)left, pref);
@@ -451,8 +446,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var equiCondition = joinInfo.getEquiCondition(left, right, rexBuilder);
             var equiPredicate = ClrEnumUtils.GeneratePredicate(implementor, rexBuilder, left, right, leftResult.PhysType, rightResult.PhysType, equiCondition, true);
 
-            // the null-aware accessor yields null where a not null-safe key is null, which is how the runtime
-            // learns that a comparison is unknown rather than false
+            // the null-aware accessor yields null where a key that is not null-safe is null, which tells the
+            // operator the comparison is unknown rather than false
             var leftKeySelector = NullAwareAccessor(leftResult.PhysType, joinInfo.leftKeys);
             var rightKeySelector = NullAwareAccessor(rightResult.PhysType, joinInfo.rightKeys);
 
@@ -510,17 +505,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the lambda reading a join key from a row, yielding null for the whole key where a field
-        /// that excludes nulls is null.
+        /// Returns a lambda reading the join key from a row, or null where a key field that is not null-safe is
+        /// null.
         /// </summary>
-        /// <param name="physType"></param>
-        /// <param name="keys"></param>
-        /// <returns></returns>
+        /// <param name="physType">The row's physical type.</param>
+        /// <param name="keys">The key field ordinals.</param>
+        /// <returns>The key selector.</returns>
         /// <remarks>
-        /// What the hash join, the semi join and the mark join all key on. The key is a list even for one
-        /// field, so a null-safe key of one field is a list holding null — which is not null, and matches
-        /// another one. That is the whole difference from <see cref="Accessor"/>, and it is what makes
-        /// <c>IS NOT DISTINCT FROM</c> join a null to a null.
+        /// Unlike <see cref="Accessor"/>, the key is a list even for one field, so a null in a null-safe key is a
+        /// list holding null, which equals another such list; that is how <c>IS NOT DISTINCT FROM</c> matches
+        /// null to null.
         /// </remarks>
         LambdaExpression NullAwareAccessor(ClrPhysType physType, java.util.List keys)
         {
@@ -528,14 +522,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the lambda reading a join key from a row.
+        /// Returns a lambda reading the given fields from a row; for a single field, the field itself.
         /// </summary>
-        /// <param name="physType"></param>
-        /// <param name="keys"></param>
-        /// <returns></returns>
+        /// <param name="physType">The row's physical type.</param>
+        /// <param name="keys">The field ordinals.</param>
+        /// <returns>The key selector.</returns>
         /// <remarks>
-        /// The plain accessor, which yields the field itself for a key of one. A mark join keys its null-safe
-        /// lookup on this, as Calcite does; nothing else here does.
+        /// Used for a mark join's null-safe keys, as Calcite does.
         /// </remarks>
         static LambdaExpression Accessor(ClrPhysType physType, java.util.List keys)
         {
@@ -543,15 +536,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the lambda testing the part of the condition that is not an equality, or a null constant
-        /// where the condition is entirely equalities.
+        /// Returns a lambda testing the non-equi part of the condition, or a null constant where the condition
+        /// is entirely equalities.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="leftPhysType"></param>
-        /// <param name="rightPhysType"></param>
-        /// <param name="leftType"></param>
-        /// <param name="rightType"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="leftPhysType">The left input's physical type.</param>
+        /// <param name="rightPhysType">The right input's physical type.</param>
+        /// <param name="leftType">The left row type.</param>
+        /// <param name="rightType">The right row type.</param>
+        /// <returns>The predicate, typed <c>Func&lt;TLeft, TRight, bool&gt;</c>.</returns>
         Expression Predicate(ClrCursorRelImplementor implementor, ClrPhysType leftPhysType, ClrPhysType rightPhysType, Type leftType, Type rightType)
         {
             var type = typeof(Func<,,>).MakeGenericType(leftType, rightType, typeof(bool));

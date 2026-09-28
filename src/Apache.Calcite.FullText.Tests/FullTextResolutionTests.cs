@@ -16,13 +16,9 @@ namespace Apache.Calcite.FullText.Tests
 {
 
     /// <summary>
-    /// The two routes a name can be reached by, and that they agree.
+    /// Resolution through the chained operator table and through the schema declarations, and that both give
+    /// the same plan.
     /// </summary>
-    /// <remarks>
-    /// A host chains the operator table; everybody else gets the declarations on a schema. Both are needed —
-    /// a connection builds no validator for anyone to chain anything into — and the point of testing them
-    /// side by side is that the plan must not depend on which one answered.
-    /// </remarks>
     public class FullTextResolutionTests
     {
 
@@ -32,7 +28,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The whole point of the schema declarations: no operator table, and the name still resolves.
+        /// With no operator table chained, the name resolves through the schema declarations.
         /// </summary>
         [Fact]
         public void ShouldResolveThroughTheSchemaAlone()
@@ -46,7 +42,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// And the route a host takes: no declarations, and the name still resolves.
+        /// With no schema declarations, the name resolves through the chained operator table.
         /// </summary>
         [Fact]
         public void ShouldResolveThroughTheChainedOperatorTableAlone()
@@ -60,8 +56,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Neither route is reachable with neither arrangement, which is what says the tests above are
-        /// measuring something.
+        /// With neither route registered, the name does not resolve; the control for the tests above.
         /// </summary>
         [Fact]
         public void ShouldNotResolveWithNeither()
@@ -73,12 +68,12 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Doing both is not a duplicate.
+        /// With both routes registered, a call over a character column plans as it does through the schema
+        /// alone.
         /// </summary>
         /// <remarks>
-        /// Overload resolution takes the first candidate whose arity fits and the chained table comes before
-        /// the catalog reader, so the operator answers and the declaration is never reached. Nothing insists
-        /// on one answer, so nothing breaks.
+        /// <see cref="ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth"/> covers the case where both
+        /// routes together fail.
         /// </remarks>
         [Fact]
         public void ShouldLetAHostDoBoth()
@@ -95,14 +90,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Every operator, both ways, carrying the same operands and the same type.
+        /// Each predicate and score produces the same plan text through either route.
         /// </summary>
-        /// <remarks>
-        /// The claim the whole package rests on: which route resolved a name is not something a plan, or an
-        /// adapter reading one, can tell. It holds because a declaration's parameter types are the types
-        /// whose families the operator's own checker looks for, so the checker Calcite derives from a
-        /// declaration accepts what the operator accepts — rather than the two being kept in step by hand.
-        /// </remarks>
         [Fact]
         public void ShouldPlanTheSameEitherWay()
         {
@@ -124,15 +113,9 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// What arrives in a plan is not the operator that was declared.
+        /// Through the schema, a call carries a <c>SqlUserDefinedFunction</c> Calcite built rather than the
+        /// table's operator, and the name-based helpers still recognise it.
         /// </summary>
-        /// <remarks>
-        /// Calcite reads a schema function's parameter list and builds a <c>SqlUserDefinedFunction</c> of its
-        /// own around it, carrying the name and the arity. So an adapter matching a call by identity would
-        /// recognise one reached through a chained table and quietly fail to recognise the same call reached
-        /// through a connection. <c>FullTextOperatorTable.Matches</c> is the check that works on both, and
-        /// this is why it asks for a name.
-        /// </remarks>
         [Fact]
         public void ShouldArriveAsCalcitesOwnOperatorThroughTheSchema()
         {
@@ -149,8 +132,8 @@ namespace Apache.Calcite.FullText.Tests
             FullTextOperatorTable.IsFullText(op).Should().BeTrue();
             FullTextOperatorTable.IsScoring(op).Should().BeFalse();
 
-            // and the chained route hands over the operator itself, so identity happens to work there — which
-            // is exactly how an identity test passes its tests and fails in production
+            // the chained route carries the table's own operator, so a reference comparison would succeed only
+            // on that route
             var chained = FullTextFixture.Call(
                 FullTextFixture.Plan("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(BODY, 'steel')", chain: true, declare: false),
                 "CLR_FT_CONTAINS");
@@ -159,13 +142,11 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A keyword list arrives as written, with nothing added to it.
+        /// Through the schema, a keyword list arrives as written, without <c>DEFAULT</c> padding.
         /// </summary>
         /// <remarks>
-        /// <c>SqlCallBinding.operands</c> pads a call out to the whole parameter list with <c>DEFAULT</c>
-        /// where there is room under the count range, the position is optional, and the checker's parameters
-        /// are fixed. One declaration per arity, every parameter required, makes the second false. No store
-        /// renders <c>DEFAULT</c>, so this is the difference between a statement and a refusal.
+        /// <c>SqlCallBinding.operands</c> pads a call with <c>DEFAULT</c> for optional parameters, which no
+        /// store can render; the declarations make every parameter required.
         /// </remarks>
         [Fact]
         public void ShouldNotPadAKeywordListWithDefaults()
@@ -183,7 +164,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Which is a property of the declarations rather than an accident of these calls.
+        /// Every parameter of every declaration is required.
         /// </summary>
         [Fact]
         public void ShouldDeclareEveryParameterRequired()
@@ -212,14 +193,10 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A variadic operator is offered through a schema up to a declared limit, and past it by chaining.
+        /// A variadic operator resolves through the schema up to
+        /// <see cref="FullTextSchema.VariadicOperandLimit"/> operands, and beyond it only through the chained
+        /// operator table.
         /// </summary>
-        /// <remarks>
-        /// Calcite derives a function's operand count range from its parameter list, so a schema function is
-        /// exactly as variadic as the number of parameters it declares. The limit is reachable rather than
-        /// theoretical, so it is measured on both sides — and the second half is the whole of what chaining
-        /// the operator table still buys a host that has the declarations too.
-        /// </remarks>
         [Fact]
         public void ShouldOfferAVariadicOperatorUpToTheLimitAndPastItByChaining()
         {
@@ -237,13 +214,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The schema offers everything the operator table does.
+        /// The schema declares every operator the operator table holds.
         /// </summary>
-        /// <remarks>
-        /// Derived from the table rather than listed again, so this guards the derivation rather than a second
-        /// list: an operator added to <see cref="FullTextOperatorTable"/> and reachable through a planner a
-        /// host built but not through a connection is the defect the declarations exist to close.
-        /// </remarks>
         [Fact]
         public void ShouldDeclareEveryOperatorOnTheSchema()
         {
@@ -257,17 +229,12 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A term constructor stands where a keyword does, on either route.
+        /// A term constructor stands where a keyword does, on either route, and constructors mix with plain
+        /// keywords in one call.
         /// </summary>
         /// <remarks>
-        /// <para>The mechanism is one rule of Calcite's: <c>FamilyOperandTypeChecker</c> passes an operand
-        /// whose own type family is <c>ANY</c> against whatever family is declared. A constructor is typed
-        /// <c>ANY</c>, so it satisfies a <c>CHARACTER</c> keyword position and the position stays
-        /// <c>CHARACTER</c> for everything else &#8212; which is what keeps a number out of it.</para>
-        ///
-        /// <para>Mixing them is the case that matters, and is why these are constructors rather than more
-        /// predicates: a call can carry an exact keyword and a fuzzy one at once, which a
-        /// <c>CLR_FT_CONTAINS_ALL_FUZZY</c> could not.</para>
+        /// A constructor is typed <c>ANY</c>, and <c>FamilyOperandTypeChecker</c> accepts an <c>ANY</c> operand
+        /// against the <c>CHARACTER</c> keyword family.
         /// </remarks>
         [Fact]
         public void ShouldTakeATermConstructorWhereAKeywordGoes()
@@ -299,22 +266,14 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A nested term constructor validates, and cannot be made not to.
+        /// A term constructor nested in another validates on both routes; an adapter has to decline it.
         /// </summary>
         /// <remarks>
-        /// <para><b>The rule that makes constructors possible is the rule that stops this being refused.</b>
-        /// <c>FamilyOperandTypeChecker</c> passes an operand whose own type family is <c>ANY</c> against any
-        /// declared family. That is exactly why a constructor stands in a <c>CHARACTER</c> keyword position
-        /// &#8212; and it means a <c>CHARACTER</c> position cannot reject one either. Both, or neither.</para>
+        /// <para>The rule that lets a constructor (typed <c>ANY</c>) stand in a <c>CHARACTER</c> keyword
+        /// position also lets it stand in a constructor's <c>CHARACTER</c> text position.</para>
         ///
-        /// <para>It could be refused by hand, but only on one route: the schema route&#8217;s checker is the
-        /// one <c>CalciteCatalogReader.toOp</c> builds, which this package does not write, so a hand-written
-        /// refusal on the operator would accept through a connection what it refused through a host. A
-        /// divergence between the routes is worse than a call the adapter declines.</para>
-        ///
-        /// <para>So the combination that tempts &#8212; fuzziness on a phrase &#8212; type-checks here and
-        /// belongs to the adapter. Which is no worse than where it sits today: Elasticsearch documents that
-        /// it silently ignores fuzziness on a phrase query, and an adapter declining is better than that.</para>
+        /// <para>Refusing it on the operator alone would make the routes disagree, because the schema route's
+        /// checker is the one <c>CalciteCatalogReader.toOp</c> builds.</para>
         /// </remarks>
         [Fact]
         public void ShouldValidateANestedTermConstructorOnBothRoutes()
@@ -334,12 +293,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A weighted score goes wherever a score goes.
+        /// A weighted score can be fused, on either route.
         /// </summary>
-        /// <remarks>
-        /// Which is what covers Cosmos's <c>RRF(f1, f2, [0.9, 0.1])</c> without adopting a positional array:
-        /// the weight travels with the score it belongs to and the two cannot come apart.
-        /// </remarks>
         [Fact]
         public void ShouldWeightAScoreBeingFused()
         {
@@ -359,13 +314,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// Everything Cosmos offers is expressible, which is the bar this vocabulary was set.
+        /// Each Cosmos DB full text construct has an equivalent statement that plans on either route.
         /// </summary>
-        /// <remarks>
-        /// One statement per Cosmos construct, in this package's spelling. The spellings differ deliberately
-        /// &#8212; a shared vocabulary that took one store's names would make every other adapter map them
-        /// anyway &#8212; so what is pinned is that nothing Cosmos does has become unsayable.
-        /// </remarks>
         [Fact]
         public void ShouldExpressEveryCosmosFullTextConstruct()
         {
@@ -390,14 +340,11 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// The searched position takes anything a store might have made searchable.
+        /// The searched position takes a character, an <c>ANY</c> or an array column.
         /// </summary>
         /// <remarks>
-        /// Not laziness: what a store searches differs in type as well as in name. A relational column is
-        /// character, a document property is <c>ANY</c> because a container declares no row type, and an array
-        /// of strings is searchable in Cosmos and in PostgreSQL alike. <c>ARRAY</c> is the one that would have
-        /// been refused by asking <c>SqlTypeFamily.ANY</c> for its type names, since
-        /// <c>SqlTypeName.ALL_TYPES</c> does not list it.
+        /// The array column is checked through the chained table only; through both routes at once it fails,
+        /// as <see cref="ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth"/> shows.
         /// </remarks>
         [Fact]
         public void ShouldSearchAColumnOfAnyType()
@@ -424,22 +371,15 @@ namespace Apache.Calcite.FullText.Tests
         /// An array column is searchable through either route alone, and not through both at once.
         /// </summary>
         /// <remarks>
-        /// <para><b>This is the one way doing both is not harmless.</b>
-        /// <c>SqlUtil.lookupSubjectRoutines</c> runs three passes and returns early —
-        /// <c>if (list.size() &lt; 2 || coerce)</c> — before the third whenever fewer than two candidates
-        /// survive. One route leaves one candidate, so the third pass never runs. Both leave two, it runs,
-        /// and it is <c>filterRoutinesByTypePrecedence</c>: it compares each candidate's parameter type using
-        /// the <em>argument's</em> precedence list, and <c>ArraySqlType</c>'s accepts only another comparable
-        /// <c>ARRAY</c> and throws <c>IllegalArgumentException</c> for anything else.</para>
+        /// <para><c>SqlUtil.lookupSubjectRoutines</c> returns before its type-precedence pass when fewer than
+        /// two candidates remain (<c>if (list.size() &lt; 2 || coerce)</c>). One route leaves one candidate;
+        /// both leave two, and <c>filterRoutinesByTypePrecedence</c> then compares each parameter type using
+        /// the argument's precedence list. <c>ArraySqlType</c>'s list accepts only a comparable <c>ARRAY</c>
+        /// and throws <c>IllegalArgumentException</c> for anything else.</para>
         ///
-        /// <para><b>It is not the <c>ANY</c> parameter that causes it.</b> The throw comes from the
-        /// argument's list rejecting whatever the parameter is, so any parameter type but a matching
-        /// <c>ARRAY</c> fails identically — and one typed <c>ARRAY</c> would then refuse every character
-        /// column. There is no declaration that takes both.</para>
-        ///
-        /// <para>Pinned rather than worked around. It is a pass that throws where it should decline, which is
-        /// Calcite's to fix, and this is the test that will notice if it stops being true. The practical
-        /// consequence is the README's: register one route or the other, not both.</para>
+        /// <para>Any parameter type but a matching <c>ARRAY</c> fails the same way, and an <c>ARRAY</c>
+        /// parameter would refuse a character column, so no declaration avoids it. This is a Calcite defect;
+        /// the test fails if Calcite stops throwing here.</para>
         /// </remarks>
         [Fact]
         public void ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth()
@@ -462,7 +402,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// And a row of them, which is how SQL Server and MySQL name a list of columns.
+        /// The searched position takes a <c>ROW</c> of columns, the form for a store that searches several
+        /// columns at once.
         /// </summary>
         [Fact]
         public void ShouldSearchARowOfColumns()
@@ -475,14 +416,9 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A keyword is text, and a number in that position is refused at validation.
+        /// A numeric keyword is accepted or refused alike on both routes, and an <c>ANY</c> column is accepted
+        /// as a keyword on both.
         /// </summary>
-        /// <remarks>
-        /// The checking that all-<c>ANY</c> operands would have given up. It costs a document store nothing:
-        /// <c>FamilyOperandTypeChecker</c> passes an operand whose own family is <c>ANY</c> against any
-        /// declared family, which is why <c>CLR_FT_CONTAINS(BODY, DOC)</c> below is accepted while
-        /// <c>CLR_FT_CONTAINS(BODY, 42)</c> is not.
-        /// </remarks>
         [Fact]
         public void ShouldTreatAMistypedKeywordTheSameEitherWay()
         {
@@ -537,14 +473,9 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// What each operator is typed as.
+        /// A predicate is typed as a nullable <c>BOOLEAN</c> and a score as a nullable <c>DOUBLE</c>, on both
+        /// routes.
         /// </summary>
-        /// <remarks>
-        /// Nullable, both halves. The failure modes are not symmetrical: declaring a result <c>NOT NULL</c>
-        /// licences the planner to rewrite on a guarantee the store does not give, and the answer is wrong,
-        /// while declaring it nullable at worst costs a rewrite. A store may have nothing to say about a row a
-        /// plan keeps.
-        /// </remarks>
         [Fact]
         public void ShouldTypeAPredicateBooleanAndAScoreDouble()
         {
@@ -567,7 +498,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A score can be ordered by, which is the whole reason it is typed rather than opaque.
+        /// A query can order by a score, on both routes.
         /// </summary>
         [Fact]
         public void ShouldOrderByAScore()
@@ -583,7 +514,7 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// And fused with another, which is what hybrid search writes.
+        /// Two scores fuse with <c>CLR_FT_RRF</c>, which is recognised as scoring.
         /// </summary>
         [Fact]
         public void ShouldFuseTwoScores()
@@ -599,7 +530,8 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// <c>CLR_FT_RRF</c> fuses scores, so a keyword in that position is refused.
+        /// A character literal where <c>CLR_FT_RRF</c> expects a score is accepted or refused alike on both
+        /// routes.
         /// </summary>
         [Fact]
         public void ShouldTreatAMistypedScoreTheSameEitherWay()

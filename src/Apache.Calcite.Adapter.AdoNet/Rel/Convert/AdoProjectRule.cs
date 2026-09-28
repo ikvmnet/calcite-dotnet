@@ -10,16 +10,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Rule to convert a <see cref="Project"/> to an <see cref="AdoProject"/>.
+    /// The rule that converts a logical <see cref="Project"/> into an <see cref="AdoProject"/>. Mirrors
+    /// <c>JdbcRules.JdbcProjectRule</c>.
     /// </summary>
+    /// <remarks>
+    /// A projection is not converted if it calls a user-defined function, if it has a window function and the
+    /// dialect does not support them, or if it has correlation variables.
+    /// </remarks>
     public class AdoProjectRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Returns <c>true</c> if the <see cref="Project"/> contains a user defined function.
+        /// Returns whether any of the projection's expressions calls a user-defined function.
         /// </summary>
-        /// <param name="project"></param>
-        /// <returns></returns>
+        /// <param name="project">The projection.</param>
+        /// <returns>Whether one does.</returns>
         static bool UserDefinedFunctionInProject(Project project)
         {
             var visitor = new CheckingUserDefinedFunctionVisitor();
@@ -41,12 +46,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
-        /// Projects that contain window functions unsupported by the dialect or user-defined
-        /// functions are excluded and remain in the default convention.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoProjectRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to, whose dialect decides whether a window function
+        /// can be pushed down.</param>
+        /// <returns>The rule.</returns>
         public static AdoProjectRule Create(AdoConvention convention)
         {
             return (AdoProjectRule)Config.INSTANCE
@@ -56,16 +60,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoProjectRule(Config config) :
             base(config)
         {
 
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Matches only a projection with no correlation variables.
+        /// </summary>
+        /// <param name="call">The rule call.</param>
+        /// <returns>Whether the rule applies.</returns>
         public override bool matches(RelOptRuleCall call)
         {
             var project = (Project)call.rel(0);

@@ -11,22 +11,24 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// A Calcite schema that represents a named database in an ADO.NET data source.
+    /// A Calcite schema for one database of an ADO.NET data source, with one <see cref="AdoSchema"/> per
+    /// schema of that database as its sub-schemas and no tables of its own.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// This schema does not expose tables directly. Instead it exposes one child <see cref="AdoSchema"/>
-    /// per database schema (e.g. SQL Server <c>dbo</c>, <c>sales</c>). Each child schema then
-    /// lazily discovers its tables on demand.
-    /// </para>
-    /// <para>
-    /// Schema names are resolved from <c>AdoDatabaseMetadata.GetSchemas</c> and cached after
-    /// the first lookup. Tables within each child schema are populated on first access.
-    /// </para>
+    /// Sub-schema names come from <see cref="Metadata.AdoDatabaseMetadata.GetSchemas"/>, and a sub-schema that
+    /// has been looked up is cached for a minute (Calcite's <c>LoadingCacheLookup</c>). Every sub-schema
+    /// shares this schema's data source and convention.
     /// </remarks>
     public class AdoDatabaseSchema : AdoBaseSchema
     {
 
+        /// <summary>
+        /// Resolves the schemas of one database from the data source's metadata.
+        /// </summary>
+        /// <remarks>
+        /// TODO: <see cref="getNames"/> adds the <see cref="Metadata.AdoSchemaMetadata"/> values rather than their
+        /// names and ignores the pattern.
+        /// </remarks>
         class SchemasLookup : IgnoreCaseLookup
         {
 
@@ -37,9 +39,9 @@ namespace Apache.Calcite.Adapter.AdoNet
             /// <summary>
             /// Initializes a new instance.
             /// </summary>
-            /// <param name="dataSource"></param>
-            /// <param name="convention"></param>
-            /// <param name="databaseName"></param>
+            /// <param name="dataSource">The data source whose schemas are listed.</param>
+            /// <param name="convention">The convention every sub-schema plans into.</param>
+            /// <param name="databaseName">The database, or <see langword="null"/> for the default.</param>
             public SchemasLookup(AdoDataSource dataSource, AdoConvention convention, string? databaseName)
             {
                 _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));
@@ -92,9 +94,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="convention"></param>
-        /// <param name="databaseName"></param>
+        /// <param name="dataSource">The data source the database belongs to.</param>
+        /// <param name="convention">The convention every sub-schema plans into.</param>
+        /// <param name="databaseName">The database, or <see langword="null"/> for the provider's default.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="dataSource"/> or <paramref name="convention"/> is <see langword="null"/>.</exception>
         public AdoDatabaseSchema(AdoDataSource dataSource, AdoConvention convention, string? databaseName)
         {
             _dataSource = dataSource ?? throw new ArgumentNullException(nameof(dataSource));

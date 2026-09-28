@@ -8,20 +8,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Variant of <see cref="ProjectToCalcRule"/> for the <see cref="ClrCursorConvention"/> calling
-    /// convention.
+    /// Variant of <see cref="ProjectToCalcRule"/> that converts a <see cref="ClrCursorProject"/> to a
+    /// <see cref="ClrCursorCalc"/>.
     /// </summary>
     /// <remarks>
-    /// <see cref="ClrCursorProject"/> cannot implement itself, exactly as <c>EnumerableProject</c> cannot:
-    /// a calc is always better, because it carries the filter and the projection together.
+    /// Mirrors <c>EnumerableProjectToCalcRule</c>. <see cref="ClrCursorProject"/> cannot be implemented, so this
+    /// rule must run before the plan is.
     /// </remarks>
     public class ClrCursorProjectToCalcRule : ProjectToCalcRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorProjectToCalcRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorProjectToCalcRule Create()
         {
             var config = (ProjectToCalcRule.Config)ProjectToCalcRule.Config.DEFAULT
@@ -35,7 +35,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration; its operand should match a <see cref="ClrCursorProject"/>.</param>
         public ClrCursorProjectToCalcRule(ProjectToCalcRule.Config config) :
             base(config)
         {

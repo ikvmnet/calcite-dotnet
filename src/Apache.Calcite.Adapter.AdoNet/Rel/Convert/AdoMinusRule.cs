@@ -10,17 +10,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Planner rule that converts a <see cref="Minus"/> (EXCEPT) expressed in the default calling
-    /// convention to an <see cref="AdoMinus"/> in the <see cref="AdoConvention"/>.
+    /// The rule that converts a logical <see cref="Minus"/> (<c>EXCEPT</c>) into an <see cref="AdoMinus"/>. An
+    /// <c>EXCEPT ALL</c> is not converted. Mirrors <c>JdbcRules.JdbcMinusRule</c>.
     /// </summary>
     public class AdoMinusRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoMinusRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to.</param>
+        /// <returns>The rule.</returns>
         public static AdoMinusRule Create(AdoConvention convention)
         {
             return (AdoMinusRule)Config.INSTANCE
@@ -30,9 +30,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoMinusRule(Config config) :
             base(config)
         {

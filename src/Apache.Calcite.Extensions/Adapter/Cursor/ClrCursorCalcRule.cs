@@ -18,10 +18,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorCalcRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorCalcRule Create()
         {
-            // the predicate ensures that if there is a multiset, FarragoMultisetSplitter works on it first
+            // as EnumerableCalcRule, a calc containing a windowed aggregate is not converted
             return (ClrCursorCalcRule)Config.INSTANCE
                 .withConversion(
                     (java.lang.Class)typeof(LogicalCalc),
@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorCalcRule(Config config) :
             base(config)
         {

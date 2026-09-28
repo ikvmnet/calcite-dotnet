@@ -15,11 +15,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// field inequalities to a <see cref="ClrCursorIEJoin"/>.
     /// </summary>
     /// <remarks>
-    /// <c>EnumerableIEJoinRule</c>. The first two inequalities drive the join and the rest are evaluated by
-    /// a <see cref="ClrCursorCalc"/> above it.
-    ///
-    /// <para>Based on Khayyat et al., "Lightning Fast and Space Efficient Inequality Joins", PVLDB 8(13),
-    /// 2015.</para>
+    /// Mirrors <c>EnumerableIEJoinRule</c>. Every conjunction must be a cross-input inequality; the first two
+    /// drive the join and must have supported key types, and the rest are evaluated by a
+    /// <see cref="ClrCursorCalc"/> above it. Joins with correlation variables or system fields are not
+    /// converted.
     /// </remarks>
     public class ClrCursorIEJoinRule : ConverterRule
     {
@@ -27,7 +26,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorIEJoinRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorIEJoinRule Create()
         {
             return (ClrCursorIEJoinRule)Config.INSTANCE
@@ -39,7 +38,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorIEJoinRule(Config config) :
             base(config)
         {
@@ -67,7 +66,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 if (condition == null)
                     return null;
 
-                // only the two that drive the join have to be orderable; the rest are a calc's predicate
+                // only the two that drive the join need orderable keys; the rest go to the calc
                 if (i < 2 && ClrCursorIEJoin.SupportsKeyTypes(join.getLeft(), join.getRight(), condition) == false)
                     return null;
             }

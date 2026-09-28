@@ -27,19 +27,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// The table's own expression is a linq4j tree yielding a linq4j <c>Enumerable</c>, and stays one: how a
-    /// table produces its rows is the table's business and none of this convention's. Only the last hop is
-    /// ours, opening a cursor over that sequence. The rows are not touched.
+    /// Mirrors <c>EnumerableTableScan</c>. A table of Calcite's SPI is read through its
+    /// <c>getExpression(Queryable.class)</c>, a linq4j expression yielding an <c>Enumerable</c>, over which a
+    /// cursor is opened. A table implementing <see cref="IClrScannableTable"/>, <see cref="IClrQueryableTable"/>
+    /// or <see cref="IClrCursorTable"/> is read directly, synchronously or awaiting as the implementation
+    /// requires. Rows are reshaped only where the physical type's format differs from the table's or a field
+    /// holds a collection of structs.
     /// </remarks>
     public class ClrCursorTableScan : TableScan, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorTableScan"/>.
+        /// Creates a <see cref="ClrCursorTableScan"/>, taking its collations from the table's statistics.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="relOptTable"></param>
-        /// <returns></returns>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="relOptTable">The table to scan.</param>
+        /// <returns>The new scan.</returns>
         public static ClrCursorTableScan Create(RelOptCluster cluster, RelOptTable relOptTable)
         {
             var table = (Table)relOptTable.unwrap(typeof(Table));
@@ -51,18 +54,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns whether this convention can produce rows for a particular variant of the table SPI.
+        /// Returns whether a scan of this convention can read a table.
         /// </summary>
-        /// <param name="table"></param>
-        /// <returns></returns>
+        /// <param name="table">The table.</param>
+        /// <returns><see langword="true"/> for a table of this project's SPI or a
+        /// <see cref="QueryableTable"/>, <see cref="FilterableTable"/>, <see cref="ProjectableFilterableTable"/>
+        /// or <see cref="ScannableTable"/>; <see langword="false"/> for a <see cref="TransientTable"/> or
+        /// anything else.</returns>
+        /// <remarks>
+        /// Mirrors <c>EnumerableTableScan.canHandle(Table)</c>, with this project's table interfaces added.
+        /// </remarks>
         public static bool CanHandle(Table table)
         {
-            // CALCITE-3673: a TransientTable has no expression, so no plan of this convention can read one
+            // a TransientTable has no expression, so a scan cannot read it
             if (table is TransientTable)
                 return false;
 
-            // this convention's own table SPI, which is read directly rather than through linq4j. One
-            // interface each, both halves on it, so there is nothing here to ask about which kind a table is.
             if (table is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
                 return true;
 
@@ -74,10 +81,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns whether this convention can produce rows for a particular variant of the table SPI.
+        /// Returns whether a scan of this convention can read a table, considering its field types.
         /// </summary>
-        /// <param name="relOptTable"></param>
-        /// <returns></returns>
+        /// <param name="relOptTable">The table.</param>
+        /// <returns><see langword="true"/> if the scan can read the table.</returns>
+        /// <remarks>
+        /// Mirrors <c>EnumerableTableScan.canHandle(RelOptTable)</c>, including its treatment of the
+        /// <c>ENUMERABLE_ENABLE_TABLESCAN_ARRAY</c>, <c>_MAP</c> and <c>_MULTISET</c> properties: unless all
+        /// three are set, a field of a type whose property is set makes the table unreadable.
+        /// </remarks>
         public static bool CanHandle(RelOptTable relOptTable)
         {
             var table = (Table)relOptTable.unwrap(typeof(Table));
@@ -90,7 +102,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (supportArray && supportMap && supportMultiset)
                 return true;
 
-            // struct fields are not supported
+            // reproduces Calcite, which marks a type unsupported when its property is set
             for (int i = 0; i < relOptTable.getRowType().getFieldList().size(); i++)
             {
                 var field = (RelDataTypeField)relOptTable.getRowType().getFieldList().get(i);
@@ -110,16 +122,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the type of one row of a table.
+        /// Returns the Java class of a table's rows.
         /// </summary>
-        /// <param name="table"></param>
-        /// <returns></returns>
+        /// <param name="table">The table, or <see langword="null"/>.</param>
+        /// <returns>The element type.</returns>
         /// <remarks>
-        /// <c>EnumerableTableScan.deduceElementType</c>, with this project's own table SPI answered first
-        /// and everything else handed to Calcite's. The two new cases are the two Calcite already has, for
-        /// the two interfaces that mirror them: an <see cref="IClrQueryableTable"/> names its element type
-        /// as a <see cref="QueryableTable"/> does, and an <see cref="IClrScannableTable"/> yields arrays as a
-        /// <see cref="ScannableTable"/> does.
+        /// An <see cref="IClrQueryableTable"/> gives its <see cref="IClrQueryableTable.ElementType"/>, and an
+        /// <see cref="IClrScannableTable"/> or <see cref="IClrCursorTable"/> yields <c>Object[]</c>. Any other
+        /// table is answered by <c>EnumerableTableScan.deduceElementType</c>.
         /// </remarks>
         public static java.lang.Class DeduceElementType(Table? table)
         {
@@ -135,8 +145,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns the row format a table's element type implies.
         /// </summary>
-        /// <param name="table"></param>
-        /// <returns></returns>
+        /// <param name="table">The table.</param>
+        /// <returns><see cref="JavaRowFormat.ARRAY"/> if the element type is <c>Object[]</c>; otherwise
+        /// <see cref="JavaRowFormat.CUSTOM"/>.</returns>
         public static JavaRowFormat DeduceFormat(RelOptTable table)
         {
             var elementType = DeduceElementType((Table)table.unwrapOrThrow(typeof(Table)));
@@ -147,12 +158,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         readonly java.lang.Class elementType;
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> derives the trait set and element type; this
+        /// constructor takes them as given.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="table"></param>
-        /// <param name="elementType"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits, in <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="table">The table, which <see cref="CanHandle(RelOptTable)"/> must accept.</param>
+        /// <param name="elementType">The Java class of the table's rows; see <see cref="DeduceElementType"/>.</param>
+        /// <exception cref="java.lang.AssertionError">The convention is wrong or the table cannot be read.</exception>
         public ClrCursorTableScan(RelOptCluster cluster, RelTraitSet traitSet, RelOptTable table, java.lang.Class elementType) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), table)
         {
@@ -172,8 +185,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// Where a table had an index on the required collation keys this is where an index scan would be
-        /// returned. There is none, and Calcite's own answer here is the same null.
+        /// Always returns <see langword="null"/>, as <c>EnumerableTableScan.passThrough</c> does; there is no
+        /// index scan to substitute.
         /// </remarks>
         public RelNode? passThrough(RelTraitSet required)
         {
@@ -191,13 +204,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), Format());
 
-            // the only linq4j here is the table's own expression, which the schema SPI defines as one, and the
-            // row shape below. It is translated as soon as it is in hand; what a sequence is made to do after
-            // that is this convention's, and is built as this convention builds everything.
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
-            // this convention's own table SPI is read directly: the rows are already a .NET sequence, so there
-            // is no linq4j tree to translate and no FromJava to read one back
+            // this project's table SPI yields CLR sequences or cursors, so there is no linq4j to translate
             if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
                 return implementor.Result(physType, ToRows(implementor, physType, ClrSource(implementor), true));
 
@@ -214,13 +223,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), Format());
 
-            // the only linq4j here is the table's own expression, which the schema SPI defines as one, and the
-            // row shape below. It is translated as soon as it is in hand; what a sequence is made to do after
-            // that is this convention's, and is built as this convention builds everything.
             var unwrapped = (Table)table.unwrap(typeof(Table));
 
-            // this convention's own table SPI is read directly: the rows are already a .NET sequence, so there
-            // is no linq4j tree to translate and no FromJava to read one back
+            // this project's table SPI yields CLR sequences or cursors, so there is no linq4j to translate
             if (unwrapped is IClrScannableTable or IClrQueryableTable or IClrCursorTable)
                 return implementor.ResultAsync(physType, ToRowsAsync(implementor, physType, ClrSourceAsync(implementor), true));
 
@@ -233,23 +238,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression yielding the rows of a table of this project's own SPI, opened as a cursor.
+        /// Returns the synchronous open of a table of this project's SPI.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// An <see cref="IClrQueryableTable"/> writes its own reading into the plan, as a
-        /// <see cref="QueryableTable"/> does; an <see cref="IClrScannableTable"/> is called, as a
-        /// <see cref="ScannableTable"/> is. Either way what comes back is an
-        /// <see cref="System.Collections.Generic.IEnumerable{T}"/> of the deduced element type, and a cursor
-        /// is opened over it.
+        /// An <see cref="IClrCursorTable"/> opens its own cursor. An <see cref="IClrQueryableTable"/> supplies
+        /// an expression, as a <see cref="QueryableTable"/> does, and an <see cref="IClrScannableTable"/> is
+        /// called, as a <see cref="ScannableTable"/> is; either yields an
+        /// <see cref="System.Collections.Generic.IEnumerable{T}"/> of the element type, over which a cursor is
+        /// opened.
         /// </remarks>
+        /// <param name="implementor">The implementor, whose root parameter is passed to the table.</param>
+        /// <returns>An expression evaluating to the opened cursor over the table's elements.</returns>
         Expression ClrSource(ClrCursorRelImplementor implementor)
         {
             var unwrapped = (Table)table.unwrap(typeof(Table));
             var element = ClrTypes.FromClass(elementType);
 
-            // a cursor table hands the cursor in, and the open is the acquisition; nothing is wrapped
             if (unwrapped is IClrCursorTable cursorTable)
                 return Expression.Call(
                     Expression.Constant(cursorTable, typeof(IClrCursorTable)),
@@ -268,8 +272,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
             else
             {
-                // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan cannot
-                // hold. An expression tree can hold one, so it is a constant rather than a stash.
+                // Calcite stashes the table; an expression tree can hold it as a constant
                 sequence = Expression.Call(
                     Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
                     ScanMethod,
@@ -280,28 +283,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression yielding the rows of a table of this project's own SPI, opened as a cursor.
+        /// Returns the awaiting open of a table of this project's SPI.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <see cref="ClrSource"/> for the awaiting body: the same two SPIs, asked for their awaiting half.
-        /// An <see cref="IClrQueryableTable"/> writes its own reading into the plan, as a
-        /// <see cref="QueryableTable"/> does; an <see cref="IClrScannableTable"/> is called, as a
-        /// <see cref="ScannableTable"/> is. Either way what comes back is an
-        /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/> of the deduced element type, and a
-        /// cursor is opened over it.
-        ///
-        /// <para>There is no crossing here and there is nothing to choose. A table that has only pulled rows
-        /// answers these through the defaults on its own interface, so the read across happens inside the
-        /// table and this body is the same two lines whatever the table turns out to be.</para>
+        /// As <see cref="ClrSource"/>, using each interface's awaiting member, which yields an
+        /// <see cref="System.Collections.Generic.IAsyncEnumerable{T}"/> or an awaiting open. A table that
+        /// implements only the synchronous members answers through the interface's defaults.
         /// </remarks>
+        /// <param name="implementor">The implementor, whose root and token parameters are passed to the table.</param>
+        /// <returns>An expression evaluating to a task of the opened cursor over the table's elements.</returns>
         Expression ClrSourceAsync(ClrCursorRelImplementor implementor)
         {
             var unwrapped = (Table)table.unwrap(typeof(Table));
             var element = ClrTypes.FromClass(elementType);
 
-            // a cursor table hands the cursor in under the open's token, and each advance brings its own
+            // the open's token is passed here; each ReadAsync supplies its own
             if (unwrapped is IClrCursorTable cursorTable)
                 return Expression.Call(
                     Expression.Constant(cursorTable, typeof(IClrCursorTable)),
@@ -321,8 +317,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
             else
             {
-                // reached as a constant, the way EnumerableRelImplementor.stash reaches an object a plan cannot
-                // hold. An expression tree can hold one, so it is a constant rather than a stash.
+                // Calcite stashes the table; an expression tree can hold it as a constant
                 sequence = Expression.Call(
                     Expression.Constant((IClrScannableTable)unwrapped, typeof(IClrScannableTable)),
                     ScanAsyncMethod,
@@ -333,20 +328,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Brings the table's rows into the physical type asked for.
+        /// Returns the synchronous open that yields the table's rows in the given physical type. Mirrors the
+        /// row handling in <c>EnumerableTableScan.implement</c>.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="physType"></param>
-        /// <param name="source">The table's rows: a cursor already, for a table of this project's SPI, or a
-        /// linq4j <c>Enumerable</c> to open one over.</param>
-        /// <param name="native">Whether <paramref name="source"/> is already a cursor.</param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="physType">The physical type the rows must have.</param>
+        /// <param name="source">The table's rows: an open, for a table of this project's SPI, or a linq4j
+        /// <c>Enumerable</c> over which a cursor is opened.</param>
+        /// <param name="native">Whether <paramref name="source"/> is already an open.</param>
+        /// <returns>An expression evaluating to the opened cursor over rows of <paramref name="physType"/>.</returns>
         Expression ToRows(ClrCursorRelImplementor implementor, ClrPhysType physType, Expression source, bool native)
         {
             var element = ClrTypes.FromClass(elementType);
 
-            // a table of this convention's own SPI has already handed back a cursor; one of Calcite's handed
-            // back a linq4j Enumerable, which a cursor is opened over across the boundary. The rest is the same.
             Expression Source(System.Type rowType) => native ? source : FromJava(rowType, source);
 
             if (physType.Format == JavaRowFormat.SCALAR
@@ -361,15 +355,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var oldFormat = Format();
             if (physType.Format == oldFormat && HasCollectionField(getRowType()) == false)
-                // the rows are of the physical row type, which is what every reader of this cursor expects.
-                // Calcite passes the table's own element type along here because a linq4j Enumerable erases
-                // it; a CLR cursor does not, and the two differ wherever a format was optimized away — a
-                // one column table declares Object[] and holds the value itself.
+                // the cursor is typed by the physical row type, not the table's element type as in Calcite:
+                // the two differ where the format was optimized, such as a one-column table whose element
+                // type is Object[] but whose rows are the values themselves
                 return Source(physType.RowType);
 
-            // the row shape is PhysType's, and one field of it can be a multiset that has to be reformatted
-            // through linq4j's own select -- an Enumerable of Java's, not a cursor of this convention's. So
-            // the selector is the one Calcite writes, built against their physical type and translated whole.
+            // the selector is Calcite's, built against a Calcite physical type and translated, because a
+            // collection field is reformatted through linq4j (see FieldExpression)
             var calcite = PhysTypeImpl.of(implementor.TypeFactory, physType.RelRowType, physType.Format, false);
 
             var row = J.Expressions.parameter(elementType, "row");
@@ -391,20 +383,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Brings the table's rows into the physical type asked for.
+        /// Returns the awaiting open that yields the table's rows in the given physical type.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="physType"></param>
-        /// <param name="source">The table's rows: a cursor already, for a table of this project's SPI, or a
-        /// linq4j <c>Enumerable</c> to open one over.</param>
-        /// <param name="native">Whether <paramref name="source"/> is already a cursor.</param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="physType">The physical type the rows must have.</param>
+        /// <param name="source">The table's rows: an awaiting open, for a table of this project's SPI, or a
+        /// linq4j <c>Enumerable</c> over which a cursor is opened.</param>
+        /// <param name="native">Whether <paramref name="source"/> is already an awaiting open.</param>
+        /// <returns>An expression evaluating to a task of the opened cursor over rows of <paramref name="physType"/>.</returns>
         Expression ToRowsAsync(ClrCursorRelImplementor implementor, ClrPhysType physType, Expression source, bool native)
         {
             var element = ClrTypes.FromClass(elementType);
 
-            // a table of this convention's own SPI has already handed back a cursor; one of Calcite's handed
-            // back a linq4j Enumerable, which a cursor is opened over across the boundary. The rest is the same.
             Expression Source(System.Type rowType) => native ? source : FromJavaAsync(implementor, rowType, source);
 
             if (physType.Format == JavaRowFormat.SCALAR
@@ -419,15 +409,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var oldFormat = Format();
             if (physType.Format == oldFormat && HasCollectionField(getRowType()) == false)
-                // the rows are of the physical row type, which is what every reader of this cursor expects.
-                // Calcite passes the table's own element type along here because a linq4j Enumerable erases
-                // it; a CLR cursor does not, and the two differ wherever a format was optimized away — a
-                // one column table declares Object[] and holds the value itself.
+                // the cursor is typed by the physical row type, not the table's element type as in Calcite:
+                // the two differ where the format was optimized, such as a one-column table whose element
+                // type is Object[] but whose rows are the values themselves
                 return Source(physType.RowType);
 
-            // the row shape is PhysType's, and one field of it can be a multiset that has to be reformatted
-            // through linq4j's own select -- an Enumerable of Java's, not a cursor of this convention's. So
-            // the selector is the one Calcite writes, built against their physical type and translated whole.
+            // the selector is Calcite's, built against a Calcite physical type and translated, because a
+            // collection field is reformatted through linq4j (see FieldExpression)
             var calcite = PhysTypeImpl.of(implementor.TypeFactory, physType.RelRowType, physType.Format, false);
 
             var row = J.Expressions.parameter(elementType, "row");
@@ -449,33 +437,35 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Opens a cursor over the table's linq4j sequence, of the given row type.
+        /// Returns a synchronous open of a cursor of the given row type over a linq4j <c>Enumerable</c>.
         /// </summary>
-        /// <param name="element"></param>
-        /// <param name="source"></param>
-        /// <returns></returns>
+        /// <param name="element">The CLR row type of the cursor.</param>
+        /// <param name="source">An expression of type <c>Enumerable</c> yielding rows of that type.</param>
+        /// <returns>An expression evaluating to the opened cursor.</returns>
         static Expression FromJava(Type element, Expression source)
         {
             return Expression.Call(null, ClrCursorBuiltInMethod.FromJava.MakeGenericMethod(element), source);
         }
 
         /// <summary>
-        /// Opens a cursor over the table's linq4j sequence, of the given row type.
+        /// Returns an awaiting open of a cursor of the given row type over a linq4j <c>Enumerable</c>.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="element"></param>
-        /// <param name="source"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, whose token parameter the open receives.</param>
+        /// <param name="element">The CLR row type of the cursor.</param>
+        /// <param name="source">An expression of type <c>Enumerable</c> yielding rows of that type.</param>
+        /// <returns>An expression evaluating to a task of the opened cursor.</returns>
         static Expression FromJavaAsync(ClrCursorRelImplementor implementor, Type element, Expression source)
         {
             return ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.FromJavaAsync.MakeGenericMethod(element), source);
         }
 
         /// <summary>
-        /// Brings whatever the table's expression yields to a linq4j <see cref="Enumerable"/>.
+        /// Converts the value of a table's expression to a linq4j <see cref="Enumerable"/>: an array or an
+        /// <c>Iterable</c> is wrapped, and a <see cref="Queryable"/> is read through <c>asEnumerable</c>.
+        /// Mirrors <c>EnumerableTableScan.toEnumerable</c>.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The table's expression, of an array, <c>Iterable</c>, <c>Queryable</c> or <c>Enumerable</c> type.</param>
+        /// <returns>An expression of type <see cref="Enumerable"/> over the same elements.</returns>
         static Expression ToEnumerable(Expression expression)
         {
             var type = expression.Type;
@@ -491,7 +481,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             if (typeof(java.lang.Iterable).IsAssignableFrom(type) && typeof(org.apache.calcite.linq4j.Enumerable).IsAssignableFrom(type) == false)
                 return Expression.Call(null, AsEnumerable2, expression);
 
-            // Queryable extends Enumerable but is too clever, so asEnumerable makes take(int) evaluate directly
+            // a Queryable is also an Enumerable, but its operators build expressions; asEnumerable makes them
+            // evaluate directly, as Calcite does here
             if (typeof(Queryable).IsAssignableFrom(type))
                 return Expression.Call(expression, QueryableAsEnumerable);
 
@@ -499,13 +490,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression reading one field of a row of the table.
+        /// Returns the linq4j expression reading field <paramref name="i"/> of a table row, converting an
+        /// array or multiset of structs to a list of lists. Mirrors <c>EnumerableTableScan.fieldExpression</c>.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="i"></param>
-        /// <param name="physType"></param>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="row">The row parameter.</param>
+        /// <param name="i">The field ordinal.</param>
+        /// <param name="physType">The output physical type.</param>
+        /// <param name="format">The table's row format.</param>
+        /// <returns>The linq4j expression for the field's value, typed as the output physical type's field.</returns>
         J.Expression FieldExpression(J.ParameterExpression row, int i, PhysType physType, JavaRowFormat format)
         {
             var e = format.field(row, i, null, physType.getJavaFieldType(i));
@@ -521,8 +513,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     if (fieldType.isStruct() == false)
                         return e;
 
-                    // a multiset or an array cannot be a List<Employee>, because the consumer does not know the
-                    // element type, so the standard element type is List and this becomes a List<List>
+                    // a consumer does not know a struct element's class, so each element is converted to a List
+                    // and the collection becomes a List<List>
                     var typeFactory = (JavaTypeFactory)getCluster().getTypeFactory();
                     var elementPhysType = PhysTypeImpl.of(typeFactory, fieldType, JavaRowFormat.CUSTOM);
                     var e2 = J.Expressions.call(BuiltInMethod.AS_ENUMERABLE2.method, e);
@@ -535,9 +527,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns how a row of this table is represented.
+        /// Returns the row format of the table's element type. Mirrors <c>EnumerableTableScan.format</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns><c>LIST</c> for a row of no fields, <c>SCALAR</c> or <c>ARRAY</c> for an object array, <c>ROW</c> for a <see cref="Row"/>,
+        /// <c>SCALAR</c> for a single field of an object, primitive, number or string type, and <c>CUSTOM</c> otherwise.</returns>
         JavaRowFormat Format()
         {
             var fieldCount = getRowType().getFieldCount();
@@ -563,8 +556,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns whether any field of a row type is an array or a multiset.
         /// </summary>
-        /// <param name="rowType"></param>
-        /// <returns></returns>
+        /// <param name="rowType">The row type to inspect.</param>
+        /// <returns><see langword="true"/> if at least one field is of type <c>ARRAY</c> or <c>MULTISET</c>.</returns>
         static bool HasCollectionField(RelDataType rowType)
         {
             var fields = rowType.getFieldList();
@@ -585,19 +578,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.Scan)}' is missing.");
 
         /// <summary>
-        /// <see cref="IClrScannableTable.ScanAsync"/>, which the awaiting body calls.
+        /// <see cref="IClrScannableTable.ScanAsync"/>.
         /// </summary>
         static readonly System.Reflection.MethodInfo ScanAsyncMethod = typeof(IClrScannableTable).GetMethod(nameof(IClrScannableTable.ScanAsync))
             ?? throw new System.InvalidOperationException($"'{nameof(IClrScannableTable.ScanAsync)}' is missing.");
 
         /// <summary>
-        /// <see cref="IClrCursorTable.Open"/>, which the synchronous body calls.
+        /// <see cref="IClrCursorTable.Open"/>.
         /// </summary>
         static readonly System.Reflection.MethodInfo OpenMethod = typeof(IClrCursorTable).GetMethod(nameof(IClrCursorTable.Open))
             ?? throw new System.InvalidOperationException($"'{nameof(IClrCursorTable.Open)}' is missing.");
 
         /// <summary>
-        /// <see cref="IClrCursorTable.OpenAsync"/>, which the awaiting body calls.
+        /// <see cref="IClrCursorTable.OpenAsync"/>.
         /// </summary>
         static readonly System.Reflection.MethodInfo OpenAsyncMethod = typeof(IClrCursorTable).GetMethod(nameof(IClrCursorTable.OpenAsync))
             ?? throw new System.InvalidOperationException($"'{nameof(IClrCursorTable.OpenAsync)}' is missing.");

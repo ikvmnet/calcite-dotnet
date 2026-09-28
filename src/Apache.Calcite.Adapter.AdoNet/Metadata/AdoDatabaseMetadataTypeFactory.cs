@@ -5,7 +5,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Implementation of <see cref="AdoDatabaseMetadataFactory"/> that instantiates metadata directly from a specified type name.
+    /// An <see cref="AdoDatabaseMetadataFactory"/> that creates an instance of one given type, passing the
+    /// <see cref="DbDataSource"/> to its constructor. Backs the <c>adoDatabaseMetadata</c> model operand.
     /// </summary>
     class AdoDatabaseMetadataTypeFactory : AdoDatabaseMetadataFactory
     {
@@ -15,8 +16,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="type"></param>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="type">An <see cref="AdoDatabaseMetadata"/> type with a public constructor taking a <see cref="DbDataSource"/>.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         public AdoDatabaseMetadataTypeFactory(Type type)
         {
             _type = type ?? throw new ArgumentNullException(nameof(type));

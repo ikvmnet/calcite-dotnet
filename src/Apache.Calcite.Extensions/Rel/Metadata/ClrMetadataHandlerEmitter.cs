@@ -18,25 +18,17 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
     /// Emits the class behind a <see cref="MetadataHandler"/>.
     /// </summary>
     /// <remarks>
-    /// What <c>JaninoRelMetadataProvider</c> writes out as Java source and hands to Janino, emitted as IL
-    /// instead. The class is the same class: a field per underlying handler, a public method per handler
-    /// method holding the cache protocol, a private <c>name_</c> beneath it holding the <c>instanceof</c>
-    /// chain, and <c>getDef</c> answering the first handler's.
+    /// Emits as IL the class <c>JaninoRelMetadataProvider</c> generates as Java source: a field per underlying
+    /// handler, a public method per handler method implementing the cache protocol, a private method beneath
+    /// each holding the <c>instanceof</c> dispatch, and <c>getDef</c> returning the first handler's. A
+    /// metadata call is therefore a direct call to the handler's method, with no delegate or argument array.
     ///
-    /// <para>So a metadata call is a virtual call into a method that tests the rel's class, calls the
-    /// handler's own method directly, and reads and writes the query's table — the same instructions the
-    /// generated Java compiles to, with no delegate, no argument array and no boxing that Java would not
-    /// do, and without a Java compiler running. Nothing here writes a name either: the generated source
-    /// spells out the handler and every rel class, and IKVM's name for one of ours begins <c>cli.</c>,
-    /// which Janino resolves only where IKVM can read the class-loader stamp on <c>calcite-core</c> — not
-    /// under IKVM 8.14.0 or 8.15.0, and again from 8.16.0.</para>
-    ///
-    /// <para>Two things are not literal. The keys and lookup tables cannot be constants of an emitted method,
-    /// so they are held in one array the constructor takes rather than in a field each. And the catch is
-    /// <c>System.Exception</c> where Calcite's is <c>java.lang.Exception</c>: IKVM maps a CLR exception into
-    /// the Java hierarchy when Java code catches it, and that mapping is not reproducible in raw IL. Ours
-    /// therefore clears the row in the few cases — an <c>Error</c>, and a CLR exception with no Java
-    /// counterpart — where Calcite's would let it stand.</para>
+    /// <para>Two details differ from the generated Java. The cache keys and lookup tables are held in one
+    /// array passed to the constructor, since an emitted method cannot hold object constants. And the cache
+    /// protocol catches <see cref="Exception"/> where Calcite catches <c>java.lang.Exception</c>, because
+    /// IKVM's mapping of CLR exceptions into the Java hierarchy is not available to raw IL; so the cache row
+    /// is also cleared for a Java <c>Error</c> and for a CLR exception with no Java counterpart, where
+    /// Calcite would leave it.</para>
     /// </remarks>
     static class ClrMetadataHandlerEmitter
     {
@@ -64,13 +56,13 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         static int count;
 
         /// <summary>
-        /// Returns a handler of <paramref name="handlerInterface"/> answering <paramref name="methods"/> out
-        /// of <paramref name="handlers"/>.
+        /// Emits and instantiates a handler of <paramref name="handlerInterface"/> that implements
+        /// <paramref name="methods"/> by dispatching to <paramref name="handlers"/>.
         /// </summary>
-        /// <param name="handlerInterface"></param>
-        /// <param name="methods"></param>
-        /// <param name="handlers"></param>
-        /// <returns></returns>
+        /// <param name="handlerInterface">The handler interface.</param>
+        /// <param name="methods">Its methods, in the order Calcite indexes them.</param>
+        /// <param name="handlers">The underlying handlers, in priority order.</param>
+        /// <returns>The emitted handler.</returns>
         public static MetadataHandler Emit(Type handlerInterface, MethodInfo[] methods, IReadOnlyList<MetadataHandler> handlers)
         {
             ArgumentNullException.ThrowIfNull(handlerInterface);
@@ -80,8 +72,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             var plans = methods.Select(ClrMetadataCacheKey.Of).ToArray();
             var targets = methods.Select(m => ClrMetadataTargets.Of(m, handlers)).ToArray();
 
-            // every key and lookup table the generated blocks read, in one array, because an emitted method
-            // cannot carry an object as a constant the way a Java field initialiser does
+            // every cache key and lookup table, in one array, since an emitted method cannot hold an object
+            // constant
             var constants = new List<object>();
             var slots = plans.Select(p => p.Constants.Select(c => { constants.Add(c); return constants.Count - 1; }).ToArray()).ToArray();
 
@@ -89,8 +81,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             {
                 var type = Build(handlerInterface, methods, plans, slots, targets, handlers);
 
-                // one argument array holding the two, because a bare pair of object[] binds to the overload
-                // taking activation attributes
+                // the two arrays wrapped in one, since two bare object[] arguments bind to the overload taking
+                // activation attributes
                 object[] arguments = [handlers.Cast<object>().ToArray(), constants.ToArray()];
                 return (MetadataHandler)Activator.CreateInstance(type, arguments)!;
             }
@@ -114,10 +106,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
                 ignoresAccessChecks = EmitIgnoresAccessChecksTo(module);
             }
 
-            // three of Calcite's handlers are private static nested classes, and the generated Java names
-            // them as field types and calls them directly. Janino resolves such a name through the class
-            // loader without an access check — javac would refuse it — so the emitted assembly is told to
-            // do the same rather than routing around what Calcite wrote
+            // some of Calcite's handlers are private nested classes, which the generated Java names and calls
+            // directly because Janino does not check access; the emitted assembly skips access checks likewise
             foreach (var handler in handlers)
                 AllowAccessTo(handler.GetType());
             foreach (var target in targets.SelectMany(t => t))
@@ -126,8 +116,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
                 AllowAccessTo(target.Method.DeclaringType!);
             }
 
-            // one provider generates one class per handler interface, and a second provider over a different
-            // set of underlying handlers generates another of the same shape
+            // one class per provider and handler interface, so the counter keeps same-shaped names distinct
             var builder = module.DefineType(
                 $"GeneratedMetadata_{handlerInterface.DeclaringType?.Name ?? handlerInterface.Name}_{++count}",
                 TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.Class,
@@ -153,9 +142,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Defines the attribute that lets the emitted assembly name a type another assembly keeps to itself,
-        /// which is the standard one and has to be declared somewhere because the runtime library does not
-        /// expose it.
+        /// Defines <c>System.Runtime.CompilerServices.IgnoresAccessChecksToAttribute</c> in the emitted
+        /// module; the runtime honours it but the class library does not declare it.
         /// </summary>
         static ConstructorInfo EmitIgnoresAccessChecksTo(ModuleBuilder module)
         {
@@ -171,7 +159,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Lets the emitted assembly reach whatever <paramref name="type"/> lives in.
+        /// Lets the emitted assembly access non-public types of the assembly <paramref name="type"/> is in.
         /// </summary>
         static void AllowAccessTo(Type type)
         {
@@ -206,7 +194,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Emits the public method: the cache protocol around a call of the dispatch beneath it.
+        /// Emits the public method: the cache protocol around a call of the dispatch method.
         /// </summary>
         static void EmitCachedMethod(
             TypeBuilder builder,
@@ -218,7 +206,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         {
             var types = declared.GetParameters().Select(p => p.ParameterType).ToArray();
 
-            // a cache hit on a masked null returns null, which a primitive return could not
+            // the cache protocol returns null for a cached null, which a value type cannot hold
             if (declared.ReturnType.IsValueType)
                 throw new NotSupportedException($"'{declared}' returns a value type, which the cache protocol cannot answer null for.");
 
@@ -323,7 +311,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Emits the private method beneath it: the chain that finds the handler declaring the rel's class.
+        /// Emits the private dispatch method, which tests the rel's class against each target in order and
+        /// calls the matching handler.
         /// </summary>
         static MethodBuilder EmitDispatchMethod(TypeBuilder builder, MethodInfo declared, ClrMetadataTargets.Target[] targets, FieldBuilder[] providers)
         {
@@ -368,7 +357,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Emits <c>getDef</c>, which answers the first handler's.
+        /// Emits <c>getDef</c>, which returns the first handler's.
         /// </summary>
         static void EmitGetDef(TypeBuilder builder, FieldBuilder? provider)
         {
@@ -492,9 +481,9 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// Emits one argument as the key list holds it.
         /// </summary>
         /// <remarks>
-        /// <c>safeArgList</c>: a primitive or a <c>RexNode</c> goes in as it is, and anything else through
-        /// <c>NullSentinel.mask</c>, because the list cannot hold a null. A primitive is boxed the way javac
-        /// boxes it for the same call — <c>Integer.valueOf</c>, not a CLR box.
+        /// Mirrors <c>safeArgList</c>: a primitive or a <c>RexNode</c> is added as it is, and anything else
+        /// through <c>NullSentinel.mask</c>, because the list cannot hold null. A primitive is boxed as Java
+        /// boxes it (<c>Integer.valueOf</c>), not as the CLR does.
         /// </remarks>
         static void EmitSafeArgument(ILGenerator il, byte argument, Type type)
         {
@@ -518,9 +507,8 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// </summary>
         static MethodInfo ListOf(int arity)
         {
-            // Calcite reaches for ImmutableList instead once the method takes six parameters — the key and
-            // four arguments. The widest metadata method takes four, so that branch is unreachable today,
-            // and it is written anyway because it is a different list class under the same key
+            // as in Calcite, ImmutableList from five elements (a method of six parameters); no current
+            // metadata method is that wide, but the list class would differ
             var declaring = arity < 5 ? typeof(FlatLists) : typeof(com.google.common.collect.ImmutableList);
 
             return declaring.GetMethod("of", Enumerable.Repeat(typeof(object), arity).ToArray())
@@ -528,7 +516,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Emits a read of the query's table, which the query holds as a field Java declares final.
+        /// Emits a read of the query's cache table, the Java field <c>RelMetadataQueryBase.map</c>.
         /// </summary>
         static void EmitMap(ILGenerator il)
         {
@@ -537,7 +525,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Emits a read of one of the sentinels, which Java declares as enum constants.
+        /// Emits a read of one of the <c>NullSentinel</c> enum constants.
         /// </summary>
         static void EmitSentinel(ILGenerator il, string name)
         {
@@ -545,12 +533,11 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Emits a read of a Java field, whose target is already on the stack where it has one.
+        /// Emits a read of a Java field; for an instance field, the target is already on the stack.
         /// </summary>
         /// <remarks>
-        /// IKVM emits a property over a renamed backing field for a Java <c>static final</c>, so that reading
-        /// it from the CLR still runs the class initializer Java guarantees. Neither the query's table nor a
-        /// sentinel can be assumed to be a field of that name.
+        /// IKVM compiles a Java <c>static final</c> field as a property over a renamed backing field, so that
+        /// reading it runs the class initializer; where there is no field of the name, the property is read.
         /// </remarks>
         static void EmitRead(ILGenerator il, Type declaring, string name)
         {

@@ -10,23 +10,14 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What JTS does with a geometry's SRID when Calcite's spatial functions build a new one from it.
+    /// Pins what happens to a geometry's SRID when Calcite's spatial functions derive a new geometry from it.
     /// </summary>
     /// <remarks>
-    /// The SRID is an <c>int</c> field on the JTS <c>Geometry</c> instance, taken from the
-    /// <c>GeometryFactory</c> that built it and settable afterwards with <c>setSRID</c>. It is not part of
-    /// the coordinates and not part of the type — a tag hanging off the object.
-    ///
-    /// <para>This is here because the SRID is the only marking available to a design that types its
-    /// operators over <c>GEOMETRY</c> rather than over a class of its own, and the measurement says it is
-    /// not a marking that can be relied upon. A geometry Calcite's own <c>ST_*</c> derived from a stamped one
-    /// mostly comes back on zero. Which means a <c>CLR_ST_GEOG_</c> operator cannot refuse a geometry on the
-    /// grounds that it is not stamped 4326: the value may be perfectly geodesic and merely have been through
-    /// <c>ST_BUFFER</c> on the way.</para>
-    ///
-    /// <para>The tag survives a pipeline of this package's own operators, because every one of them stamps
-    /// what it returns. It is stripped exactly at the boundary with Calcite's spatial library, which is the
-    /// boundary a guard would exist to police.</para>
+    /// The SRID is an <c>int</c> on the JTS <c>Geometry</c> instance, taken from the <c>GeometryFactory</c>
+    /// that built it and settable with <c>setSRID</c>; it is part of neither the coordinates nor the type.
+    /// Because most of Calcite's <c>ST_*</c> functions return a geometry with SRID 0, a <c>CLR_ST_GEOG_</c>
+    /// operator cannot refuse an operand for not carrying 4326: a geodesic value that has passed through
+    /// <c>ST_BUFFER</c> comes back with SRID 0.
     /// </remarks>
     public class SridPropagationTests
     {
@@ -39,7 +30,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geometry Calcite reads from WKT carries no reference system.
+        /// A geometry Calcite reads from WKT has SRID 0.
         /// </summary>
         [Fact]
         public void ShouldReadWktWithNoSrid()
@@ -48,13 +39,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Most of Calcite's spatial functions drop it, and one keeps it.
+        /// Buffer, centroid, envelope and intersection return SRID 0; reverse keeps the operand's.
         /// </summary>
         /// <remarks>
-        /// Not a rule with an exception so much as an absence of a rule: JTS takes a derived geometry's SRID
-        /// from whichever <c>GeometryFactory</c> built it, and whether that factory is the operand's depends
-        /// on how the particular operation is written. <c>reverse</c> copies the geometry, so it keeps it;
-        /// the overlay and construction operations build through a factory that does not.
+        /// JTS takes a derived geometry's SRID from the <c>GeometryFactory</c> that built it, and whether
+        /// that is the operand's depends on the operation: <c>reverse</c> copies the geometry, while the
+        /// overlay and construction operations build through a factory with no SRID.
         /// </remarks>
         [Fact]
         public void ShouldMostlyDropTheSridThroughAnOperation()
@@ -73,7 +63,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// WKT does not carry it and EWKT does, which is the whole difference between the two.
+        /// A round trip through EWKT keeps the SRID; one through WKT does not.
         /// </summary>
         [Fact]
         public void ShouldCarryTheSridThroughEwktAndNotWkt()

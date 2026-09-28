@@ -12,30 +12,27 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Utilities for trait propagation.
+    /// Trait propagation helpers for projects and joins.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableTraitsUtils</c>, which is package private, so every method here is a
-    /// port. What a node does with a required or a derived collation is a property of the algorithm and not
-    /// of the language it is written in, so these are line-by-line.
-    ///
-    /// <para>One reachable-public-route substitution: Calcite writes <c>collation.apply(mapping)</c>, and
-    /// <c>RelCollationImpl.apply</c> is <c>RexUtil.apply(mapping, this)</c>. The interface method is a
-    /// generic default that IKVM erases, so the public static is called directly. It is the same call.</para>
+    /// A port of <c>EnumerableTraitsUtils</c>, which is package private. Where Calcite calls
+    /// <c>collation.apply(mapping)</c>, this calls <c>RexUtil.apply(mapping, collation)</c>, which is what
+    /// <c>RelCollationImpl.apply</c> does.
     /// </remarks>
     static class ClrCursorTraitsUtils
     {
 
         /// <summary>
-        /// Returns whether there is a mapping between a project's input and output fields, bailing out where a
-        /// sort relies on a non-trivial expression.
+        /// Returns whether a field collation maps through a project to a field reference or an
+        /// order-preserving cast. Mirrors <c>EnumerableTraitsUtils.isCollationOnTrivialExpr</c>.
         /// </summary>
-        /// <param name="projects"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="map"></param>
-        /// <param name="fc"></param>
-        /// <param name="passDown"></param>
-        /// <returns></returns>
+        /// <param name="projects">The project's expressions.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="map">The mapping between input and output fields.</param>
+        /// <param name="fc">The field collation.</param>
+        /// <param name="passDown">Whether the collation is being passed down to the input (the field is an
+        /// output field) rather than derived from it.</param>
+        /// <returns><see langword="true"/> if the field maps through the project to an input reference or a cast that preserves order.</returns>
         static bool IsCollationOnTrivialExpr(java.util.List projects, RelDataTypeFactory typeFactory, Mappings.TargetMapping map, RelFieldCollation fc, bool passDown)
         {
             var index = fc.getFieldIndex();
@@ -46,7 +43,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var node = (RexNode)(passDown ? projects.get(index) : projects.get(target));
             if (node.isA(SqlKind.CAST))
             {
-                // check whether it is a monotonic preserving cast
+                // a cast preserves the order only if it is monotonic
                 var cast = (RexCall)node;
                 var newFieldCollation = RexUtil.apply(map, fc) ?? throw new java.lang.NullPointerException();
                 var binding = RexCallBinding.create(typeFactory, cast, com.google.common.collect.ImmutableList.of(RelCollations.of([newFieldCollation])));
@@ -58,15 +55,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Passes a required collation down through a project, where the projection is a permutation of its
-        /// input's fields.
+        /// Passes a required collation through a project to its input, where every sort field maps to an
+        /// input field. Mirrors <c>EnumerableTraitsUtils.passThroughTraitsForProject</c>.
         /// </summary>
-        /// <param name="required"></param>
-        /// <param name="exps"></param>
-        /// <param name="inputRowType"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="currentTraits"></param>
-        /// <returns></returns>
+        /// <returns>The project's traits and its input's required traits, or <see langword="null"/> if the
+        /// collation cannot be passed through.</returns>
+        /// <param name="required">The traits required of the project.</param>
+        /// <param name="exps">The project's expressions.</param>
+        /// <param name="inputRowType">The row type of the project's input.</param>
+        /// <param name="typeFactory">The type factory, used to judge whether a cast preserves order.</param>
+        /// <param name="currentTraits">The project's current traits; both returned trait sets are these with the collation replaced.</param>
         public static Pair? PassThroughTraitsForProject(RelTraitSet required, java.util.List exps, RelDataType inputRowType, RelDataTypeFactory typeFactory, RelTraitSet currentTraits)
         {
             var collation = required.getCollation();
@@ -85,15 +83,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Derives a collation of a project from the collation its input carries.
+        /// Derives a project's collation from the longest prefix of its input's collation that maps through the
+        /// project. Mirrors <c>EnumerableTraitsUtils.deriveTraitsForProject</c>.
         /// </summary>
-        /// <param name="childTraits"></param>
-        /// <param name="childId"></param>
-        /// <param name="exps"></param>
-        /// <param name="inputRowType"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="currentTraits"></param>
-        /// <returns></returns>
+        /// <returns>The project's derived traits and its input's traits, or <see langword="null"/> if nothing
+        /// can be derived.</returns>
+        /// <param name="childTraits">The traits of the project's input.</param>
+        /// <param name="childId">The ordinal of the input <paramref name="childTraits"/> belongs to; a project has only input 0.</param>
+        /// <param name="exps">The project's expressions.</param>
+        /// <param name="inputRowType">The row type of the project's input.</param>
+        /// <param name="typeFactory">The type factory, used to judge whether a cast preserves order.</param>
+        /// <param name="currentTraits">The project's current traits; both returned trait sets are these with the collation replaced.</param>
         public static Pair? DeriveTraitsForProject(RelTraitSet childTraits, int childId, java.util.List exps, RelDataType inputRowType, RelDataTypeFactory typeFactory, RelTraitSet currentTraits)
         {
             var collation = childTraits.getCollation();
@@ -139,13 +139,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Passes a required collation down to a join's left input, and to no other.
+        /// Passes a required collation on left fields only to a join's left input. Mirrors
+        /// <c>EnumerableTraitsUtils.passThroughTraitsForJoin</c>.
         /// </summary>
-        /// <param name="required">required trait set for the join</param>
-        /// <param name="joinType">the join type</param>
-        /// <param name="leftInputFieldCount">number of fields of the left join input</param>
-        /// <param name="joinTraitSet">trait set of the join</param>
-        /// <returns></returns>
+        /// <param name="required">The traits required of the join.</param>
+        /// <param name="joinType">The join type; nothing is passed for <c>RIGHT</c> or <c>FULL</c>.</param>
+        /// <param name="leftInputFieldCount">The number of fields of the left input.</param>
+        /// <param name="joinTraitSet">The join's traits.</param>
+        /// <returns>The join's traits and its inputs' required traits, or <see langword="null"/>.</returns>
         public static Pair? PassThroughTraitsForJoin(RelTraitSet required, JoinRelType joinType, int leftInputFieldCount, RelTraitSet joinTraitSet)
         {
             var collation = required.getCollation();
@@ -157,7 +158,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             for (int i = 0; i < collation.getFieldCollations().size(); i++)
             {
-                // if the field collation belongs to the right input the collation cannot be pushed down
+                // a sort field of the right input cannot be pushed down
                 if (((RelFieldCollation)collation.getFieldCollations().get(i)).getFieldIndex() >= leftInputFieldCount)
                     return null;
             }
@@ -170,17 +171,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Derives a join's collation from its left input's, and from no other.
+        /// Derives a join's collation from its left input's. Mirrors
+        /// <c>EnumerableTraitsUtils.deriveTraitsForJoin</c>.
         /// </summary>
-        /// <param name="childTraits">trait set of the child</param>
-        /// <param name="childId">id of the child (0 is the left join input)</param>
-        /// <param name="joinType">the join type</param>
-        /// <param name="joinTraitSet">trait set of the join</param>
-        /// <param name="rightTraitSet">trait set of the right join input</param>
-        /// <returns></returns>
+        /// <param name="childTraits">The left input's traits.</param>
+        /// <param name="childId">The input's ordinal, which must be 0.</param>
+        /// <param name="joinType">The join type; nothing is derived for <c>RIGHT</c> or <c>FULL</c>.</param>
+        /// <param name="joinTraitSet">The join's traits.</param>
+        /// <param name="rightTraitSet">The right input's traits.</param>
+        /// <returns>The join's derived traits and its inputs' traits, or <see langword="null"/>.</returns>
+        /// <exception cref="java.lang.AssertionError"><paramref name="childId"/> is not 0.</exception>
         public static Pair? DeriveTraitsForJoin(RelTraitSet childTraits, int childId, JoinRelType joinType, RelTraitSet joinTraitSet, RelTraitSet rightTraitSet)
         {
-            // should only derive traits (limited to collation for now) from the left join input
             if (childId != 0)
                 throw new java.lang.AssertionError();
 

@@ -18,23 +18,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Requires that the token a consumer gives <c>ExecuteReaderAsync</c> is the token the provider's own
-    /// <c>DbDataReader.ReadAsync</c> is called with, and says what a token given later reaches instead.
+    /// Tests that the tokens given to <c>ExecuteReaderAsync</c> and <c>ReadAsync</c> reach the provider's own
+    /// <c>DbDataReader.ReadAsync</c>.
     /// </summary>
     /// <remarks>
-    /// <c>ClrCursorConventionCancellationTests</c> establishes that a compiled plan carries a token to a
-    /// leaf that suspends, over a table written for the purpose. This asks the same of the whole stack a
-    /// consumer actually uses — <c>CalciteCommand.ExecuteReaderAsync</c>, <c>CalciteSession</c>, the
-    /// implementor, <c>AdoToClrCursorConverter</c>, <c>AdoCursors</c> — ending at a real
-    /// <see cref="DbDataReader"/> over a real database. Nothing between those two ends holds a token: the
-    /// convention has none in the plan, so what is measured is that the token
-    /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/> was given is threaded the whole way and nowhere
-    /// replaced by a default.
-    ///
-    /// <para>The measurement is the token itself rather than an effect of it. A
-    /// <see cref="CancellationToken"/> is a struct over its source, so comparing the one the provider was
-    /// handed to the one the caller created settles which token arrived; asserting only that a cancelled
-    /// read throws would pass just as well if the throw came from the reader above the leaf.</para>
+    /// <c>ClrCursorConventionCancellationTests</c> covers a compiled plan over a purpose-written table. These
+    /// run the whole stack a consumer uses — <c>CalciteCommand</c>, <c>CalciteSession</c>,
+    /// <c>AdoToClrCursorConverter</c>, <c>AdoCursors</c> — down to a real <see cref="DbDataReader"/> over
+    /// SQLite, and inspect the tokens that reader is called with. Asserting only that a cancelled read throws
+    /// would also pass if the throw came from an operator above the leaf.
     /// </remarks>
     public class AdoCancellationTests : IDisposable
     {
@@ -75,11 +67,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// finds the provider's reader stopped.
         /// </summary>
         /// <remarks>
-        /// Linkage rather than identity. What the leaf is opened under is the statement's own token — the
-        /// one <c>StatementCancellation</c> makes, so that Calcite's cancel flag and the operators can be
-        /// driven by one cancellation — and it is linked to the caller's. Each advance of the leaf runs the
-        /// provider's reader under that token and the read's own together, so a read asked for after the
-        /// caller's token is cancelled reaches the reader with a cancelled token whatever token it brought.
+        /// The provider does not see the caller's token itself. The leaf is opened under the statement's
+        /// token, which <c>CalciteSession</c> links to the caller's, and each advance runs the provider's reader
+        /// under that token and the read's own together. So a read after the caller's token is cancelled
+        /// reaches the reader with a cancelled token, whatever token the read brought.
         /// </remarks>
         [Fact]
         public async Task ShouldCarryExecuteReaderAsyncsTokenToTheProvidersReader()
@@ -110,12 +101,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Cancelling that token stops the provider's reader rather than the loop above it.
+        /// Once the token given to <c>ExecuteReaderAsync</c> is cancelled, a read throws without asking the
+        /// provider for another row.
         /// </summary>
         /// <remarks>
-        /// Cancelled after a row has been read, so that what stops is a read in progress rather than the
-        /// acquisition: <c>AdoCursors.OpenAsync</c> sends the statement at the open, so a token cancelled
-        /// before the first read would stop the open and prove nothing about the reader.
+        /// Cancelled after a row has been read: the statement is sent when the cursor is opened, so a token
+        /// cancelled before that would stop the open and show nothing about the reader.
         /// </remarks>
         [Fact]
         public async Task ShouldStopTheProvidersReaderWhenTheCallerCancels()
@@ -144,18 +135,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A token given only to <c>ReadAsync</c> reaches the provider too, for the duration of the read.
         /// </summary>
         /// <remarks>
-        /// The leaf is enumerated under the statement's token whether or not the caller gave
-        /// <c>ExecuteReaderAsync</c> one — an <see cref="IAsyncEnumerable{T}"/> takes its token at
-        /// <see cref="IAsyncEnumerable{T}.GetAsyncEnumerator"/>, which <c>CalciteSession</c> calls once, and
-        /// <c>MoveNextAsync</c> takes none — so a token arriving later at <c>DbDataReader.ReadAsync</c>
-        /// reaches that leaf by cancelling the statement, registered for the length of the call. What shows
-        /// here is the provider being handed a cancellable token over a statement no caller gave one to;
-        /// that it goes on to stop a table already reading is <c>StatementCancellationTests</c>, which has a
-        /// table that blocks to be cancelled in.
-        ///
-        /// <para>Before this, the leaf under a tokenless execute ran under
-        /// <see cref="CancellationToken.None"/> and nothing given to <c>ReadAsync</c> could reach it: the
-        /// read stopped between rows and left the provider waiting.</para>
+        /// The statement has a cancellable token even when <c>ExecuteReaderAsync</c> is given none, so the
+        /// provider is handed a cancellable token here. That such a token stops a table already reading is
+        /// covered by <c>StatementCancellationTests</c>, which has a table that blocks.
         /// </remarks>
         [Fact]
         public async Task ShouldCarryAPerReadTokenToTheProvider()
@@ -183,11 +165,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Every read takes its own token, and a reader is read to the end under a different one each time.
         /// </summary>
         /// <remarks>
-        /// The shape a consumer with a per-operation timeout writes: a fresh token per <c>ReadAsync</c>, for
-        /// as many rows as there are. The leaf is the provider's own reader, handed back as the plan's
-        /// cursor by <c>AdoToClrCursorConverter</c>, so each read's token is the token that reader's
-        /// <c>ReadAsync</c> is given — none of them accumulates and none of them outlives its read, because
-        /// none of them is registered anywhere.
+        /// The pattern of a consumer with a per-operation timeout: a fresh token for every <c>ReadAsync</c>.
         /// </remarks>
         [Fact]
         public async Task ShouldTakeADifferentTokenOnEveryRead()
@@ -228,10 +206,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A token cancelled after its own read has returned does not reach the reader.
         /// </summary>
         /// <remarks>
-        /// The registration is scoped to the call, so a caller that keeps its sources around — or cancels a
-        /// per-operation timeout after the operation succeeded, which is the ordinary thing to do — does not
-        /// kill a reader it is still using. Without the scope the first completed read would arm a
-        /// cancellation that fires whenever that caller next tidies up.
+        /// A read's token is registered against the statement only for the length of the call, so a caller
+        /// that cancels a per-operation timeout after the operation succeeded does not cancel the statement.
         /// </remarks>
         [Fact]
         public async Task ShouldSurviveATokenCancelledAfterItsRead()
@@ -247,7 +223,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             using var first = new CancellationTokenSource();
             (await reader.ReadAsync(first.Token)).Should().BeTrue();
 
-            // the read is over; cancelling now reaches a registration that no longer exists
+            // the read has returned, so its registration against the statement is gone
             first.Cancel();
 
             using var second = new CancellationTokenSource();
@@ -261,14 +237,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A read asked for under a token already cancelled cancels the statement.
         /// </summary>
         /// <remarks>
-        /// <c>SqlDataReader.ReadAsync</c> registers before it checks, and says why: "to catch any already
-        /// expired tokens to be able to trigger cancellation event". So a dead token is not quietly
-        /// declined — the statement goes with it, exactly as it would had the token died a moment into the
-        /// call instead of a moment before it. Checking first would make those two cases differ by a race.
-        /// The provider registers the token against the statement before it checks it, so the dead read
-        /// never reaches the provider's reader, and the read after it, under a live token, finds the
-        /// statement cancelled: the leaf advances the reader under the statement's token as well as the
-        /// read's own.
+        /// As <c>SqlDataReader.ReadAsync</c> does, the reader registers the token against the statement before
+        /// checking it, so a token that is already cancelled behaves like one cancelled during the call. The
+        /// cancelled read never reaches the provider's reader; the next read, under a live token, reaches it
+        /// under the statement's token as well and finds that cancelled.
         /// </remarks>
         [Fact]
         public async Task ShouldCancelTheStatementOnAnAlreadyCancelledReadToken()
@@ -301,11 +273,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A token already cancelled stops the execute rather than the first read.
         /// </summary>
         /// <remarks>
-        /// Acquisition sends the statement, and for an adapter leaf it opens a connection to send it on —
-        /// <c>AdoCursors.OpenAsync</c> does both inside the open, which <c>CalciteSession</c> calls from
-        /// <c>ExecuteReaderAsync</c>. Without the guard a caller who had
-        /// already given up still opened a connection and ran a query, and only learned about it when it
-        /// read.
+        /// Opening the cursor opens a connection to the provider and sends the statement, and
+        /// <c>ExecuteReaderAsync</c> opens it, so a cancelled token must stop the execute before any
+        /// connection is opened.
         /// </remarks>
         [Fact]
         public async Task ShouldRefuseToExecuteOnACancelledToken()
@@ -329,8 +299,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// is called with.
         /// </summary>
         /// <remarks>
-        /// The decoration runs the whole way down — connection, command, reader — because the token is only
-        /// visible at the last of them. Every member forwards; only <c>ReadAsync</c> does anything else.
+        /// Connection, command and reader are all wrapped, because the token is only visible at the reader.
+        /// Every member forwards; <c>ReadAsync</c> also records its token, and <c>OpenConnection</c> counts.
         /// </remarks>
         sealed class RecordingAdoDataSource(DbDataSource dataSource) : AdoDataSource
         {

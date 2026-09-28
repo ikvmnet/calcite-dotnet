@@ -8,7 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Intersect operator implemented in the <see cref="AdoConvention"/> calling convention.
+    /// An <c>INTERSECT</c> pushed down to the source. Mirrors <c>JdbcRules.JdbcIntersect</c>.
     /// </summary>
     public class AdoIntersect : Intersect, AdoRel
     {
@@ -16,10 +16,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The traits, whose convention is an <see cref="AdoConvention"/>.</param>
+        /// <param name="inputs">The inputs.</param>
+        /// <param name="all">Whether duplicates are kept (<c>INTERSECT ALL</c>).</param>
         public AdoIntersect(RelOptCluster cluster, RelTraitSet traitSet, List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {

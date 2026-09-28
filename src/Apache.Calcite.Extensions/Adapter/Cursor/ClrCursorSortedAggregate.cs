@@ -19,14 +19,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
     /// <summary>
     /// Implementation of <see cref="Aggregate"/> in the <see cref="ClrCursorConvention"/> calling
-    /// convention, for an input that already arrives sorted on the group key.
+    /// convention for an input sorted on the group key.
     /// </summary>
     /// <remarks>
-    /// Chosen where the query wants its output ordered by the group key and the input carries that
-    /// collation: the groups then come out in order and nothing is held but the accumulator of the group
-    /// being read. `EnumerableSortedAggregate` is the same, and like it this holds only what
-    /// <see cref="ClrCursorAggregate"/> does not — everything shared is on
-    /// <see cref="ClrCursorAggregateBase"/>.
+    /// Mirrors <c>EnumerableSortedAggregate</c>. Groups are produced in key order, and only the current
+    /// group's accumulator is held. Grouping sets are not supported. Members shared with
+    /// <see cref="ClrCursorAggregate"/> are on <see cref="ClrCursorAggregateBase"/>.
     /// </remarks>
     public class ClrCursorSortedAggregate : ClrCursorAggregateBase, ClrCursorRel
     {
@@ -34,12 +32,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="groupSet"></param>
-        /// <param name="groupSets"></param>
-        /// <param name="aggCalls"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits, in <see cref="ClrCursorConvention"/> and carrying a
+        /// collation on the group keys.</param>
+        /// <param name="input">The input, sorted on the group keys.</param>
+        /// <param name="groupSet">The group keys.</param>
+        /// <param name="groupSets">The grouping sets; only a single set equal to <paramref name="groupSet"/>
+        /// can be implemented.</param>
+        /// <param name="aggCalls">The aggregate calls, a list of <see cref="AggregateCall"/>.</param>
         public ClrCursorSortedAggregate(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, ImmutableBitSet groupSet, java.util.List groupSets, java.util.List aggCalls) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), input, groupSet, groupSets, aggCalls)
         {
@@ -54,13 +54,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Mirrors <c>EnumerableSortedAggregate.passThroughTraits</c>, except that a required trait set of
+        /// another convention is refused, as in <see cref="ClrCursorMergeJoin.passThroughTraits"/>.
+        /// </remarks>
         public org.apache.calcite.util.Pair? passThroughTraits(RelTraitSet required)
         {
             if (isSimple(this) == false)
                 return null;
 
-            // a required trait set of another convention is refused rather than copied onto, for the reason
-            // ClrCursorMergeJoin gives at more length
+            // Calcite returns required as this node's trait set, which would give a node of this convention
+            // another convention's trait
             if (required.getConvention() != getConvention())
                 return null;
 
@@ -80,7 +84,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (groupKeys.contains(requiredKeys))
             {
-                // GROUP BY a, b, c ORDER BY c, b — the keys not ordered by are appended
+                // GROUP BY a, b, c ORDER BY c, b: the group keys not in the collation are appended to it
                 var list = new java.util.ArrayList(collation.getFieldCollations());
                 for (var i = groupKeys.except(requiredKeys).iterator(); i.hasNext();)
                     list.add(new RelFieldCollation(((java.lang.Integer)i.next()).intValue()));
@@ -91,8 +95,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 return org.apache.calcite.util.Pair.of(getTraitSet().replace(aggCollation), com.google.common.collect.ImmutableList.of(inputTraits.replace(inputCollation)));
             }
 
-            // the group keys do not cover the required keys, as in GROUP BY a, b ORDER BY a, b, c, and
-            // nothing can be pushed down
+            // the group keys do not cover the required keys, as in GROUP BY a, b ORDER BY a, b, c
             return null;
         }
 
@@ -111,14 +114,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var sourceType = inputPhysType.RowType;
             var rowType = physType.RowType;
 
-            // the accumulator, the group key and the output row are all written by Calcite's aggregate
-            // implementors, into blocks of Calcite's, so each of those takes a physical type of Calcite's
+            // Calcite's aggregate implementors write the accumulator, key and output row into linq4j blocks,
+            // so those use Calcite physical types
             var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
             var keyPhysType = inputCalcite.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
 
-            // and the key again as ours, because the selector and the comparator are delegates
+            // the key selector and comparator are built directly as CLR expressions, so they need a ClrPhysType
             var keyClr = ClrPhysTypeImpl.Of(typeFactory, keyPhysType.getRowType(), keyPhysType.getFormat(), false);
             var groupCount = getGroupCount();
 
@@ -149,7 +152,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputCalcite, typeFactory, accType, sourceType);
 
-            // false, as Calcite passes: an aggregate call with its own ordering is the plain aggregate's
+            // hasOrderedCall is false, as EnumerableSortedAggregate passes it, so a call's WITHIN GROUP
+            // ordering is not applied
             var lambdaFactory = ImplementLambdaFactory(implementor, inputPhysType, aggs, adders, accumulatorInitializer, false, sourceType);
 
             var resultBlock = new J.BlockBuilder();
@@ -178,8 +182,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 keyParameter,
                 accParameter);
 
-            // the comparator decides where one group ends, and a null in a key has to order consistently,
-            // which is why it comes from the collation this node carries rather than from equality
+            // the comparator decides where one group ends; it is built from this node's collation so that
+            // null keys compare in the same order the input is sorted in
             var comparator = keyClr.GenerateComparator(getTraitSet().getCollation() ?? throw new java.lang.NullPointerException($"getTraitSet().getCollation() is null; traits are {getTraitSet()}"));
 
             return implementor.Result(physType,
@@ -208,14 +212,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var sourceType = inputPhysType.RowType;
             var rowType = physType.RowType;
 
-            // the accumulator, the group key and the output row are all written by Calcite's aggregate
-            // implementors, into blocks of Calcite's, so each of those takes a physical type of Calcite's
+            // Calcite's aggregate implementors write the accumulator, key and output row into linq4j blocks,
+            // so those use Calcite physical types
             var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
             var keyPhysType = inputCalcite.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
 
-            // and the key again as ours, because the selector and the comparator are delegates
+            // the key selector and comparator are built directly as CLR expressions, so they need a ClrPhysType
             var keyClr = ClrPhysTypeImpl.Of(typeFactory, keyPhysType.getRowType(), keyPhysType.getFormat(), false);
             var groupCount = getGroupCount();
 
@@ -246,7 +250,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var adders = CreateAccumulatorAdders(implementor, in_, inParameter, aggs, accPhysType, acc_, accParameter, inputCalcite, typeFactory, accType, sourceType);
 
-            // false, as Calcite passes: an aggregate call with its own ordering is the plain aggregate's
+            // hasOrderedCall is false, as EnumerableSortedAggregate passes it, so a call's WITHIN GROUP
+            // ordering is not applied
             var lambdaFactory = ImplementLambdaFactory(implementor, inputPhysType, aggs, adders, accumulatorInitializer, false, sourceType);
 
             var resultBlock = new J.BlockBuilder();
@@ -275,8 +280,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 keyParameter,
                 accParameter);
 
-            // the comparator decides where one group ends, and a null in a key has to order consistently,
-            // which is why it comes from the collation this node carries rather than from equality
+            // the comparator decides where one group ends; it is built from this node's collation so that
+            // null keys compare in the same order the input is sorted in
             var comparator = keyClr.GenerateComparator(getTraitSet().getCollation() ?? throw new java.lang.NullPointerException($"getTraitSet().getCollation() is null; traits are {getTraitSet()}"));
 
             return implementor.ResultAsync(physType,

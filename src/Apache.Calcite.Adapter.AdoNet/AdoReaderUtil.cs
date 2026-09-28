@@ -11,30 +11,40 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Various utilities for working with an ADO data reader.
+    /// Reads a column of a <see cref="DbDataReader"/>'s current row into the representation Calcite's runtime holds
+    /// for the column's SQL type. The code the converters generate calls these.
     /// </summary>
+    /// <remarks>
+    /// The column's declared SQL type decides the representation, whatever CLR type the provider returns: an
+    /// integer is a <c>java.lang</c> wrapper, an unsigned integer a joou value, a <c>DECIMAL</c> a
+    /// <see cref="java.math.BigDecimal"/>, a date, time or timestamp a number, and a binary value a
+    /// <c>ByteString</c>. Each accessor returns <see langword="null"/> for a database null.
+    /// </remarks>
     public static class AdoReaderUtil
     {
 
         /// <summary>
-        /// Gets a value from the reader according to the specified representation and database type.
+        /// Reads a column as the representation of <paramref name="type"/>'s SQL type.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <param name="type">The column's type.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
+        /// <exception cref="AdoCalciteException">The SQL type has no mapping.</exception>
         public static object? GetDbReaderValue(DbDataReader reader, int index, RelDataType type)
         {
             return GetDbReaderValue(reader, index, type.getSqlTypeName());
         }
 
         /// <summary>
-        /// Gets a object value from the reader according to the specified representation and database type.
+        /// Reads a column as the representation of a SQL type.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <param name="typeName"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <param name="typeName">The column's SQL type.</param>
+        /// <returns>The value, or <see langword="null"/>. Always <see langword="null"/> for <c>NULL</c>, and the
+        /// provider's own value for <c>OTHER</c>.</returns>
+        /// <exception cref="AdoCalciteException">The SQL type has no mapping.</exception>
         public static object? GetDbReaderValue(DbDataReader reader, int index, SqlTypeName typeName)
         {
             switch (typeName.name())
@@ -53,8 +63,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return GetInt(reader, index);
                 case nameof(SqlTypeName.BIGINT):
                     return GetLong(reader, index);
-                // the unsigned types travel as joou values, which is what JavaTypeFactoryImpl.getJavaClass
-                // answers for them and what CalciteResultValue decodes at the other end
+                // JavaTypeFactoryImpl.getJavaClass maps the unsigned types to joou classes
                 case nameof(SqlTypeName.UTINYINT):
                     return GetUByte(reader, index);
                 case nameof(SqlTypeName.USMALLINT):
@@ -67,8 +76,7 @@ namespace Apache.Calcite.Adapter.AdoNet
                     return GetTimestamp(reader, index);
                 case nameof(SqlTypeName.DATE):
                     return GetDate(reader, index);
-                // FLOAT is eight bytes in Calcite, as it is in SQL, and shares DOUBLE's representation;
-                // REAL is the four byte one. JavaTypeFactoryImpl.getJavaClass says so, and marks it "sic".
+                // Calcite's FLOAT is eight bytes, like DOUBLE (JavaTypeFactoryImpl.getJavaClass); REAL is four
                 case nameof(SqlTypeName.FLOAT):
                 case nameof(SqlTypeName.DOUBLE):
                     return GetDouble(reader, index);
@@ -97,24 +105,18 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the value at an index converted to a CLR type, or <see langword="null"/>.
+        /// Reads a column and converts it to <typeparamref name="T"/>, or returns <see langword="null"/> for a
+        /// database null.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <typeparam name="T">The CLR type to convert to.</typeparam>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <para>
-        /// The width a provider declares a column in is not the width Calcite chose for it, and the typed
-        /// accessors on <see cref="DbDataReader"/> cast rather than convert: <see cref="DbDataReader.GetInt16"/>
-        /// on a column the driver decoded as a <see cref="byte"/> throws rather than widening. Every one of
-        /// these is a lossless widening of an integral or approximate value the provider already decoded, so
-        /// converting is what the mapping meant.
-        /// </para>
-        /// <para>
-        /// The cost is one boxed value per cell, which is what every one of these accessors was going to pay
-        /// anyway: the result is a <c>java.lang</c> wrapper, allocated per cell, whatever route it took.
-        /// </para>
+        /// The provider's width for a column need not be the one Calcite chose, and the typed getters on
+        /// <see cref="DbDataReader"/> cast rather than convert (<see cref="DbDataReader.GetInt16"/> throws on a column
+        /// the provider returns as a <see cref="byte"/>). So the value is read with
+        /// <see cref="DbDataReader.GetValue"/> and converted with <see cref="Convert.ChangeType(object, Type, IFormatProvider)"/>.
         /// </remarks>
         static T? GetValueAs<T>(DbDataReader reader, int index)
             where T : struct
@@ -129,26 +131,24 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="java.lang.Boolean"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetBoolean(DbDataReader reader, int index)
         {
             return GetValueAs<bool>(reader, index) is bool value ? java.lang.Boolean.valueOf(value) : null;
         }
 
         /// <summary>
-        /// Gets a <see cref="java.lang.Byte"/>.
+        /// Gets a <see cref="java.lang.Byte"/>, for a <c>TINYINT</c>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// Calcite's <c>TINYINT</c> is signed, so this is an <see cref="sbyte"/> and not the <see cref="byte"/>
-        /// the <see cref="DbDataReader.GetByte"/> accessor answers with. A provider whose own tiny integer is
-        /// unsigned — SQL Server's is — maps to <c>UTINYINT</c> and comes through <see cref="GetUByte"/>
-        /// instead. Java's <c>byte</c> is IKVM's <see cref="byte"/> and is unsigned, so the sign travels in
-        /// the bits.
+        /// Calcite's <c>TINYINT</c> is signed, so the column is read as an <see cref="sbyte"/>. IKVM exposes Java's
+        /// <c>byte</c> as the unsigned <see cref="byte"/>, so the value is passed as its two's complement bits. An
+        /// unsigned tiny integer, such as SQL Server's, is a <c>UTINYINT</c> and is read by <see cref="GetUByte"/>.
         /// </remarks>
         public static object? GetByte(DbDataReader reader, int index)
         {
@@ -158,9 +158,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="java.lang.Short"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetShort(DbDataReader reader, int index)
         {
             return GetValueAs<short>(reader, index) is short value ? java.lang.Short.valueOf(value) : null;
@@ -169,9 +169,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="java.lang.Integer"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetInt(DbDataReader reader, int index)
         {
             return GetValueAs<int>(reader, index) is int value ? java.lang.Integer.valueOf(value) : null;
@@ -180,9 +180,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="java.lang.Long"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetLong(DbDataReader reader, int index)
         {
             return GetValueAs<long>(reader, index) is long value ? java.lang.Long.valueOf(value) : null;
@@ -191,15 +191,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets an <see cref="org.joou.UByte"/>, which is what Calcite holds a <c>UTINYINT</c> in.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// The unsigned types are not a variation on the signed ones: <c>getJavaClass</c> answers a joou
-        /// <c>UByte</c>, <c>UShort</c>, <c>UInteger</c> or <c>ULong</c> rather than a <c>java.lang</c>
-        /// wrapper, and <c>CalciteResultValue</c> is written to decode exactly those. Handing over a
-        /// <see cref="java.lang.Short"/> instead would be a value of the wrong class for the type the row
-        /// declares. The widening overload is taken in each case so that the sign is never in question.
+        /// <c>JavaTypeFactoryImpl.getJavaClass</c> maps each unsigned type to a joou class, so a row holding a
+        /// <c>java.lang</c> wrapper for one would hold a value of the wrong class. Each of these accessors calls the
+        /// <c>valueOf</c> overload that takes a wider type, so the value is never read as signed.
         /// </remarks>
         public static object? GetUByte(DbDataReader reader, int index)
         {
@@ -209,9 +207,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets an <see cref="org.joou.UShort"/>, which is what Calcite holds a <c>USMALLINT</c> in.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetUShort(DbDataReader reader, int index)
         {
             return GetValueAs<ushort>(reader, index) is ushort value ? org.joou.UShort.valueOf((int)value) : null;
@@ -220,9 +218,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets an <see cref="org.joou.UInteger"/>, which is what Calcite holds a <c>UINTEGER</c> in.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetUInt(DbDataReader reader, int index)
         {
             return GetValueAs<uint>(reader, index) is uint value ? org.joou.UInteger.valueOf((long)value) : null;
@@ -231,15 +229,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets an <see cref="org.joou.ULong"/>, which is what Calcite holds a <c>UBIGINT</c> in.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// The bits, read unsigned. This went through the decimal string on the grounds that
-        /// <c>valueOf(long)</c> refuses anything above <see cref="long.MaxValue"/> and so could not carry
-        /// half of what the type holds; that is not what it does. Measured: <c>valueOf(-1L)</c> is
-        /// 18446744073709551615, the overload taking the argument's bits rather than its value, which is
-        /// the whole range and the same representation joou stores.
+        /// <c>ULong.valueOf(long)</c> reads its argument's bits as unsigned (<c>valueOf(-1L)</c> is
+        /// 18446744073709551615), so the <see cref="ulong"/> is passed reinterpreted as a <see cref="long"/>.
         /// </remarks>
         public static object? GetULong(DbDataReader reader, int index)
         {
@@ -249,9 +244,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="java.lang.Double"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetDouble(DbDataReader reader, int index)
         {
             return GetValueAs<double>(reader, index) is double value ? java.lang.Double.valueOf(value) : null;
@@ -260,9 +255,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="java.lang.Float"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetFloat(DbDataReader reader, int index)
         {
             return GetValueAs<float>(reader, index) is float value ? java.lang.Float.valueOf(value) : null;
@@ -276,22 +271,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="SqlTypeName.DATE"/> in Calcite's internal representation.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <para>
-        /// A date is a count of whole days since 1 January 1970, held in an <see cref="java.lang.Integer"/>:
-        /// <c>SqlFunctions.internalToDate</c> decodes one with <c>LocalDate.ofEpochDay</c>, and
-        /// <c>JavaTypeFactory.getJavaClass</c> reports <c>int</c> for the type. It is not a millisecond count,
-        /// which is what a <see cref="SqlTypeName.TIMESTAMP"/> is.
-        /// </para>
-        /// <para>
-        /// Only the date component is read, and no time zone enters into it. Converting through
-        /// <see cref="DateTimeOffset"/> would apply the machine's offset to a value whose
-        /// <see cref="DateTime.Kind"/> is typically <see cref="DateTimeKind.Unspecified"/>, which for a date
-        /// at midnight can land on the day before.
-        /// </para>
+        /// Calcite holds a date as the number of days since 1 January 1970 in an <see cref="java.lang.Integer"/>
+        /// (<c>SqlFunctions.internalToDate</c> decodes it with <c>LocalDate.ofEpochDay</c>). Only the date part of
+        /// the provider's <see cref="DateTime"/> is read, with no time zone applied, so a date at midnight cannot
+        /// shift to the day before.
         /// </remarks>
         public static object? GetDate(DbDataReader reader, int index)
         {
@@ -309,16 +296,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="SqlTypeName.TIMESTAMP"/> in Calcite's internal representation.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// A timestamp carries no zone: the count is of milliseconds from the epoch to the wall clock read
-        /// as though it were UTC, which is what <c>ParameterBinder.ConvertTimestamp</c> writes and what
-        /// <c>CalciteResultValue</c> decodes with <c>UnixEpoch.AddMilliseconds</c>. Casting the provider's
-        /// <see cref="DateTime"/> to a <see cref="DateTimeOffset"/> instead reads an unspecified
-        /// <see cref="DateTime.Kind"/> as local time and shifts the value by the machine's offset — the same
-        /// hazard <see cref="GetDate"/> avoids, and for the same reason.
+        /// Calcite holds a timestamp without time zone as milliseconds since the epoch in a
+        /// <see cref="java.lang.Long"/>, counting the wall-clock value as though it were UTC. The provider's
+        /// <see cref="DateTime"/> is read that way whatever its <see cref="DateTime.Kind"/>, so the machine's
+        /// time zone never shifts it.
         /// </remarks>
         public static object? GetTimestamp(DbDataReader reader, int index)
         {
@@ -331,14 +316,14 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="SqlTypeName.TIMESTAMP_TZ"/> in Calcite's internal representation.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// A zoned timestamp is an instant, so the count is of milliseconds from the epoch to it. A provider
-        /// that has a type for one hands back a <see cref="DateTimeOffset"/> and refuses
-        /// <see cref="DbDataReader.GetDateTime"/> outright — SQL Server's <c>datetimeoffset</c> does; one
-        /// that does not is read as UTC, the offset being the thing it had no way to tell us.
+        /// The value is milliseconds from the epoch to the instant, in a <see cref="java.lang.Long"/>. A
+        /// <see cref="DateTimeOffset"/> (SQL Server's <c>datetimeoffset</c>, which refuses
+        /// <see cref="DbDataReader.GetDateTime"/>) is converted by its offset; a <see cref="DateTime"/> of
+        /// unspecified kind is taken as UTC; a string is parsed.
         /// </remarks>
         public static object? GetTimestampTz(DbDataReader reader, int index)
         {
@@ -355,11 +340,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Counts the milliseconds from the epoch to a <see cref="DateTime"/> already in the terms it is to
-        /// be counted in.
+        /// Returns the milliseconds from the epoch to <paramref name="value"/>, treating it as UTC.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The value, already in UTC or wall-clock terms.</param>
+        /// <returns>The millisecond count.</returns>
         static long ToUnixTimeMilliseconds(DateTime value)
         {
             return (long)(value - UnixEpoch).TotalMilliseconds;
@@ -369,12 +353,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// Gets a <see cref="SqlTypeName.DECIMAL"/> as the <see cref="java.math.BigDecimal"/> Calcite holds
         /// one in.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// Via the decimal string rather than a double: a decimal is exact, and routing it through binary
-        /// floating point would not be.
+        /// Converted through the decimal's string form, which is exact, rather than through a double.
         /// </remarks>
         public static object? GetDecimal(DbDataReader reader, int index)
         {
@@ -385,11 +368,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets a <see cref="SqlTypeName.VARBINARY"/> as the <c>ByteString</c> Calcite holds one in.
+        /// Gets a <see cref="SqlTypeName.BINARY"/> or <see cref="SqlTypeName.VARBINARY"/> as the <c>ByteString</c>
+        /// Calcite holds one in. The provider must return a <c>byte[]</c>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetBinary(DbDataReader reader, int index)
         {
             if (reader.IsDBNull(index))
@@ -401,13 +385,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="SqlTypeName.TIME"/> in Calcite's internal representation.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// A time is a count of milliseconds since midnight held in an <see cref="java.lang.Integer"/>, the
-        /// same shape a <see cref="SqlTypeName.DATE"/> uses for days. Providers surface one either as a span
-        /// or as a whole timestamp whose date part is to be ignored.
+        /// Calcite holds a time as milliseconds since midnight in an <see cref="java.lang.Integer"/>. The provider's
+        /// value may be a <see cref="TimeSpan"/>, a <see cref="DateTime"/> whose date part is ignored, or a string.
         /// </remarks>
         public static object? GetTime(DbDataReader reader, int index)
         {
@@ -429,14 +412,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Gets a <see cref="string"/>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// A column Calcite holds as <see cref="SqlTypeName.CHAR"/> or <see cref="SqlTypeName.VARCHAR"/> is
-        /// a character column, so this is <see cref="DbDataReader.GetString"/> and nothing else. Formatting
-        /// whatever the provider handed back would make the mapping answer for types the column does not
-        /// have; every type that is not a string has a case of its own.
+        /// For <see cref="SqlTypeName.CHAR"/> and <see cref="SqlTypeName.VARCHAR"/>. Reads with
+        /// <see cref="DbDataReader.GetString"/>, so a column the provider does not return as a string fails rather
+        /// than being formatted.
         /// </remarks>
         public static object? GetString(DbDataReader reader, int index)
         {
@@ -447,24 +429,16 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets a <see cref="SqlTypeName.UUID"/> as the <see cref="java.util.UUID"/> Calcite holds one in.
+        /// Gets a <see cref="SqlTypeName.UUID"/> as the <see cref="org.apache.calcite.util.UuidValue"/> Calcite holds
+        /// one in.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <para>
-        /// A <c>UUID</c> is the sixteen bytes and <see cref="DbDataReader.GetGuid"/> is what a provider
-        /// answers them with, so the transfer is those bytes rather than a string round trip. Named for
-        /// what it returns, as every accessor here is: what the provider is asked for is a
-        /// <see cref="Guid"/> and what Calcite's runtime holds is a <see cref="java.util.UUID"/>.
-        /// </para>
-        /// <para>
-        /// Text in canonical GUID form is a character column and goes to <see cref="GetString"/>. It is not
-        /// a GUID, and a cast is how a caller says it means one — which is this provider's rule at the
-        /// other end too, <c>CalciteResultValue.GetGuid</c> reading a <c>java.util.UUID</c> and nothing
-        /// else.
-        /// </para>
+        /// Reads with <see cref="DbDataReader.GetGuid"/> and converts the sixteen bytes. A character column holding
+        /// GUID text is a <c>VARCHAR</c> and is read by <see cref="GetString"/>; a query casts it to <c>UUID</c> to
+        /// treat it as one.
         /// </remarks>
         public static object? GetUuid(DbDataReader reader, int index)
         {
@@ -475,11 +449,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the native provider value for types with no dedicated Calcite mapping (e.g. <c>OTHER</c>).
+        /// Gets the provider's own value unchanged, for <c>OTHER</c>.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="reader">The reader, positioned on a row.</param>
+        /// <param name="index">The column's ordinal.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static object? GetValue(DbDataReader reader, int index)
         {
             if (reader.IsDBNull(index))

@@ -20,22 +20,19 @@ namespace Apache.Calcite.Data.Tests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>The recording is the assertion.</b> What a column may be read as is decided by the mapping table,
-    /// one entry per pair of types, and no single hand-written assertion can show that the table says what
-    /// it should: the interesting facts are the refusals, and there are far more of those than answers. So
-    /// this writes the whole grid and compares it to <c>ReaderMatrix.txt</c>, and a change to what any
-    /// accessor accepts is a diff to read rather than a test that happens not to exist.
+    /// The recording is the assertion. What a column may be read as is decided by the type mappings, one
+    /// per pair of types, and most of the facts worth checking are refusals. This writes the whole grid and
+    /// compares it to <c>ReaderMatrix.txt</c>, so a change to what any accessor accepts shows as a diff.
     /// </para>
     /// <para>
-    /// It is worth knowing what this caught being written: <c>GetInt32</c> answering 18263 for a
-    /// <c>DATE</c>, because Calcite holds one as a count of days in a <c>java.lang.Integer</c> and the
-    /// accessor matched that class; the same for five other temporal types. A per-accessor test would have
-    /// had to think to ask.
+    /// The grid covers the case where Calcite holds a temporal value in a <c>java.lang.Integer</c> or
+    /// <c>java.lang.Long</c> (a <c>DATE</c> as a count of days, for instance), so a numeric getter must
+    /// refuse the column rather than answer the count.
     /// </para>
     /// <para>
     /// A type whose statement does not run is recorded as that rather than left out, so the grid says why a
-    /// type is not covered. The unsigned types have no spelling Calcite's parser accepts here and
-    /// <c>GEOMETRY</c> needs the spatial functions the test model does not load.
+    /// type is not covered. The validator rejects the unsigned types as spelled here, and <c>GEOMETRY</c>
+    /// needs the spatial functions the test model does not load.
     /// </para>
     /// </remarks>
     public class CalciteReaderMatrixTests
@@ -113,8 +110,8 @@ namespace Apache.Calcite.Data.Tests
         ];
 
         /// <summary>
-        /// Element types named explicitly, which is the ask <c>GetArray{T}</c> and
-        /// <c>GetFieldValue{T}</c> have to answer alike.
+        /// Element types named explicitly, which <c>GetArray{T}</c> and <c>GetFieldValue{T}</c> must answer
+        /// alike.
         /// </summary>
         static readonly (string Sql, Type Element)[] Named =
         [
@@ -139,12 +136,9 @@ namespace Apache.Calcite.Data.Tests
         ];
 
         /// <remarks>
-        /// <b>The session's time zone is pinned, because two of these types read by it.</b> A
-        /// <c>TIMESTAMP WITH LOCAL TIME ZONE</c> and a <c>TIME WITH LOCAL TIME ZONE</c> are stored as an
-        /// instant and rendered against the session zone, so the same statement answers 03:04:05 on a
-        /// machine set to UTC and 09:04:05 on one at UTC-5 — correct both times, and not something a
-        /// recording can hold unless the zone is stated. Nothing else in the suite reads either type, so
-        /// this was the first thing to notice that they depend on it.
+        /// The session's time zone is pinned to UTC. A <c>TIMESTAMP WITH LOCAL TIME ZONE</c> and a
+        /// <c>TIME WITH LOCAL TIME ZONE</c> are stored as an instant and rendered against the session zone,
+        /// so without it the recording would depend on the machine's zone.
         /// </remarks>
         static CalciteConnection Open()
         {
@@ -178,7 +172,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Writes a value so that its type is as visible as its content, both being what is being recorded.
+        /// Writes a value with its type as well as its content, since both are recorded.
         /// </summary>
         static string Describe(object? v)
         {
@@ -245,9 +239,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <remarks>
-        /// One reader for the whole block. An accessor converts the value the row already holds and does not
-        /// advance or consume anything, so a refusal leaves the next accessor exactly as it found it — and
-        /// re-executing the statement once per accessor is some two thousand extra plans across the grid.
+        /// One reader serves the whole block. An accessor converts the value the row already holds and does
+        /// not advance or consume anything, so a refusal leaves the reader as it was, and executing the
+        /// statement once per accessor would add thousands of plans across the grid.
         /// </remarks>
         static void Block(StringBuilder b, CalciteConnection c, string label, string sql)
         {
@@ -255,8 +249,8 @@ namespace Apache.Calcite.Data.Tests
 
             CalciteDataReader r;
 
-            // a statement the parser or validator refuses has no row to read, and saying so once beats a
-            // column of identical failures
+            // a statement the parser or validator refuses has no row to read; record it once rather than
+            // as a column of identical failures
             try
             {
                 r = Row(c, sql);
@@ -273,8 +267,7 @@ namespace Apache.Calcite.Data.Tests
                 foreach (var (name, get) in Getters)
                     b.AppendLine($"   {name,-18} {Try(() => get(r))}");
 
-                // GetFieldValue asked for what GetFieldType named, which is the documented way to read a
-                // column and so the one that must never be the wrong answer
+                // GetFieldValue asked for what GetFieldType names, the documented way to read a column
                 Type? field = null;
                 try
                 {
@@ -360,7 +353,7 @@ namespace Apache.Calcite.Data.Tests
                 return;
 
             // the whole grid in a failure message is unreadable, so name the lines that moved and write the
-            // new grid out for the diff that settles whether the change was wanted
+            // new grid to a file to diff against the recording
             var a = actual.Split('\n');
             var e = recorded.Split('\n');
             var changes = new List<string>();
@@ -407,8 +400,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A column typed by naming a Java class that happens to be an array, which Calcite calls
-        /// <c>OTHER</c> and holds as a real .NET <c>string[]</c> rather than a <c>java.util.List</c>.
+        /// A column typed by naming a Java class that is an array, which Calcite calls <c>OTHER</c>; the
+        /// value is a .NET <c>string[]</c> rather than a <c>java.util.List</c>.
         /// </summary>
         sealed class JavaArrayTable : AbstractTable, ScannableTable
         {

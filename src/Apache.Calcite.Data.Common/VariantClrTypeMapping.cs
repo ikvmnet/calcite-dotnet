@@ -12,48 +12,26 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// A <c>VARIANT</c>, read by asking the value what type it is and mapping it as that.
+    /// The mapping for a <c>VARIANT</c>, which reads each value according to the type its payload carries.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A <c>VARIANT</c> carries its own type, which is <c>ANY</c> written the other way round: <c>ANY</c>
-    /// says nothing and leaves the runtime class to decide, a variant says it per value. Calcite holds one
-    /// as a <c>VariantValue</c> — <c>VariantNonNull</c> for a value, <c>VariantSqlNull</c> for the SQL null
-    /// of a declared type, <c>VariantNull</c> for the variant's own null — and none of those may be handed
-    /// to a caller.
+    /// Calcite holds a variant in a <c>VariantValue</c>. A scalar payload is read by casting the variant to
+    /// the type it reports through <c>getTypeString()</c>, which returns the payload without converting it,
+    /// and then converting that with the chain's mapping for the type, so a caller's resolvers apply inside a
+    /// variant as they do to a column. A year-month interval payload reads as an <see cref="int"/> count of
+    /// months and a day-time interval as a <see cref="TimeSpan"/>.
     /// </para>
     /// <para>
-    /// <b>Reading the payload takes two public calls.</b> <c>getTypeString()</c> names the payload's type
-    /// and <c>cast()</c> against a <c>BasicSqlTypeRtti</c> of that same name hands the payload back. Naming
-    /// its own type is the point: <c>cast</c> is Calcite's SQL cast and it converts, a <c>DOUBLE</c> of 1.5
-    /// casting to <c>BIGINT</c> as 1, so it is only ever called here with the type the variant says it
-    /// already is, which makes it a read and not a conversion. What comes back is Calcite's storage form, a
-    /// <c>DATE</c> as a count of days like anywhere else, and the registry decodes it by the same name.
+    /// An <c>ARRAY</c> payload reads as an array of its converted elements, whose element type is the
+    /// runtime type they all share (or <see cref="object"/>), since the variant records no element type. A
+    /// <c>MAP</c> payload reads as a <see cref="Dictionary{TKey, TValue}"/> with <see cref="string"/> keys,
+    /// and only where its keys are character values: Calcite offers no other way to enumerate them. Any other
+    /// payload type, including <c>MULTISET</c> and <c>ROW</c>, throws <see cref="ClrTypeMappingException"/>.
     /// </para>
     /// <para>
-    /// <b>The registry decodes it, which is what makes this different from reading a variant by hand.</b>
-    /// A payload named <c>INTEGER</c> is carried across by whatever mapping the chain answers for
-    /// <c>INTEGER</c>, so a resolver a caller put in front applies inside a variant exactly as it does to a
-    /// column of that type.
-    /// </para>
-    /// <para>
-    /// <b>An array is walked, not cast.</b> <c>item(1)</c>, <c>item(2)</c>, … each answer a
-    /// <c>VariantValue</c> of their own and null past the end, so elements convert recursively and carry
-    /// their own types. Casting one would need the element type, and a variant keeps a
-    /// <c>RuntimeSqlTypeName</c> rather than a full <c>RuntimeTypeInformation</c>: <c>getTypeString()</c>
-    /// answers <c>ARRAY</c> and nothing more.
-    /// </para>
-    /// <para>
-    /// <b>A map is met halfway.</b> Nothing enumerates the keys except a cast to
-    /// <c>MAP&lt;VARCHAR, VARCHAR&gt;</c>, which answers the keys and drops every value; the values come
-    /// back one at a time through <c>item(key)</c>. That works where the keys are character values, which
-    /// is what a variant map is for, and a key of any other type comes back null from that cast.
-    /// </para>
-    /// <para>
-    /// <b>What has no public route to its contents is refused and named.</b> A <c>MULTISET</c> answers null
-    /// to every <c>item</c> and a <c>ROW</c> only to field names the variant does not carry, so neither is
-    /// guessed at. Handing back the <c>VariantValue</c> would put a Java object in a caller's hands and
-    /// inventing a text form for it would be worse.
+    /// A variant cannot be written from a .NET value; cast a value of the payload's type to <c>VARIANT</c> in
+    /// SQL instead.
     /// </para>
     /// </remarks>
     public sealed class VariantClrTypeMapping : ClrTypeMapping
@@ -64,12 +42,11 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="context"></param>
+        /// <param name="context">The context the mapping is resolved in.</param>
         /// <param name="relType">The <c>VARIANT</c> type.</param>
         /// <remarks>
-        /// <see cref="ClrTypeMapping.ClrType"/> is <see cref="object"/>, because a variant's type is a
-        /// property of each value and not of the column: what any one value reads back as is whatever its
-        /// own payload type reads back as, and the column cannot promise which that will be.
+        /// <see cref="ClrTypeMapping.ClrType"/> is <see cref="object"/>, since the CLR type of each value
+        /// depends on that value's payload type.
         /// </remarks>
         public VariantClrTypeMapping(ClrTypeContext context, RelDataType relType) :
             base(context, relType, typeof(object))
@@ -79,9 +56,8 @@ namespace Apache.Calcite.Data.Common
 
         /// <inheritdoc />
         /// <remarks>
-        /// <c>VariantSqlNull</c> is a SQL null that remembers the type it was null of and
-        /// <c>VariantNull</c> is the variant type's own null, the one a JSON <c>null</c> parses to. An
-        /// ADO.NET caller has one null and both are it.
+        /// Both <c>VariantSqlNull</c>, a SQL null of some declared type, and <c>VariantNull</c>, the
+        /// variant's own null (for example a JSON <c>null</c>), are null.
         /// </remarks>
         public override bool IsNull(object value)
         {
@@ -90,16 +66,14 @@ namespace Apache.Calcite.Data.Common
 
         /// <inheritdoc />
         /// <remarks>
-        /// A variant carries its payload's type with the payload, so the column says nothing and the value
-        /// says everything.
+        /// Always <see langword="false"/>: each value carries its own type.
         /// </remarks>
         public override bool DescribesValue => false;
 
         /// <inheritdoc />
         /// <remarks>
-        /// Not supported. Calcite builds a variant with its <c>VARIANT</c> constructor inside a plan, and
-        /// there is no public route to one from outside; a caller writes the payload's own type and casts
-        /// in SQL.
+        /// Not supported: always throws <see cref="ClrTypeMappingException"/>. Write the payload's own type and
+        /// cast it to <c>VARIANT</c> in SQL.
         /// </remarks>
         public override object? ToCalcite(object value)
         {
@@ -116,11 +90,11 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Reads a variant as the .NET value its payload's own type calls for.
+        /// Converts a variant to the .NET value for its payload's type.
         /// </summary>
         /// <param name="value">The variant.</param>
         /// <returns>The .NET value, or <see langword="null"/> where the variant is null.</returns>
-        /// <exception cref="ClrTypeMappingException">Where the payload has no public route to its contents.</exception>
+        /// <exception cref="ClrTypeMappingException">The payload type cannot be read.</exception>
         object? Read(VariantValue value)
         {
             if (IsNull(value))
@@ -136,11 +110,9 @@ namespace Apache.Calcite.Data.Common
                 case nameof(Name.MAP):
                     return Entries(value);
 
-                // an interval names itself by its scale rather than by a SqlTypeName, so neither name
-                // reaches the table below and neither has a SqlTypeName to resolve a mapping with.
-                // INTERVAL_LONG is the year-month family, held as a count of months; INTERVAL_SHORT the
-                // day-time one, held as a count of milliseconds. Each reads as the declared types of that
-                // family do, which is an int and a TimeSpan
+                // an interval reports INTERVAL_LONG (year-month, a count of months) or INTERVAL_SHORT
+                // (day-time, a count of milliseconds), neither of which is a SqlTypeName to look a mapping up
+                // by, so each is decoded as the declared interval types of its family are
                 case nameof(Name.INTERVAL_LONG):
                     return Interval(value, Name.INTERVAL_LONG, CalciteValues.FromIntervalMonths);
 
@@ -155,8 +127,8 @@ namespace Apache.Calcite.Data.Common
             if (payload is null)
                 return null;
 
-            // the payload's own type, carried across by whatever the chain answers for it, so a resolver a
-            // caller registered reaches inside a variant too
+            // converted through the chain, so that a caller's resolvers apply to the payload too; the
+            // payload is in Calcite's storage form, such as a DATE's count of days
             var relType = _context.TypeFactory.createTypeWithNullability(
                 _context.TypeFactory.createSqlType(SqlTypeName.valueOf(name)), true);
 
@@ -164,27 +136,27 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns an interval payload, cast to the scale it says it is and decoded by the count it holds.
+        /// Returns an interval payload, cast to the interval type the variant reports and decoded.
         /// </summary>
         /// <param name="value">The variant.</param>
-        /// <param name="scale">The runtime type the variant named itself.</param>
-        /// <param name="decode">What carries the count to the .NET type that family reads as.</param>
-        /// <returns>The .NET value, or <see langword="null"/> where the cast answered nothing.</returns>
+        /// <param name="scale">The interval type the variant reports.</param>
+        /// <param name="decode">Converts the count to the .NET value.</param>
+        /// <returns>The .NET value, or <see langword="null"/> where the cast returns null.</returns>
         static object? Interval(VariantValue value, Name scale, Func<object, object> decode)
         {
             return value.cast(new BasicSqlTypeRtti(scale)) is { } payload ? decode(payload) : null;
         }
 
         /// <summary>
-        /// Returns the runtime type a name stands for, where it is one whose payload can be read.
+        /// Returns the runtime type a type name stands for, where it is a scalar type whose payload can be
+        /// read.
         /// </summary>
-        /// <param name="name"></param>
+        /// <param name="name">The name <c>getTypeString()</c> returned.</param>
         /// <returns>The type, or <see langword="null"/> where the name is not a readable scalar.</returns>
         /// <remarks>
-        /// Written out rather than resolved through the enum's <c>valueOf</c>, which is what this project
-        /// does with a Java enum in any case, and which here also states the set: a name that is not on it
-        /// is refused rather than cast blindly. The names are <see cref="SqlTypeName"/>'s own for every
-        /// type on the list, which is why passing the same name to the type factory works.
+        /// The set is listed explicitly, so that any other name is refused rather than cast. Every name on it
+        /// is also a <see cref="SqlTypeName"/>, which <see cref="Read"/> relies on to build the payload's
+        /// Calcite type.
         /// </remarks>
         static Name? Scalar(string name)
         {
@@ -225,7 +197,7 @@ namespace Apache.Calcite.Data.Common
         {
             var items = new List<object?>();
 
-            // one-based, and null past the end, which is the only length a variant offers
+            // item() is one-based and returns null past the end; a variant offers no length
             for (var i = 1; value.item(java.lang.Integer.valueOf(i)) is VariantValue element; i++)
                 items.Add(Read(element));
 
@@ -236,11 +208,13 @@ namespace Apache.Calcite.Data.Common
         /// Returns the entries of a map variant, converted.
         /// </summary>
         /// <param name="value">The variant.</param>
-        /// <returns>A dictionary of the types the converted entries share.</returns>
-        /// <exception cref="ClrTypeMappingException">Where the keys are not character values.</exception>
+        /// <returns>A dictionary with <see cref="string"/> keys and the value type the converted values
+        /// share.</returns>
+        /// <exception cref="ClrTypeMappingException">The keys are not character values.</exception>
         object Entries(VariantValue value)
         {
-            // the cast answers the keys and drops the values; item() then reads each value by its key
+            // casting to MAP<VARCHAR, VARCHAR> is the only way to enumerate the keys; its values are not
+            // usable, so each value is read by key with item()
             var arguments = new RuntimeTypeInformation[] { new BasicSqlTypeRtti(Name.VARCHAR), new BasicSqlTypeRtti(Name.VARCHAR) };
             if (value.cast(new GenericSqlTypeRtti(Name.MAP, arguments)) is not java.util.Map map)
                 throw new ClrTypeMappingException("A variant holding a MAP cannot be read: its keys did not answer as character values.");
@@ -268,15 +242,14 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns converted elements as an array of the type they share.
+        /// Returns converted elements in an array of the type they share.
         /// </summary>
-        /// <param name="items"></param>
-        /// <returns>The array.</returns>
         /// <remarks>
-        /// Measured from the values rather than declared, because a variant records no element type: it
-        /// keeps a <c>RuntimeSqlTypeName</c>, so an array variant says <c>ARRAY</c> and nothing about what
-        /// is in it. This is the one place where measuring is the only thing available.
+        /// The element type is taken from the values because an array variant reports only <c>ARRAY</c>, not
+        /// its element type.
         /// </remarks>
+        /// <param name="items">The converted values, in order; any may be <see langword="null"/>.</param>
+        /// <returns>A new array whose element type is what <see cref="Unify"/> answers for the values.</returns>
         static Array Pack(List<object?> items)
         {
             var element = Unify(items);
@@ -288,15 +261,15 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the type every value has, or <see cref="object"/> where they do not agree on one.
+        /// Returns the runtime type every non-null value has, or <see cref="object"/> where they differ or
+        /// there are none.
         /// </summary>
-        /// <param name="items"></param>
-        /// <returns>The shared type.</returns>
         /// <remarks>
-        /// A null among values of a value type makes the type nullable rather than <see cref="object"/>, so
-        /// an array holding a null still names what it holds. An empty sequence has no type to read and is
-        /// <see cref="object"/>.
+        /// Where the shared type is a value type and a value is null, the result is the nullable form of that
+        /// type.
         /// </remarks>
+        /// <param name="items">The converted values; any may be <see langword="null"/>.</param>
+        /// <returns>The shared runtime type, its nullable form, or <see cref="object"/>.</returns>
         static Type Unify(List<object?> items)
         {
             Type? common = null;

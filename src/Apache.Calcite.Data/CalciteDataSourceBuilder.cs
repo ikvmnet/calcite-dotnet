@@ -9,16 +9,15 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Builds a <see cref="CalciteDataSource"/> from a connection string and whatever a connection string
-    /// cannot carry.
+    /// Builds a <see cref="CalciteDataSource"/> from a connection string together with schema instances,
+    /// root-schema configuration and type mappings that a connection string cannot express.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// A connection string can name a model, and a model can name a schema factory, and that is as far as
-    /// text goes. A schema an application constructed itself — around a client it already owns, a token
-    /// cache, an in-memory collection — has to be handed over as an object, and this is where. What is
-    /// registered here is applied to the data source's root after the model, in the order it was added,
-    /// and every connection the data source opens sees it.
+    /// Use the builder to register a schema the application constructs itself, for example one that wraps
+    /// a client it already owns or an in-memory collection. Schemas and configuration steps are applied to
+    /// the data source's root schema after the model, in the order they were added, and every connection
+    /// the data source produces sees them.
     /// </para>
     /// <code>
     /// var dataSource = new CalciteDataSourceBuilder("Lex=MYSQL_ANSI")
@@ -28,8 +27,9 @@ namespace Apache.Calcite.Data
     /// await using var connection = await dataSource.OpenConnectionAsync();
     /// </code>
     /// <para>
-    /// A data source built this way is the caller's: it is not shared with connections opened by connection
-    /// string, and the caller disposes it.
+    /// The data source returned by <see cref="Build"/> belongs to the caller, who disposes it. It is
+    /// independent of the data sources the provider keeps for connections created from a connection string
+    /// alone.
     /// </para>
     /// </remarks>
     public sealed class CalciteDataSourceBuilder
@@ -39,25 +39,23 @@ namespace Apache.Calcite.Data
         readonly ClrTypeMapper _typeMapper = new();
 
         /// <summary>
-        /// Gets the chain of type resolvers every connection from this data source starts with.
+        /// Gets the chain of type resolvers every connection from the built data source starts with.
         /// </summary>
         /// <remarks>
-        /// This is where a mapping belongs that is a property of the data — a domain type a schema uses, a
-        /// .NET type a caller wants a column seen as — because that is the same for every connection drawn
-        /// on the source. A connection takes a copy of this chain when it is created, so one connection
-        /// adding a resolver of its own does not change what the next one sees.
+        /// Register here the mappings that belong to the data rather than to one caller, such as a domain type
+        /// a schema produces or the .NET type a column should be read as. <see cref="Build"/> captures the
+        /// chain as it stands; later changes do not affect a data source already built. Each connection starts
+        /// from a copy, so a resolver added to <see cref="CalciteConnection.TypeMapper"/> affects that
+        /// connection only.
         /// </remarks>
         public ClrTypeMapper TypeMapper => _typeMapper;
 
         /// <summary>
-        /// Puts a resolver in front of every other, so that it answers first.
+        /// Adds a type resolver ahead of every other in <see cref="TypeMapper"/>, so that it is consulted first.
         /// </summary>
         /// <param name="resolver">The resolver.</param>
         /// <returns>This builder.</returns>
-        /// <remarks>
-        /// <see cref="TypeMapper"/> written as one call, so that building a data source reads as one
-        /// expression the way the rest of this builder does.
-        /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="resolver"/> is <see langword="null"/>.</exception>
         public CalciteDataSourceBuilder AddTypeResolver(IClrTypeResolver resolver)
         {
             ArgumentNullException.ThrowIfNull(resolver);
@@ -77,7 +75,8 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Gets the connection string builder, which can be changed until <see cref="Build"/> is called.
+        /// Gets the connection string builder. <see cref="Build"/> copies the connection string as it stands
+        /// at that moment.
         /// </summary>
         public CalciteConnectionStringBuilder ConnectionStringBuilder { get; }
 
@@ -87,12 +86,17 @@ namespace Apache.Calcite.Data
         public string ConnectionString => ConnectionStringBuilder.ConnectionString;
 
         /// <summary>
-        /// Adds a schema to the root of the data source being built.
+        /// Adds a schema to the root schema of the data source being built.
         /// </summary>
         /// <param name="name">The name to register the schema under.</param>
         /// <param name="schema">The schema.</param>
         /// <returns>This builder.</returns>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="name"/> or <paramref name="schema"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="schema"/> is <see langword="null"/>.</exception>
+        /// <remarks>
+        /// The same instance is added to every root the data source builds: once normally, again after
+        /// <see cref="CalciteDataSource.Clear"/>, and once per connection under <c>Pooling=false</c>. A schema
+        /// that implements <see cref="IDisposable"/> is disposed each time a root holding it is released.
+        /// </remarks>
         public CalciteDataSourceBuilder AddSchema(string name, Schema schema)
         {
             ArgumentNullException.ThrowIfNull(name);
@@ -102,19 +106,20 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Registers a step to run over the root of the data source being built, after the model.
+        /// Registers a step to run over the root schema of the data source being built, after the model.
         /// </summary>
-        /// <param name="configure">The step, given the root as Calcite's mutable <see cref="SchemaPlus"/>.
-        /// Anything the root accepts can be added: a schema that needs its parent, a table, a function, a
-        /// view macro.</param>
+        /// <param name="configure">The step, given the root as Calcite's mutable <see cref="SchemaPlus"/>. It
+        /// can add anything the root accepts: a schema that needs its parent, a table, a function, a view
+        /// macro.</param>
         /// <returns>This builder.</returns>
         /// <remarks>
-        /// The step runs once per root — once for the data source, or once per connection under
-        /// <c>Pooling=false</c> — and is the one place a caller meets the root as a <see cref="SchemaPlus"/>.
-        /// A connection sees the root as a <see cref="Schema"/>, the read interface, because a change made
-        /// through one connection would reach every connection of the data source.
+        /// The step runs each time a root is built: when the first connection opens, again after
+        /// <see cref="CalciteDataSource.Clear"/>, and once per connection under <c>Pooling=false</c>. This is
+        /// the only place the root is exposed as a <see cref="SchemaPlus"/>; a connection exposes it as a
+        /// read-only <see cref="Schema"/> through <see cref="CalciteConnection.RootSchema"/>, because the root
+        /// is shared by every connection of the data source.
         /// </remarks>
-        /// <exception cref="ArgumentNullException">Thrown when <paramref name="configure"/> is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public CalciteDataSourceBuilder ConfigureRootSchema(Action<SchemaPlus> configure)
         {
             ArgumentNullException.ThrowIfNull(configure);
@@ -124,9 +129,16 @@ namespace Apache.Calcite.Data
         }
 
         /// <summary>
-        /// Builds the data source.
+        /// Builds the data source from the connection string, schemas, steps and type mappings registered so
+        /// far.
         /// </summary>
-        /// <returns>A data source that is the caller's to dispose.</returns>
+        /// <returns>A new data source, which the caller disposes.</returns>
+        /// <exception cref="ArgumentException"><see cref="CalciteConnectionStringBuilder.ConnectionPruningInterval"/>
+        /// is not positive or exceeds <see cref="CalciteConnectionStringBuilder.ConnectionIdleLifetime"/>.</exception>
+        /// <remarks>
+        /// The model is not read here; the root schema is built when the first connection opens. The builder
+        /// can be used again to build further data sources.
+        /// </remarks>
         public CalciteDataSource Build()
         {
             return new CalciteDataSource(new CalciteConnectionStringBuilder(ConnectionString), _configure.ToArray(), typeMapper: _typeMapper);

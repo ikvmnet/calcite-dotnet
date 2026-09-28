@@ -6,8 +6,8 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Holds the provider to the convention it plans into: the root of every plan is the cursor
-    /// convention's, and so is every node of a plan the cursor convention has a node for.
+    /// Verifies that the provider plans into the cursor convention: the root of every plan is a
+    /// <c>ClrCursor</c> node, and so is every node where the convention has one.
     /// </summary>
     public class ClrCursorPlanShapeTests
     {
@@ -62,7 +62,8 @@ namespace Apache.Calcite.Data.Tests
 
             Assert.StartsWith("ClrCursor", plan.TrimStart());
 
-            // every node of these is one the cursor convention has, so nothing is left to Calcite's
+            // the cursor convention has a node for every operator in these queries, so none is left to
+            // Calcite's enumerable convention
             AssertEveryNode(plan, "ClrCursor");
         }
 

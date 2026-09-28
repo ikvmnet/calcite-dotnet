@@ -9,18 +9,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 {
 
     /// <summary>
-    /// Reflection over the types, methods and fields a linq4j tree names, answered for the CLR.
+    /// Resolves the Java types, methods and fields a linq4j expression tree names to the CLR types, methods
+    /// and members IKVM compiled for them.
     /// </summary>
     /// <remarks>
-    /// What <c>Types</c> is in linq4j, for a tree that will run here rather than be compiled as Java.
-    /// Calcite asks it what runtime class a <c>Type</c> stands for, and which method or field a name and a
-    /// signature resolve to; the answers are the same questions, and the runtime is the difference.
-    ///
-    /// <para><c>Types.toClass</c> can answer with the class it was handed, a Java type already being a
-    /// Java runtime type. Nothing here can: every answer crosses from what Calcite described to what IKVM
-    /// compiled, and a linq4j call's recorded method is advisory besides — Janino resolves the overload
-    /// from the source it writes, so an overload named against one signature and passed another has to be
-    /// resolved again here.</para>
+    /// The counterpart of linq4j's <c>Types</c> for a tree that runs as a CLR expression tree rather than as
+    /// Java source. A linq4j call's recorded method is advisory: Janino writes the call out as source and the
+    /// Java compiler chooses the overload and the receiver's method from the argument and receiver types.
+    /// <see cref="Rebind"/> and <see cref="RebindReceiver"/> make the same choice here.
     /// </remarks>
     public static class ClrTypes
     {
@@ -28,9 +24,11 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Resolves a Java reflection type to its CLR type.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="type">A <c>java.lang.Class</c>, a Calcite synthetic record type, a parameterized type
+        /// or a generic array type.</param>
+        /// <returns>The CLR type. A synthetic record type resolves to a CLR class emitted for it.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
+        /// <exception cref="NotSupportedException"><paramref name="type"/> is of another kind.</exception>
         public static Type Resolve(JavaType type)
         {
             ArgumentNullException.ThrowIfNull(type);
@@ -48,16 +46,16 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Resolves a Java class to its CLR type.
         /// </summary>
-        /// <param name="clazz"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="clazz">The class.</param>
+        /// <returns>The CLR type; <see cref="object"/> for <c>java.lang.Object</c>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="clazz"/> is <see langword="null"/>.</exception>
+        /// <exception cref="NotSupportedException">No CLR type backs the class.</exception>
         public static Type FromClass(java.lang.Class clazz)
         {
             ArgumentNullException.ThrowIfNull(clazz);
 
-            // IKVM keeps a java.lang.Object of its own for the class object and for `new Object()`, but every
-            // signature it compiles uses System.Object -- java.util.Objects.equals takes two of those, and
-            // java.util.List.get returns one. A tree naming Object means the one in the signatures.
+            // IKVM has a java.lang.Object type of its own, but every signature it compiles uses System.Object,
+            // which is what a tree naming Object means
             if (clazz == ObjectClass)
                 return typeof(object);
 
@@ -66,21 +64,22 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// <c>java.lang.Object</c>, which does not resolve the way every other class does.
+        /// <c>java.lang.Object</c>, which <see cref="FromClass"/> maps to <see cref="object"/>.
         /// </summary>
         static readonly java.lang.Class ObjectClass = (java.lang.Class)typeof(java.lang.Object);
 
         /// <summary>
-        /// Resolves a parameterized Java type to a closed CLR generic type.
+        /// Resolves a parameterized Java type to a closed CLR generic type, or to the raw type where that is
+        /// not generic.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The parameterized Java type.</param>
+        /// <returns>The raw type resolved, closed over the resolved type arguments if it is a generic definition.</returns>
         static Type FromParameterizedType(java.lang.reflect.ParameterizedType type)
         {
             var raw = Resolve(type.getRawType());
 
-            // Java erases its generics and IKVM compiles what is left, so Enumerable<Employee> is Enumerable.
-            // linq4j still carries the arguments, and they have nowhere to go.
+            // IKVM compiles Java's erased types, so Enumerable<Employee> is the non-generic Enumerable and the
+            // type arguments linq4j carries are dropped
             if (raw.IsGenericTypeDefinition == false)
                 return raw;
 
@@ -95,11 +94,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         const BindingFlags All = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance;
 
         /// <summary>
-        /// Resolves a Java method to its CLR method.
+        /// Resolves a Java method to the CLR method of the same name and parameter types.
         /// </summary>
-        /// <param name="method"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="method">The method.</param>
+        /// <returns>The CLR method.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="method"/> is <see langword="null"/>.</exception>
+        /// <exception cref="NotSupportedException">No CLR method has that name and those parameter
+        /// types.</exception>
         public static MethodInfo Resolve(java.lang.reflect.Method method)
         {
             return TryResolve(method)
@@ -107,24 +108,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Resolves a Java method to the CLR method of that name and signature, or answers
-        /// <see langword="null"/> where there is none.
+        /// Resolves a Java method to the CLR method of the same name and parameter types, or returns
+        /// <see langword="null"/>.
         /// </summary>
-        /// <param name="method"></param>
-        /// <returns></returns>
+        /// <param name="method">The method.</param>
+        /// <returns>The CLR method, or <see langword="null"/> if there is no exact match.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="method"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// One question, asked once: is there a method of this name whose parameters are exactly these. Where
-        /// there is, it is the method IKVM compiled and nothing further needs deciding; where there is not,
-        /// there is no second question worth asking here. A name that differs, a receiver that moved to a
-        /// static <c>Helper</c>, a ghost interface that declares nothing — those were four more searches, and
-        /// each was a reconstruction of what IKVM did rather than an answer from it. Across all 597 of
-        /// Calcite's <c>BuiltInMethod</c>s they resolved three: <c>String.toUpperCase</c>,
-        /// <c>Object.toString</c> and <c>Comparable.compareTo</c>.
-        ///
-        /// <para>Answering <see langword="null"/> is therefore not a claim that no such method exists. It says
-        /// the CLR type system cannot be asked, and the question goes to IKVM instead — <c>JavaDelegates</c>
-        /// unreflects the member into a method handle, which is IKVM's own resolution of it and cannot be
-        /// wrong. A caller that can invoke a delegate rather than emit a call should do that.</para>
+        /// <see langword="null"/> does not mean the member cannot be called. IKVM compiles some Java methods
+        /// under another name or onto a static <c>Helper</c> class, and a ghost interface declares none; a
+        /// caller can then call the member through a delegate from <c>ikvm.runtime.Util.getDelegateFromMethod</c>
+        /// instead of emitting a direct call.
         /// </remarks>
         public static MethodInfo? TryResolve(java.lang.reflect.Method method)
         {
@@ -141,24 +135,22 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the method of the given name on the given type that accepts the given arguments.
+        /// Returns the public static method of the given name on the given type that accepts the given
+        /// argument types.
         /// </summary>
-        /// <param name="declaring"></param>
-        /// <param name="name"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="declaring">The type to search.</param>
+        /// <param name="name">The method name.</param>
+        /// <param name="arguments">The argument types.</param>
+        /// <returns>The method whose parameters are exactly <paramref name="arguments"/>, else the first to
+        /// which every argument is assignable.</returns>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+        /// <exception cref="NotSupportedException">No overload accepts the arguments.</exception>
         /// <remarks>
-        /// <c>Types.lookupMethod</c>, which is where <c>Expressions.call(Utilities.class, "compareNullsFirst",
-        /// args)</c> ends up: Calcite names a class and a method and nothing more, and the overload is bound
-        /// from the argument types — the one whose parameters are exactly these, else the first they are
-        /// assignable to, else a <c>NoSuchMethodException</c> the caller may catch.
-        ///
-        /// <para>Assignability is <c>Types.assignableFrom</c>: a subclass, or a widening between two
-        /// primitives, and <b>nothing else</b>. It is not <see cref="Accepts"/>, which also counts a box and
-        /// its primitive as fitting — that is right for <see cref="Rebind"/>, whose caller converts every
-        /// argument to its parameter, and wrong here, where the call is emitted as it stands. Under it a
-        /// <c>java.lang.Integer</c> binds <c>hash(int, Object)</c>, which is what Calcite binds.</para>
+        /// The counterpart of <c>Types.lookupMethod</c>, used where Calcite names a class and a method, as in
+        /// <c>Expressions.call(Utilities.class, "compareNullsFirst", args)</c>. Assignable means what
+        /// <c>Types.assignableFrom</c> means: a subclass, or a widening between two primitives. Unlike in
+        /// <see cref="Rebind"/>, a box and its primitive do not match each other, so that a
+        /// <c>java.lang.Integer</c> binds <c>hash(int, Object)</c> as it does in Calcite.
         /// </remarks>
         public static MethodInfo Resolve(Type declaring, string name, Type[] arguments)
         {
@@ -178,24 +170,19 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the overload that accepts the given arguments, which is not always the one a linq4j call
-        /// names.
+        /// Returns the overload of <paramref name="method"/> that accepts the given argument types, which is
+        /// not always the method a linq4j call records.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
+        /// <param name="method">The method the call records.</param>
+        /// <param name="arguments">The argument types.</param>
+        /// <returns><paramref name="method"/> if it accepts the arguments or an argument is statically
+        /// <see cref="object"/>; otherwise the most specific overload of the same name that accepts them, or
+        /// <paramref name="method"/> if none does.</returns>
         /// <remarks>
-        /// A linq4j tree records a Method, but Janino never uses it: <c>MethodCallExpression</c> writes itself
-        /// out as <c>target.name(args)</c> and the Java compiler resolves the overload from the argument
-        /// expressions. So the recorded method is only what the code that built the tree happened to name.
-        ///
-        /// <para>It is very nearly always the method to call, and measuring says how nearly: across the whole
-        /// test suite one call in the plans this convention builds names a method that is not the one, and it
-        /// is Calcite's own — <c>EnumerableWindow</c> names <c>BINARY_SEARCH5_UPPER</c>, whose method takes
-        /// five parameters, and passes it six arguments. Janino writes the name and javac binds the six-parameter
-        /// overload. Nothing derived from the recorded method can find that, a method handle over it included:
-        /// the handle would take five arguments. Choosing needs the candidates of that name, which is what this
-        /// walks.</para>
+        /// Janino writes a call out as <c>target.name(args)</c> and the Java compiler chooses the overload, so
+        /// the recorded method is only the one the tree's builder named. <c>EnumerableWindow</c>, for example,
+        /// records <c>BINARY_SEARCH5_UPPER</c>, which takes five parameters, and passes six arguments. A box
+        /// and its primitive count as matching, because the caller converts each argument to its parameter.
         /// </remarks>
         public static MethodInfo Rebind(MethodInfo method, Type[] arguments)
         {
@@ -205,8 +192,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             if (Accepts(method, arguments))
                 return method;
 
-            // an argument that is statically an object fits every overload, so there is nothing to choose on
-            // and the method the tree names is the only information there is
+            // an argument that is statically object fits every overload, so there is nothing to choose on
             foreach (var argument in arguments)
                 if (argument == typeof(object))
                     return method;
@@ -220,7 +206,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
                 if (Accepts(candidate, arguments) == false)
                     continue;
 
-                // the most specific of those that fit, which is what Java would choose
+                // the most specific of those that fit, judged by the first parameter
                 if (best == null || best.GetParameters()[0].ParameterType.IsAssignableFrom(candidate.GetParameters()[0].ParameterType))
                     best = candidate;
             }
@@ -229,16 +215,19 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the method of the receiver's own type, which is not always the one a linq4j call names.
+        /// Returns the method of the receiver's own type that a call to <paramref name="method"/> binds to
+        /// in Java.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="receiver"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
+        /// <param name="method">The method the call records.</param>
+        /// <param name="receiver">The receiver's type.</param>
+        /// <param name="arguments">The argument types.</param>
+        /// <returns><paramref name="method"/> if it is static or declared on a type the receiver is assignable
+        /// to; otherwise the receiver's instance method of that name that accepts the arguments, or
+        /// <paramref name="method"/> if there is none.</returns>
         /// <remarks>
-        /// The same reason as <see cref="Rebind"/>, in the other position. Calcite writes multiMap.size()
-        /// against BuiltInMethod.COLLECTION_SIZE, and a SortedMultiMap is a Map rather than a Collection; Java
-        /// binds Map.size() from the receiver in the source text and never looks at the named method.
+        /// The receiver-side counterpart of <see cref="Rebind"/>. Calcite writes <c>multiMap.size()</c> against
+        /// <c>BuiltInMethod.COLLECTION_SIZE</c>, but a <c>SortedMultiMap</c> is a <c>Map</c> and not a
+        /// <c>Collection</c>; Java binds <c>Map.size()</c> from the receiver's type.
         /// </remarks>
         public static MethodInfo RebindReceiver(MethodInfo method, Type receiver, Type[] arguments)
         {
@@ -258,14 +247,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Returns whether every argument is assignable to the parameter it would be passed as.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>Types.allAssignable</c> over <c>Types.assignableFrom</c>, which is a subclass or a widening
-        /// between two primitives and nothing further. Calcite's varargs arm has nothing to answer here: a
-        /// method IKVM compiled from a Java varargs one takes the array.
+        /// Mirrors <c>Types.allAssignable</c> over <c>Types.assignableFrom</c>: a subclass, or a widening
+        /// between two primitives. Calcite's varargs case does not arise, since IKVM compiles a Java varargs
+        /// method as one taking the array.
         /// </remarks>
+        /// <param name="method">The candidate method.</param>
+        /// <param name="arguments">The argument types, in order.</param>
+        /// <returns><see langword="true"/> if the counts match and each argument is assignable to its parameter.</returns>
         static bool AllAssignable(MethodInfo method, Type[] arguments)
         {
             var parameters = method.GetParameters();
@@ -292,17 +281,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         /// <summary>
         /// Returns whether every argument fits the parameter it would be passed as.
         /// </summary>
-        /// <param name="method"></param>
-        /// <param name="arguments"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Fitting includes the box and the primitive of one another, because the call being composed converts
-        /// each argument to its parameter anyway and that conversion is one of the ones it makes. Counting it
-        /// as a misfit sends <see cref="Rebind"/> looking for another method where there was nothing wrong
-        /// with this one: <c>SqlFunctions.greater(int, int)</c> handed an <c>int</c> and a
-        /// <c>java.lang.Integer</c> is the method Calcite named and the method whose return type the tree
-        /// carries, and the second argument wants unboxing rather than a different overload.
+        /// An argument fits if it is assignable to the parameter or is the parameter's box or primitive, since
+        /// the caller converts each argument to its parameter. So <c>SqlFunctions.greater(int, int)</c>
+        /// accepts an <c>int</c> and a <c>java.lang.Integer</c>, and <see cref="Rebind"/> keeps it.
         /// </remarks>
+        /// <param name="method">The candidate method.</param>
+        /// <param name="arguments">The argument types, in order.</param>
+        /// <returns><see langword="true"/> if the counts match and each argument fits its parameter.</returns>
         static bool Accepts(MethodInfo method, Type[] arguments)
         {
             var parameters = method.GetParameters();
@@ -324,13 +310,18 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns an expression reading <paramref name="field"/> of <paramref name="target"/>, which is null
-        /// for a static field.
+        /// Returns an expression reading <paramref name="field"/> of <paramref name="target"/>.
         /// </summary>
-        /// <param name="target"></param>
-        /// <param name="field"></param>
-        /// <returns></returns>
-        /// <exception cref="NotSupportedException"></exception>
+        /// <param name="target">The object to read from, or <see langword="null"/> for a static field.</param>
+        /// <param name="field">The linq4j field.</param>
+        /// <returns>A field, property or array length expression.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="field"/> is <see langword="null"/>.</exception>
+        /// <exception cref="NotSupportedException">The declaring type has no field or property of that name,
+        /// or an array length has no target.</exception>
+        /// <remarks>
+        /// Where there is no CLR field of the name, a property of the name is read. IKVM compiles a Java
+        /// <c>static final</c> field as a property, and exposes a .NET property to Java as a field.
+        /// </remarks>
         public static Expression Resolve(Expression? target, J.PseudoField field)
         {
             ArgumentNullException.ThrowIfNull(field);
@@ -346,8 +337,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
             if (info != null)
                 return Expression.Field(info.IsStatic ? null : target, info);
 
-            // IKVM exposes a .NET property to Java as a field of the same name, so a linq4j tree reaching one
-            // of ours reads it the same way it reads a Java field
+            // a Java static final field compiled by IKVM, or a .NET property seen from Java as a field
             var property = declaring.GetProperty(name, All);
             if (property != null)
                 return Expression.Property(property.GetMethod?.IsStatic == true ? null : target, property);

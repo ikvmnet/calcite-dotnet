@@ -17,24 +17,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// A tee: every row passes through, and the rows of the round are left in the table's collection for
-    /// whatever reads it next. That is what carries one round of a recursive query to the following one.
+    /// Mirrors <c>EnumerableTableSpool</c>. Every input row passes through and is also added to the table's
+    /// modifiable collection, which is how a recursive query carries one round's rows to the next. Only
+    /// <c>LAZY</c> read and write are supported.
     ///
-    /// <para>The collection is reached by asking the root schema for the table by name, as Calcite reaches
-    /// it: it belongs to the <c>DataContext</c> a run is given, and a plan compiled once can be bound more
-    /// than once.</para>
+    /// <para>As in Calcite, the table is looked up by name in the root schema of the <c>DataContext</c> each
+    /// time the plan runs, so a plan can be bound more than once.</para>
     /// </remarks>
     public class ClrCursorTableSpool : TableSpool, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorTableSpool"/>.
+        /// Creates a <see cref="ClrCursorTableSpool"/>, taking its collation and distribution from its input.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="readType"></param>
-        /// <param name="writeType"></param>
-        /// <param name="table"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="readType">How the spool is read; only <c>LAZY</c> can be implemented.</param>
+        /// <param name="writeType">How the spool is written; only <c>LAZY</c> can be implemented.</param>
+        /// <param name="table">The table the rows are written to.</param>
+        /// <returns>The new spool.</returns>
         public static ClrCursorTableSpool Create(RelNode input, Spool.Type readType, Spool.Type writeType, RelOptTable table)
         {
             var cluster = input.getCluster();
@@ -47,14 +47,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> derives the trait set; this constructor takes it as
+        /// given.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="readType"></param>
-        /// <param name="writeType"></param>
-        /// <param name="table"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="readType">How the spool is read; only <c>LAZY</c> can be implemented.</param>
+        /// <param name="writeType">How the spool is written; only <c>LAZY</c> can be implemented.</param>
+        /// <param name="table">The table the rows are written to.</param>
         public ClrCursorTableSpool(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, Spool.Type readType, Spool.Type writeType, RelOptTable table) :
             base(cluster, traitSet, input, readType, writeType, table)
         {
@@ -77,9 +78,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
 
-            // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
-            // read here and held: the collection belongs to the DataContext a run is given, and a plan
-            // compiled once can be bound more than once
+            // the table is looked up at run time rather than held, because its collection belongs to the
+            // DataContext the plan is bound with
             var name = (string)getTable().getQualifiedName().get(getTable().getQualifiedName().size() - 1);
             var collection = Expression.Call(
                 Expression.Convert(
@@ -109,9 +109,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(result.Format));
 
-            // the table is looked up in the schema the plan is bound with, as Calcite looks it up, rather than
-            // read here and held: the collection belongs to the DataContext a run is given, and a plan
-            // compiled once can be bound more than once
+            // the table is looked up at run time rather than held, because its collection belongs to the
+            // DataContext the plan is bound with
             var name = (string)getTable().getQualifiedName().get(getTable().getQualifiedName().size() - 1);
             var collection = Expression.Call(
                 Expression.Convert(

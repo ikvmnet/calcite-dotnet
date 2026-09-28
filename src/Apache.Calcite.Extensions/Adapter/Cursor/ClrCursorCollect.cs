@@ -17,10 +17,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Implementation of <see cref="Collect"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// Turns a whole cursor into one row holding a collection, which is what a sub-query used as an array,
-    /// a multiset or a map becomes. The drain is at the open in both bodies: Calcite's generated block calls
-    /// <c>toList</c> or <c>toMap</c> at bind and wraps the value in <c>singletonEnumerable</c>, and evaluating
-    /// the tree here is that bind.
+    /// Mirrors <c>EnumerableCollect</c>: collects all of its input into one row holding an array, multiset or
+    /// map. The input is drained when the node's cursor is opened, as Calcite's generated code calls
+    /// <c>toList</c> or <c>toMap</c> before wrapping the value in <c>singletonEnumerable</c>.
     /// </remarks>
     public class ClrCursorCollect : Collect, ClrCursorRel
     {
@@ -28,9 +27,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorCollect"/>.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="rowType"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="rowType">The row type: one field of the collection type.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorCollect Create(RelNode input, RelDataType rowType)
         {
             var cluster = input.getCluster();
@@ -40,12 +39,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="rowType"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="rowType">The row type: one field of the collection type.</param>
         public ClrCursorCollect(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RelDataType rowType) :
             base(cluster, traitSet, input, rowType)
         {
@@ -63,7 +62,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var child = (ClrCursorRel)getInput();
 
-            // rows are asked for as arrays, though as Calcite notes the child need not oblige
+            // arrays are preferred, as in Calcite, but the child may produce another format
             var result = implementor.VisitChild(this, 0, child, ClrCursorPrefer.Array);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
@@ -83,8 +82,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                     if (SqlTypeUtil.sameNamedType(componentType, childRecordType) == false)
                     {
-                        // every element of a multiset is a record, so a scalar is wrapped in something that can
-                        // hold one; an array of a single field stays scalar so it still compares correctly
+                        // as in Calcite: a multiset's elements are records, so rows become arrays; an array over
+                        // a single field keeps scalar elements
                         var targetFormat = collectionType.name() == nameof(SqlTypeName.ARRAY) && child.getRowType().getFieldCount() == 1
                             ? JavaRowFormat.SCALAR
                             : JavaRowFormat.ARRAY;
@@ -97,8 +96,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     break;
 
                 case nameof(SqlTypeName.MAP):
-                    // the key and the value are the first two fields of each row, and the order they arrive in
-                    // is kept, so no comparer is given
+                    // the key and value are the first two fields of each row
                     var input = Expression.Parameter(sourceType, "input");
                     var array = Expression.Convert(input, typeof(object[]));
 
@@ -122,7 +120,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var child = (ClrCursorRel)getInput();
 
-            // rows are asked for as arrays, though as Calcite notes the child need not oblige
+            // arrays are preferred, as in Calcite, but the child may produce another format
             var result = implementor.VisitChildAsync(this, 0, child, ClrCursorPrefer.Array);
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), JavaRowFormat.LIST);
 
@@ -130,9 +128,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var source = result.Expression;
             var sourceType = result.PhysType.RowType;
 
-            // the open of one row, rather than the collection the synchronous body builds and then wraps:
-            // the two steps are one operator here, because the drain has to be awaited and an expression
-            // tree cannot await. The operator still drains at the open, as the synchronous pair does
+            // one operator that builds the collection and yields it as a single row, where the synchronous body
+            // composes two: the drain has to be awaited, which an expression tree cannot do. It still drains at
+            // the open
             Expression rows;
 
             switch (collectionType.name())
@@ -145,15 +143,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
                     if (SqlTypeUtil.sameNamedType(componentType, childRecordType) == false)
                     {
-                        // every element of a multiset is a record, so a scalar is wrapped in something that can
-                        // hold one; an array of a single field stays scalar so it still compares correctly
+                        // as in Calcite: a multiset's elements are records, so rows become arrays; an array over
+                        // a single field keeps scalar elements
                         var targetFormat = collectionType.name() == nameof(SqlTypeName.ARRAY) && child.getRowType().getFieldCount() == 1
                             ? JavaRowFormat.SCALAR
                             : JavaRowFormat.ARRAY;
 
                         source = result.PhysType.ConvertToAsync(implementor, source, targetFormat);
 
-                        // the row type of the open, which is one type argument further in than a sequence's
+                        // an awaiting open is a ValueTask of the cursor, so the row type is one generic level deeper
                         sourceType = source.Type.GetGenericArguments()[0].GetGenericArguments()[0];
                     }
 
@@ -161,8 +159,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     break;
 
                 case nameof(SqlTypeName.MAP):
-                    // the key and the value are the first two fields of each row, and the order they arrive in
-                    // is kept, so no comparer is given
+                    // the key and value are the first two fields of each row
                     var input = Expression.Parameter(sourceType, "input");
                     var array = Expression.Convert(input, typeof(object[]));
 

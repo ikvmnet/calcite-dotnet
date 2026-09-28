@@ -6,23 +6,29 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// A <see cref="SchemaFactory"/> that creates <see cref="AdoSchema"/> instances from a Calcite
-    /// model configuration.
+    /// The <see cref="SchemaFactory"/> a Calcite JSON model names to create an <see cref="AdoSchema"/>.
     /// </summary>
     /// <remarks>
-    /// Register this factory in your Calcite model JSON by setting <c>"factory"</c> to the
-    /// fully-qualified name of this class. Calcite will call <see cref="create"/> when it
-    /// instantiates the schema, passing any operand properties from the model.
+    /// In a model, set <c>"factory"</c> to <c>cli.Apache.Calcite.Adapter.AdoNet.AdoSchemaFactory</c>, the name
+    /// under which Java sees this class. The operands the model supplies are described on
+    /// <see cref="AdoSchema.Create(SchemaPlus, string, Map)"/>.
     /// </remarks>
     public class AdoSchemaFactory : SchemaFactory
     {
 
         /// <summary>
-        /// Gets the singleton instance of <see cref="AdoSchemaFactory"/>.
+        /// A shared instance.
         /// </summary>
         public static readonly AdoSchemaFactory Instance = new AdoSchemaFactory();
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Creates an <see cref="AdoSchema"/> from a model's operands.
+        /// </summary>
+        /// <param name="parentSchema">The schema the new schema is added to.</param>
+        /// <param name="name">The name of the new schema.</param>
+        /// <param name="operand">The model's operand map.</param>
+        /// <returns>The new schema.</returns>
+        /// <exception cref="AdoCalciteException">An operand is missing or names a type that cannot be loaded.</exception>
         public Schema create(SchemaPlus parentSchema, string name, Map operand)
         {
             return AdoSchema.Create(parentSchema, name, operand);

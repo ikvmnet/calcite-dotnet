@@ -10,28 +10,28 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Implementation of a union in the <see cref="ClrCursorConvention"/> calling convention, by merging
-    /// inputs that are already sorted rather than reading them all first.
+    /// Implementation of a union in the <see cref="ClrCursorConvention"/> calling convention that merges
+    /// inputs already sorted on the node's collation, producing its rows in that order.
     /// </summary>
     /// <remarks>
-    /// Chosen where an ORDER BY sits directly on a UNION, so the sort can be pushed to each input and the
-    /// result taken in order. `EnumerableMergeUnion` extends `EnumerableUnion`, and so does this.
+    /// Mirrors <c>EnumerableMergeUnion</c>, which likewise extends the plain union. Every input must satisfy
+    /// the node's collation.
     ///
-    /// <para>The inputs go into the list as opens rather than as cursors, because linq4j's
-    /// <c>MergeUnionEnumerator</c> acquires each of them itself, in order, inside its constructor: the
-    /// operator runs each open in turn and then positions every input, all inside its own open. Each
-    /// body defers within its own kind, so only the opener of that kind is built.</para>
+    /// <para>The inputs are passed to the operator as openers rather than opened cursors, because linq4j's
+    /// <c>MergeUnionEnumerator</c> acquires each input itself, in order, inside its constructor. Each body
+    /// builds only the openers of its own kind.</para>
     /// </remarks>
     public class ClrCursorMergeUnion : ClrCursorUnion
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorMergeUnion"/>.
+        /// Creates a <see cref="ClrCursorMergeUnion"/> in <see cref="ClrCursorConvention"/> with the given
+        /// collation.
         /// </summary>
-        /// <param name="collation"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
-        /// <returns></returns>
+        /// <param name="collation">The collation every input is sorted on and the union produces.</param>
+        /// <param name="inputs">The inputs, a list of <see cref="RelNode"/>; the cluster is taken from the first.</param>
+        /// <param name="all">Whether duplicates are kept (<c>UNION ALL</c>).</param>
+        /// <returns>The new union.</returns>
         public static ClrCursorMergeUnion Create(RelCollation collation, java.util.List inputs, bool all)
         {
             var cluster = ((RelNode)inputs.get(0)).getCluster();
@@ -41,12 +41,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> builds the trait set from a collation; this
+        /// constructor takes it as given.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits, which must carry a non-empty collation.</param>
+        /// <param name="inputs">The inputs, a list of <see cref="RelNode"/>.</param>
+        /// <param name="all">Whether duplicates are kept (<c>UNION ALL</c>).</param>
+        /// <exception cref="java.lang.IllegalArgumentException">The trait set has no collation, or an input
+        /// does not satisfy it.</exception>
         public ClrCursorMergeUnion(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {
@@ -56,8 +59,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             for (int i = 0; i < inputs.size(); i++)
             {
-                // getCollations rather than getCollation, because the slot may hold a RelCompositeTrait of
-                // several collations; each required one has to be satisfied by at least one of the input's
+                // getCollations rather than getCollation, because the trait may be a RelCompositeTrait of
+                // several collations; each of the node's must be satisfied by at least one of the input's
                 var inputCollations = ((RelNode)inputs.get(i)).getTraitSet().getCollations();
 
                 for (int j = 0; j < collations.size(); j++)
@@ -86,8 +89,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
             var rowType = physType.RowType;
 
-            // the inputs go into a list, because the merge walks all of them at once rather than one after
-            // the other; Calcite builds the same list into the block it generates
+            // the merge reads all inputs at once, so their openers go into one list, as in the block
+            // EnumerableMergeUnion generates
             var sources = Expression.Variable(typeof(java.util.List), "mergeUnionInputs");
             var body = new List<Expression>
             {
@@ -127,8 +130,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(JavaRowFormat.CUSTOM));
             var rowType = physType.RowType;
 
-            // the inputs go into a list, because the merge walks all of them at once rather than one after
-            // the other; Calcite builds the same list into the block it generates
+            // the merge reads all inputs at once, so their openers go into one list, as in the block
+            // EnumerableMergeUnion generates
             var sources = Expression.Variable(typeof(java.util.List), "mergeUnionInputs");
             var body = new List<Expression>
             {
@@ -165,7 +168,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ?? throw new System.InvalidOperationException("java.util.ArrayList has no no-arg constructor.");
 
         /// <summary>
-        /// <c>java.util.List.add</c>, which fills the list above.
+        /// <c>java.util.List.add(Object)</c>, which fills the list of input openers.
         /// </summary>
         static readonly System.Reflection.MethodInfo CollectionAdd = typeof(java.util.List).GetMethod("add", [typeof(object)])
             ?? throw new System.InvalidOperationException("java.util.List has no add(Object).");

@@ -8,32 +8,31 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Provides open ADO.NET connections and database metadata to the Calcite adapter engine.
+    /// Opens connections to a database and describes it: what the adapter needs of an ADO.NET source.
     /// </summary>
     /// <remarks>
-    /// Implement this class to connect Calcite's ADO.NET adapter to a specific data source.
-    /// The adapter calls <see cref="OpenConnection"/>, or <see cref="OpenConnectionAsync"/> where the plan
-    /// is asynchronous, for each query it needs to execute, and <see cref="Metadata"/> to discover schemas,
-    /// tables, and column definitions at planning time.
+    /// The adapter opens a new connection for every statement it executes, and disposes it when the statement's
+    /// rows have been read. <see cref="DbProviderAdoDataSource"/> and <see cref="DbDataSourceAdoDataSource"/> cover
+    /// the usual cases; derive from this class to supply connections some other way.
     /// </remarks>
     public abstract class AdoDataSource
     {
 
         /// <summary>
-        /// Opens a new connection to the underlying data source.
+        /// Opens a new connection. The caller owns it.
         /// </summary>
-        /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
+        /// <returns>An open connection.</returns>
         public abstract DbConnection OpenConnection();
 
         /// <summary>
-        /// Opens a new connection to the underlying data source, without blocking.
+        /// Opens a new connection asynchronously. The caller owns it. The adapter calls this when the rows of a
+        /// plan are read with <c>ReadAsync</c>.
         /// </summary>
-        /// <param name="cancellationToken">Abandons the attempt.</param>
-        /// <returns>An open <see cref="DbConnection"/> ready for query execution.</returns>
+        /// <param name="cancellationToken">Cancels the attempt.</param>
+        /// <returns>An open connection.</returns>
         /// <remarks>
-        /// What a plan reading its rows with await opens its connection by. The default blocks on
-        /// <see cref="OpenConnection"/>, so a source written before this member still answers; a source over
-        /// a provider that opens asynchronously should override it, as both sources here do.
+        /// The default calls <see cref="OpenConnection"/> synchronously. Override it where the provider can open a
+        /// connection asynchronously.
         /// </remarks>
         public virtual ValueTask<DbConnection> OpenConnectionAsync(CancellationToken cancellationToken = default)
         {
@@ -43,13 +42,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the connection string used to open connections to the underlying data source.
+        /// Gets the connection string connections are opened with.
         /// </summary>
         public abstract string ConnectionString { get; }
 
         /// <summary>
-        /// Gets the metadata provider that describes the databases, schemas, tables, and columns
-        /// exposed by this data source.
+        /// Gets the metadata that describes the database's schemas, tables and columns, its dialect and its
+        /// parameter syntax.
         /// </summary>
         public abstract AdoDatabaseMetadata Metadata { get; }
 

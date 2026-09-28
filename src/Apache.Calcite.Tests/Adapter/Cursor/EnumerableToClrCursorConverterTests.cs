@@ -27,11 +27,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs a plan that holds nodes of both calling conventions.
+    /// Tests plans that hold nodes of both this convention and <c>EnumerableConvention</c>, crossing in each
+    /// direction.
     /// </summary>
     /// <remarks>
-    /// A row crosses the boundary untouched, because both conventions ask the same <c>JavaTypeFactory</c> what
-    /// a field is. These run a plan where the two are mixed, in each direction, to say so.
+    /// Both conventions ask the same <c>JavaTypeFactory</c> for a field's type, so a row crosses a converter
+    /// without being converted.
     /// </remarks>
     public class EnumerableToClrCursorConverterTests
     {
@@ -67,7 +68,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
-        /// <param name="rootSchema"></param>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
         sealed class TestDataContext(SchemaPlus rootSchema) : DataContext
         {
 
@@ -86,11 +87,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a query with both conventions available and returns its rows.
+        /// Plans a query with both conventions' rules registered and returns its rows.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="root">Which convention the plan is asked to end in.</param>
-        /// <returns></returns>
+        /// <param name="sql">The query.</param>
+        /// <param name="root">The convention the plan's root is requested in.</param>
+        /// <returns>The rows, a one-column result wrapped in a one-element array. A root in this convention is
+        /// read through its synchronous open; one in <c>EnumerableConvention</c> is bound and enumerated.</returns>
         static List<object[]> Run(string sql, Convention root)
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -103,7 +105,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             foreach (var rule in EnumerableRules.ENUMERABLE_RULES.toArray())
                 rules.add(rule);
 
-            // both calc rule sets, because a project of either convention refuses to implement itself
+            // both calc rule sets, because neither convention can implement a project that is not rewritten to a calc
             var calcRules = new java.util.ArrayList();
             foreach (var rule in ClrCursorRules.CalcRules())
                 calcRules.add(rule);
@@ -153,16 +155,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a query with only Calcite's rules, so that the whole of it lands in
-        /// <c>EnumerableConvention</c> and the converter has to carry it.
+        /// Plans a query with Calcite's rules and this convention's converter rule only, so that the whole plan
+        /// is in <c>EnumerableConvention</c> under one converter, and returns its rows.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query, over the <c>PEOPLE</c> table.</param>
+        /// <returns>The rows, a one-column result wrapped in a one-element array.</returns>
         /// <remarks>
-        /// <see cref="Run"/> gives the planner both rule sets, and this convention wins nearly everything, so
-        /// the converter only ever sees a bare scan there. What it actually has to survive is the block a
-        /// generated node produces, and a calc's holds an anonymous <c>Enumerator</c>: four methods over a
-        /// field, which is not a lambda and was refused outright until <c>DelegateEnumerator</c> existed.
+        /// With both rule sets, as in <see cref="Run"/>, this convention takes nearly every node and the converter
+        /// sees only a scan. Here the converter translates the block a generated calc produces, which holds an
+        /// anonymous <c>Enumerator</c> of four methods over shared fields rather than a single lambda.
         /// </remarks>
         static List<object[]> RunAcrossConverter(string sql)
         {
@@ -173,8 +174,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             foreach (var rule in EnumerableRules.ENUMERABLE_RULES.toArray())
                 rules.add(rule);
 
-            // the one rule of this convention, so a plan of Calcite's can be read as one of ours and nothing
-            // else of ours can claim a node
+            // only the converter rule of this convention, so no node can be implemented in it
             rules.add(Apache.Calcite.Extensions.Adapter.Cursor.EnumerableToClrCursorConverterRule.Create());
 
             var calcRules = new java.util.ArrayList();
@@ -214,28 +214,30 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldEndInCalcitesConvention()
         {
-            // the plan is asked to end in EnumerableConvention, so whatever of it lands in this one has to be
-            // read back across the boundary
+            // the root is requested in EnumerableConvention, so whatever is planned in this convention is read
+            // back across a converter
             var rows = Run("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\" WHERE \"ID\" > 1", EnumerableConvention.INSTANCE);
 
             rows.Select(r => (string)r[1]).Should().BeEquivalentTo(["JONES", "BROWN"]);
         }
 
         /// <summary>
-        /// Plans a query so that a projection of this convention is left sitting above a converter out of
-        /// another, which is the shape an adapter that pushes only part of a projection produces.
+        /// Plans a query so that a projection of this convention sits above a converter out of
+        /// <c>EnumerableConvention</c>, the shape an adapter produces when it pushes only part of a projection,
+        /// and returns the plan with either its rows or the error implementing it raised.
         /// </summary>
+        /// <param name="sql">The query.</param>
         /// <param name="ourCalcPass">Whether to run this convention's calc rules after the planner.</param>
+        /// <returns>The plan's text, and either its rows or, if implementing or reading the plan threw, the
+        /// exception's message with the rows null.</returns>
         /// <remarks>
-        /// <see cref="RunAcrossConverter"/> leaves the residual on Calcite's side of the boundary, so it
-        /// never produces a <see cref="ClrCursorProject"/> at all. Two rules of ours and no more is what
-        /// forces the other arrangement: the scan cannot leave <c>EnumerableConvention</c> and the projection
-        /// can, so a converter has to appear between them.
+        /// Only the project rule and the converter rule of this convention are registered, so the scan must stay
+        /// in <c>EnumerableConvention</c> while the projection may move, and a converter appears between them.
         ///
-        /// <para><c>RelOptRules.CALC_RULES</c> runs either way, as <c>Programs.standard</c> runs it. It
-        /// rewrites Calcite's half and cannot touch ours: <c>ENUMERABLE_PROJECT_TO_CALC_RULE</c> names
-        /// <c>EnumerableProject</c> and <c>CoreRules.PROJECT_TO_CALC</c> names <c>LogicalProject</c>. Only
-        /// <see cref="ClrCursorRules.CalcRules"/> carries a rule that names ours.</para>
+        /// <para><c>RelOptRules.CALC_RULES</c> runs either way, as in <c>Programs.standard</c>, but it cannot
+        /// rewrite this convention's project: <c>ENUMERABLE_PROJECT_TO_CALC_RULE</c> matches
+        /// <c>EnumerableProject</c> and <c>CoreRules.PROJECT_TO_CALC</c> matches <c>LogicalProject</c>. Only
+        /// <see cref="ClrCursorRules.CalcRules"/> has a rule that matches <see cref="ClrCursorProject"/>.</para>
         /// </remarks>
         static (string Plan, List<object[]>? Rows, string? Error) PlanResidualOverConverter(string sql, bool ourCalcPass)
         {
@@ -246,7 +248,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             foreach (var rule in EnumerableRules.ENUMERABLE_RULES.toArray())
                 rules.add(rule);
 
-            // the projection may join this convention and nothing else may, so the scan stays Calcite's
+            // only the projection can move into this convention, so the scan stays in Calcite's
             rules.add(ClrCursorRules.ClrCursorProjectRule);
             rules.add(ClrCursorRules.EnumerableToClrCursorConverterRule);
 
@@ -302,9 +304,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// this convention's calc pass, and the plan then runs.
         /// </summary>
         /// <remarks>
-        /// The shape an adapter produces when it pushes part of a projection and keeps the rest. Nothing
-        /// else in the suite reaches it: every other mixed-convention plan here either pushes the whole
-        /// projection or leaves the residual on Calcite's side.
+        /// Other mixed-convention plans in the suite either push the whole projection or leave the residual in
+        /// Calcite's convention, so this is the only test of a residual projection in this one.
         /// </remarks>
         [Fact]
         public void ShouldRewriteAResidualProjectOverAConverter()
@@ -318,8 +319,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             error.Should().BeNull();
 
-            // java.lang.Double, not System.Double: a row crossing the converter keeps the boxing Calcite's
-            // type factory gave it, which is the invariant the whole port is for
+            // java.lang.Double, not System.Double: a value keeps the Java boxing Calcite's type factory gives it
             rows!.Select(r => r[0]).Should().AllBeOfType<java.lang.Double>();
             rows!.Select(r => r[0]!.ToString()).Should().BeEquivalentTo(["1.0", "2.0", "3.0"]);
         }
@@ -329,10 +329,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// refuses to implement itself.
         /// </summary>
         /// <remarks>
-        /// The companion of <see cref="ShouldRewriteAResidualProjectOverAConverter"/>, and the reason the
-        /// calc pass is not optional for a caller driving its own planner. Calcite's own calc pass runs
-        /// here and cannot help: none of its rules names a node of this convention.
-        /// <c>EnumerableProject</c> refuses in exactly the same way for exactly the same reason.
+        /// A caller driving its own planner must therefore run this convention's calc pass; Calcite's calc pass
+        /// runs here and matches no node of this convention. <c>EnumerableProject</c> likewise refuses to
+        /// implement itself.
         /// </remarks>
         [Fact]
         public void ShouldRefuseAResidualProjectWithoutTheCalcPass()

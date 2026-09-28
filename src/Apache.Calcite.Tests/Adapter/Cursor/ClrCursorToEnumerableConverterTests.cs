@@ -19,16 +19,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs a plan of this convention under a node of Calcite's, which is the one arrangement that makes
-    /// Janino compile a call back into a stashed plan.
+    /// Tests of <c>ClrCursorToEnumerableConverter</c>: plans of this convention running under a node of
+    /// Calcite's, so that Janino compiles a call back into a stashed plan.
     /// </summary>
     /// <remarks>
-    /// Every other mixed plan in the suite crosses the other way, with a converter <em>into</em> this
-    /// convention reading a block Calcite generated. The first plan to cross out failed to compile twice
-    /// over: the generated source declared the stashed plan by a class name linq4j writes with every
-    /// <c>$</c> as <c>.</c>, which IKVM's mangled name for a generic instantiation cannot survive, and it
-    /// called into a class IKVM exposes as package-private, which Janino silently drops as a candidate.
-    /// The plan is stashed as an <c>Object</c> and <c>JavaPlans</c> is public, and this holds both.
+    /// Most mixed plans in the suite cross the other way, through a converter into this convention. Crossing
+    /// out depends on two facts about the generated Java source: linq4j writes a class name with every
+    /// <c>$</c> as <c>.</c>, which cannot name IKVM's mangled name for a generic instantiation, so the plan is
+    /// stashed as an <c>Object</c>; and Janino ignores a class IKVM exposes as package-private, so
+    /// <c>JavaPlans</c> is public.
     /// </remarks>
     public class ClrCursorToEnumerableConverterTests
     {
@@ -41,6 +40,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map the implementors stashed values into, which <c>get</c> answers from.</param>
         sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
@@ -59,8 +60,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a statement to end in Calcite's convention, with this convention's rules beside Calcite's.
+        /// Plans a statement whose root is in Calcite's convention, with this convention's rules registered
+        /// beside Calcite's.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rootSchema">The schema to plan against.</param>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The physical root, in <c>EnumerableConvention</c>.</returns>
         static RelNode Plan(string sql, SchemaPlus rootSchema, RelOptRule[]? remove = null)
         {
             var rules = new java.util.ArrayList();
@@ -91,8 +97,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Renders a row so that two plans can be compared without caring which object holds a value.
+        /// Renders a row as text, so that rows from two plans compare by value.
         /// </summary>
+        /// <param name="row">A row, an <c>object[]</c> for a multi-column result or the value itself for one column.</param>
+        /// <returns>The fields' text joined with <c>|</c>, with a null written as <c>&lt;null&gt;</c>.</returns>
         static string Render(object? row)
         {
             if (row is object[] array)
@@ -104,6 +112,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Runs a plan that ends in Calcite's convention and returns its rows rendered as text.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rootSchema">The schema to plan against.</param>
+        /// <param name="plan">Receives the physical plan's text.</param>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> Run(string sql, SchemaPlus rootSchema, out string plan, RelOptRule[]? remove = null)
         {
             var physical = Plan(sql, rootSchema, remove);
@@ -120,11 +133,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A scan only this convention can read, under an aggregate of Calcite's, compiles and runs.
+        /// A scan only this convention can read, under an aggregate of Calcite's, compiles and returns the same
+        /// rows as the same query over a table Calcite can scan.
         /// </summary>
         /// <remarks>
-        /// The table is of this project's SPI, which neither <c>EnumerableTableScan.canHandle</c> nor the
-        /// bindable scan admits, so the scan can only be ours and the converter has to be in the plan.
+        /// The table implements this project's table SPI, which neither <c>EnumerableTableScan.canHandle</c> nor
+        /// the bindable scan accepts, so the scan must be this convention's and the converter must be in the plan.
         /// </remarks>
         [Fact]
         public void ShouldCarryACursorPlanUnderACalciteNode()
@@ -146,12 +160,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A sub-plan of this convention under a correlate of Calcite's reads the outer row.
         /// </summary>
         /// <remarks>
-        /// The outer row is a parameter of the Java lambda Calcite's correlate generates, and the sub-plan
-        /// is compiled apart from that lambda and cannot see it: the converter reads the row's fields
-        /// through the getter Calcite registered and hands them in through the context. The scans are ours
-        /// because only this project's SPI reads the table; the correlate is Calcite's because this
-        /// convention's correlate rule is taken out, so the only correlate the planner can build is
-        /// Calcite's over converters out of ours.
+        /// The outer row is a parameter of the Java lambda Calcite's correlate generates, and the sub-plan is
+        /// compiled apart from that lambda, so the converter reads the row's fields through Calcite's getter and
+        /// passes them in through the <c>DataContext</c>. The scans are this convention's because only this
+        /// project's SPI reads the table; this convention's correlate rule is removed, so the only correlate the
+        /// planner can build is Calcite's over converters out of this convention.
         /// </remarks>
         [Fact]
         public void ShouldReadACorrelationVariableUnderCalcitesCorrelate()

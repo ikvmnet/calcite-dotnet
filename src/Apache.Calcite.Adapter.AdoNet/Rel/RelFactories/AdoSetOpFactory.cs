@@ -12,9 +12,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="SetOpFactory"/> implementation that creates <see cref="AdoUnion"/>,
-    /// <see cref="AdoIntersect"/>, and <see cref="AdoMinus"/> nodes during relational-algebra
-    /// construction in the <see cref="AdoConvention"/>.
+    /// A <see cref="SetOpFactory"/> that creates an <see cref="AdoUnion"/>, <see cref="AdoIntersect"/> or
+    /// <see cref="AdoMinus"/> in its first input's convention.
     /// </summary>
     public class AdoSetOpFactory : SetOpFactory
     {
@@ -26,8 +25,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
             var cluster = input.getCluster();
             var traitSet = cluster.traitSetOf(input.getConvention() ?? throw new ArgumentNullException("input.getConvention()"));
 
-            // by name, never by ordinal: a Java enum's ordinals are an artefact of declaration order in the
-            // version compiled against, and nameof gives a compile-time constant the compiler still checks
+            // by name: a Java enum's ordinals can change between Calcite versions
             switch (kind.name())
             {
                 case nameof(SqlKind.UNION):

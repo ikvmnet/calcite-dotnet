@@ -14,15 +14,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// The cursor convention as the ADO.NET provider reaches it: one plan per statement, opened by either
-    /// entry point, advanced by either member of the reader.
+    /// Tests this convention through the ADO.NET provider: one plan per statement, opened by either
+    /// <c>ExecuteReader</c> or <c>ExecuteReaderAsync</c> and advanced by either <c>Read</c> or <c>ReadAsync</c>.
     /// </summary>
     /// <remarks>
-    /// There is no mode. <c>ExecuteReader</c> opens the plan synchronously and <c>ExecuteReaderAsync</c>
-    /// with await; the reader either hands back answers <c>Read</c> and <c>ReadAsync(token)</c> over one
-    /// position, and every test here that reads one way also reads the other. A table that can only
-    /// produce rows asynchronously is read synchronously by a block at the leaf, with the synchronization
-    /// context suppressed, which is what <c>Read</c> over an asynchronous source means in every provider.
+    /// <c>ExecuteReader</c> opens the plan synchronously and <c>ExecuteReaderAsync</c> with await, and either
+    /// reader answers both <c>Read</c> and <c>ReadAsync</c> over one position. A table that produces rows only
+    /// asynchronously is read synchronously by blocking at the leaf with the synchronization context
+    /// suppressed.
     /// </remarks>
     public class ClrCursorConventionAdoNetTests
     {
@@ -102,6 +101,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// The four combinations of open and advance read the same rows from a table that can only be
         /// awaited.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldReadAnAsyncOnlyTableEitherWayFromEitherOpen()
         {
@@ -144,6 +144,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// One reader advanced by either member on alternate rows reads every row once, in order.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldAlternateTheTwoAdvancesOnOneReader()
         {
@@ -434,6 +435,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A token given to one advance cancels that advance, and it reaches the leaf.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldCancelAnAdvanceWithTheTokenGivenToIt()
         {

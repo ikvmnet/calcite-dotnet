@@ -15,36 +15,34 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// The members of <see cref="JavaRowFormat"/> a <see cref="ClrPhysType"/> asks for, answered for the CLR.
+    /// The members of <see cref="JavaRowFormat"/> that <see cref="ClrPhysTypeImpl"/> needs, answered with CLR
+    /// types and <see cref="System.Linq.Expressions"/> expressions.
     /// </summary>
     /// <remarks>
-    /// The format itself stays Calcite's. Two of its members cannot be used as they are — <c>record</c> and
-    /// <c>field</c> answer in linq4j — and two more are package private — <c>javaRowClass</c> and
-    /// <c>javaFieldClass</c>. Those four are here, and <c>comparer</c> with them. <c>optimize</c> is public and
-    /// is called rather than written again, which is what keeps the decision of what a row is out of this file.
+    /// <c>record</c> and <c>field</c> return linq4j, and <c>javaRowClass</c> and <c>javaFieldClass</c> are
+    /// package private, so those four are ported here along with <c>comparer</c>. <c>optimize</c> is public and
+    /// is called directly.
     ///
-    /// <para>Calcite writes these as the bodies of its enum constants, which is a class per format in the one
-    /// place Java allows one. That is <see cref="Constant"/> and its five subclasses here, so a format's
-    /// answers sit together rather than spread across a switch per member. <see cref="Of"/> is the only switch,
-    /// and it is on <c>name()</c> against <c>nameof</c> labels, because a Java enum's ordinals are not stable
-    /// across versions and its names are.</para>
+    /// <para>Calcite implements these in the bodies of its enum constants; here each format is a subclass of
+    /// <see cref="Constant"/>, chosen by <see cref="Of"/> on the constant's name, because a Java enum's
+    /// ordinals are not stable across versions.</para>
     /// </remarks>
     static class JavaRowFormatExtensions
     {
 
         /// <summary>
-        /// Returns the type the type factory names a row of the given format by.
+        /// Returns the Java type of a row of the given format, as the type factory names it.
         /// </summary>
-        /// <param name="format"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="rowType"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>JavaRowFormat.javaRowClass</c> as it stands, before resolving. A row of a struct is a synthetic
-        /// record the factory owns, and the fields of one are reached by name through it rather than by walking
-        /// CLR reflection, which is what <c>Types.nthField</c> does and what a translated field node resolves
-        /// through.
+        /// Mirrors <c>JavaRowFormat.javaRowClass</c>. For a <see cref="JavaRowFormat.CUSTOM"/> row this is
+        /// the type factory's synthetic record type, through which fields are found by
+        /// <c>Types.nthField</c>.
         /// </remarks>
+        /// <param name="format">The row format.</param>
+        /// <param name="typeFactory">The type factory that names the row type.</param>
+        /// <param name="rowType">The relational row type.</param>
+        /// <returns>The Java type of a row, which may be a synthetic type the type factory made rather than a <c>java.lang.Class</c>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="typeFactory"/> or <paramref name="rowType"/> is <see langword="null"/>.</exception>
         public static java.lang.reflect.Type JavaRowType(this JavaRowFormat format, JavaTypeFactory typeFactory, RelDataType rowType)
         {
             ArgumentNullException.ThrowIfNull(typeFactory);
@@ -54,32 +52,31 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the CLR type that represents a row of the given format.
+        /// Returns the CLR type of a row of the given format: <see cref="JavaRowType"/>, resolved.
         /// </summary>
-        /// <param name="format"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="rowType"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <see cref="JavaRowType"/>, resolved, so that nothing above this holds the factory's name for a row.
-        /// </remarks>
+        /// <param name="format">The row format.</param>
+        /// <param name="typeFactory">The type factory that names the row type.</param>
+        /// <param name="rowType">The relational row type.</param>
+        /// <returns>The CLR type of a row.</returns>
         public static Type JavaRowClass(this JavaRowFormat format, JavaTypeFactory typeFactory, RelDataType rowType)
         {
             return ClrTypes.Resolve(format.JavaRowType(typeFactory, rowType));
         }
 
         /// <summary>
-        /// Returns the CLR type used to store one field of a row of the given format.
+        /// Returns the CLR type in which a row of the given format stores a field.
         /// </summary>
-        /// <param name="format"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="rowType"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>JavaRowFormat.javaFieldClass</c>, which is package private. A row that holds its fields as
-        /// objects stores one as an object even where the field is not nullable.
+        /// Mirrors the package private <c>JavaRowFormat.javaFieldClass</c>. A <see cref="JavaRowFormat.LIST"/>,
+        /// <see cref="JavaRowFormat.ROW"/> or <see cref="JavaRowFormat.ARRAY"/> row stores every field as
+        /// <see cref="object"/>, nullable or not.
         /// </remarks>
+        /// <param name="format">The row format.</param>
+        /// <param name="typeFactory">The type factory that maps the field's type.</param>
+        /// <param name="rowType">The relational row type.</param>
+        /// <param name="index">The field ordinal.</param>
+        /// <returns>The CLR type of the stored field value.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="typeFactory"/> or <paramref name="rowType"/> is <see langword="null"/>.</exception>
         public static Type JavaFieldClass(this JavaRowFormat format, JavaTypeFactory typeFactory, RelDataType rowType, int index)
         {
             ArgumentNullException.ThrowIfNull(typeFactory);
@@ -91,13 +88,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns an expression building a row of the given format from one expression per field.
         /// </summary>
-        /// <param name="format"></param>
-        /// <param name="rowClass">The CLR type of a row, which is what a record format constructs.</param>
-        /// <param name="expressions"></param>
-        /// <returns></returns>
+        /// <param name="format">The row format.</param>
+        /// <param name="rowClass">The CLR row type, which a <see cref="JavaRowFormat.CUSTOM"/> row constructs.</param>
+        /// <param name="expressions">The field values, in field order.</param>
         /// <remarks>
-        /// <c>JavaRowFormat.record</c>, which cannot be called because it takes and returns linq4j.
+        /// Mirrors <c>JavaRowFormat.record</c>.
         /// </remarks>
+        /// <returns>An expression whose value is the new row.</returns>
         public static Expression Record(this JavaRowFormat format, Type rowClass, IReadOnlyList<Expression> expressions)
         {
             ArgumentNullException.ThrowIfNull(rowClass);
@@ -109,16 +106,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Returns an expression reading one field of a row of the given format.
         /// </summary>
-        /// <param name="format"></param>
-        /// <param name="expression"></param>
-        /// <param name="field"></param>
-        /// <param name="fromType">The field's own type where it differs from what the row holds, or null.</param>
-        /// <param name="fieldType">The type the value is wanted as.</param>
-        /// <param name="javaRowType">The factory's name for a row, which is how a record's fields are reached.</param>
-        /// <returns></returns>
+        /// <param name="format">The row format.</param>
+        /// <param name="expression">An expression whose value is the row.</param>
+        /// <param name="field">The field ordinal.</param>
+        /// <param name="fromType">The type to read the stored value as before converting it, or
+        /// <see langword="null"/>; see <see cref="ClrEnumUtils.Convert(Expression, Type?, Type)"/>.</param>
+        /// <param name="fieldType">The type wanted.</param>
+        /// <param name="javaRowType">The Java row type, through which a <see cref="JavaRowFormat.CUSTOM"/> row's
+        /// fields are found.</param>
         /// <remarks>
-        /// <c>JavaRowFormat.field</c>, which cannot be called because it takes and returns linq4j.
+        /// Mirrors <c>JavaRowFormat.field</c>. A <see cref="JavaRowFormat.CUSTOM"/> or
+        /// <see cref="JavaRowFormat.SCALAR"/> field is returned as stored, without conversion.
         /// </remarks>
+        /// <returns>An expression whose value is the field, of <paramref name="fieldType"/> except where the format returns it as stored.</returns>
         public static Expression Field(this JavaRowFormat format, Expression expression, int field, Type? fromType, Type fieldType, java.lang.reflect.Type javaRowType)
         {
             ArgumentNullException.ThrowIfNull(expression);
@@ -129,24 +129,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the expression yielding a comparer for rows of the given format, or null where a row
-        /// compares itself.
+        /// Returns an expression creating the equality comparer for rows of the given format, or
+        /// <see langword="null"/> if rows compare correctly by their own equality.
         /// </summary>
-        /// <param name="format"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>JavaRowFormat.comparer</c>, which only <see cref="JavaRowFormat.ARRAY"/> answers.
+        /// Mirrors <c>JavaRowFormat.comparer</c>. Only <see cref="JavaRowFormat.ARRAY"/> has one.
         /// </remarks>
+        /// <param name="format">The row format.</param>
+        /// <returns>An expression whose value is the comparer, or <see langword="null"/>.</returns>
         public static Expression? Comparer(this JavaRowFormat format)
         {
             return Of(format).Comparer();
         }
 
         /// <summary>
-        /// Returns the members of one constant of <see cref="JavaRowFormat"/>.
+        /// Returns the implementation for a <see cref="JavaRowFormat"/> constant, matched by name.
         /// </summary>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="format">The row format.</param>
+        /// <returns>The singleton implementing <paramref name="format"/>.</returns>
         static Constant Of(JavaRowFormat format)
         {
             ArgumentNullException.ThrowIfNull(format);
@@ -169,7 +169,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         static readonly Constant Array = new ArrayConstant();
 
         /// <summary>
-        /// What one constant of <see cref="JavaRowFormat"/> answers.
+        /// The behavior of one <see cref="JavaRowFormat"/> constant.
         /// </summary>
         abstract class Constant
         {
@@ -192,7 +192,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// A row that is an instance of a class, one field per column.
+        /// <see cref="JavaRowFormat.CUSTOM"/>: a row that is an instance of a class with a field per column.
         /// </summary>
         sealed class CustomConstant : Constant
         {
@@ -208,10 +208,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             /// <inheritdoc />
             /// <remarks>
-            /// Calcite builds a record of many fields one field at a time rather than through a constructor,
-            /// which it settled on under CALCITE-1097 because Janino fails on a constructor with too many
-            /// parameters. An expression tree has no such limit and no statements to put the assignments in, so
-            /// the constructor is what is called.
+            /// Calls the row class's public constructor whose arity is the number of fields, converting each
+            /// value to the parameter's type; a row of no fields is <c>Unit.INSTANCE</c>.
             /// </remarks>
             public override Expression Record(Type rowClass, IReadOnlyList<Expression> expressions)
             {
@@ -234,8 +232,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
 
             /// <summary>
-            /// Returns the constructor of the given arity.
+            /// Returns the row class's public constructor of the given arity.
             /// </summary>
+            /// <exception cref="NotSupportedException">There is no such constructor.</exception>
             static ConstructorInfo Constructor(Type rowClass, int arity)
             {
                 foreach (var constructor in rowClass.GetConstructors(BindingFlags.Public | BindingFlags.Instance))
@@ -248,7 +247,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// A row of one column, which is the value itself.
+        /// <see cref="JavaRowFormat.SCALAR"/>: a row of one column that is the column's value.
         /// </summary>
         sealed class ScalarConstant : Constant
         {
@@ -258,7 +257,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             {
                 var field0Type = ((RelDataTypeField)rowType.getFieldList().get(0)).getType();
 
-                // a nested ROW is always an array, whatever the field's own class would be
+                // a ROW value is held as an Object[], whatever class the type factory would give it
                 return field0Type.getSqlTypeName() == SqlTypeName.ROW
                     ? (java.lang.Class)typeof(object[])
                     : typeFactory.getJavaClass(field0Type);
@@ -291,7 +290,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// A row that is a list, which is comparable and immutable, and so can key a lookup.
+        /// <see cref="JavaRowFormat.LIST"/>: a row that is a comparable, immutable <c>FlatLists</c> list.
         /// </summary>
         sealed class ListConstant : Constant
         {
@@ -320,16 +319,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
 
             /// <summary>
-            /// Returns the call building a comparable list of the given expressions.
+            /// Returns a call building a comparable list of the given expressions.
             /// </summary>
-            /// <param name="expressions"></param>
-            /// <returns></returns>
             /// <remarks>
-            /// One <c>FlatLists.of</c> overload per arity to six, and a copy of an array beyond that. A list of
-            /// one is not among them, because a row of one field is <see cref="JavaRowFormat.SCALAR"/> by the
-            /// time a record is built; <c>generateNullAwareAccessor</c> needs one anyway and reaches
-            /// <see cref="FlatListOf1"/> for it.
+            /// Uses the <c>FlatLists.of</c> overload for two to six elements, and <c>FlatLists.copyOf</c> over
+            /// an array otherwise. A list of one is not handled here, because a one-field row is
+            /// <see cref="JavaRowFormat.SCALAR"/>; <see cref="ClrPhysTypeImpl.GenerateNullAwareAccessor"/> uses
+            /// <see cref="FlatListOf1"/> for that case.
             /// </remarks>
+            /// <param name="expressions">The element expressions; there must be at least two.</param>
+            /// <returns>An expression whose value is a <c>FlatLists</c> list of the elements, in order.</returns>
             static Expression FlatList(IReadOnlyList<Expression> expressions)
             {
                 if (expressions.Count is >= 2 and <= 6)
@@ -341,9 +340,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     return Expression.Call(null, FlatListOf[expressions.Count - 2], arguments);
                 }
 
-                // Calcite writes newArrayInit(Comparable.class, ...), and IKVM erases a java.lang.Comparable
-                // to IComparable in every signature it compiles, copyOf's parameter included. The two differ
-                // in what they accept: a string has IComparable and has java.lang.Comparable only as a ghost.
+                // Calcite builds a Comparable[]; IKVM compiles java.lang.Comparable in signatures as
+                // IComparable, which a string implements, whereas java.lang.Comparable is only a ghost
+                // interface of System.String
                 var elements = new Expression[expressions.Count];
                 for (int i = 0; i < elements.Length; i++)
                     elements[i] = ClrEnumUtils.Convert(expressions[i], typeof(IComparable));
@@ -354,7 +353,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// A row that is an <c>org.apache.calcite.interpreter.Row</c>.
+        /// <see cref="JavaRowFormat.ROW"/>: a row that is an <c>org.apache.calcite.interpreter.Row</c>.
         /// </summary>
         sealed class RowConstant : Constant
         {
@@ -382,7 +381,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// A row that is an object array.
+        /// <see cref="JavaRowFormat.ARRAY"/>: a row that is an <c>Object[]</c>.
         /// </summary>
         sealed class ArrayConstant : Constant
         {
@@ -409,15 +408,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             /// <inheritdoc />
             /// <remarks>
-            /// A row of this format is an array, whose own equality is by reference, so a set operation over one
-            /// is wrong without this.
+            /// Arrays compare by reference, so rows of this format need <c>Functions.arrayComparer</c>.
             /// </remarks>
             public override Expression? Comparer() => Expression.Call(null, ArrayComparer);
 
         }
 
         /// <summary>
-        /// Returns an array of every expression, each as an object.
+        /// Returns an <c>Object[]</c> of the expressions, each converted with
+        /// <see cref="ClrEnumUtils.Convert(Expression, Type)"/>, which boxes primitives as Java boxes.
         /// </summary>
         static Expression ObjectArray(IReadOnlyList<Expression> expressions)
         {
@@ -429,12 +428,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// The members Calcite names through <c>BuiltInMethod</c>, resolved once against what IKVM compiled.
+        /// <c>BuiltInMethod</c> members, resolved from Calcite's own <c>java.lang.reflect.Method</c> to the CLR
+        /// methods IKVM compiled them to, so they are the members <c>EnumerableConvention</c> calls.
         /// </summary>
-        /// <remarks>
-        /// Each is resolved from the <c>java.lang.reflect.Method</c> Calcite itself names, rather than looked
-        /// up by a signature written again here, so the member is the one <c>EnumerableConvention</c> calls.
-        /// </remarks>
         static readonly MethodInfo ListGet = ClrTypes.Resolve(BuiltInMethod.LIST_GET.method);
 
         /// <inheritdoc cref="ListGet" />
@@ -461,23 +457,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ClrTypes.Resolve(BuiltInMethod.LIST6.method)];
 
         /// <summary>
-        /// Returns the expression reading a Java <c>static final</c> field.
+        /// Returns an expression reading a static member by name, as a field if there is one and otherwise as a
+        /// property.
         /// </summary>
-        /// <param name="declaring"></param>
-        /// <param name="name"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
+        /// <exception cref="InvalidOperationException">There is no static field or property of that name.</exception>
         /// <remarks>
-        /// <b>IKVM does not compile one to a field of that name.</b> It emits a property, over a backing field
-        /// it renames — <c>FlatLists.COMPARABLE_EMPTY_LIST</c> is a <c>COMPARABLE_EMPTY_LIST</c> property over
-        /// a <c>__&lt;&gt;COMPARABLE_EMPTY_LIST</c> field — so that reading it from C# still runs the class
-        /// initializer, which is what Java guarantees and what a bare field read would skip. Measured:
-        /// <c>GetField("COMPARABLE_EMPTY_LIST")</c> answers nothing.
-        ///
-        /// <para>So a static member is read as an expression rather than held as a <see cref="FieldInfo"/>,
-        /// and the two are tried in the order <see cref="ClrTypes.Resolve(Expression, J.PseudoField)"/> tries
-        /// them — field first, because a CLR field of ours is a field.</para>
+        /// IKVM compiles a Java <c>static final</c> field to a property over a renamed backing field, so that
+        /// reading it runs the class initializer; <c>FlatLists.COMPARABLE_EMPTY_LIST</c> has no CLR field of that
+        /// name. The order matches <see cref="ClrTypes.Resolve(Expression, org.apache.calcite.linq4j.tree.PseudoField)"/>.
         /// </remarks>
+        /// <param name="declaring">The type that declares the member.</param>
+        /// <param name="name">The Java name of the member.</param>
+        /// <returns>An expression reading the field or the property.</returns>
         static Expression StaticMember(Type declaring, string name)
         {
             const BindingFlags Static = BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static;
@@ -492,14 +483,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// <c>FlatLists.COMPARABLE_EMPTY_LIST</c>, which is the row of a type with no fields.
+        /// <c>FlatLists.COMPARABLE_EMPTY_LIST</c>, the <see cref="JavaRowFormat.LIST"/> row of a type with no
+        /// fields and the key of an empty key list.
         /// </summary>
         public static readonly Expression ComparableEmptyList = StaticMember(
             ClrTypes.FromClass(BuiltInMethod.COMPARABLE_EMPTY_LIST.field.getDeclaringClass()),
             BuiltInMethod.COMPARABLE_EMPTY_LIST.field.getName());
 
         /// <summary>
-        /// <c>Unit.INSTANCE</c>, which is the row of a custom type with no fields.
+        /// <c>Unit.INSTANCE</c>, the <see cref="JavaRowFormat.CUSTOM"/> row of a type with no fields.
         /// </summary>
         static readonly Expression UnitInstance = StaticMember(typeof(org.apache.calcite.runtime.Unit), "INSTANCE");
 

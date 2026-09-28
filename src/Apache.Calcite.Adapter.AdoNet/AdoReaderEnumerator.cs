@@ -8,7 +8,8 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Implementation of <see cref="Enumerator"/> that wraps a <see cref="DbDataReader"/> and assumes ownership of a command and connection.
+    /// A linq4j <see cref="Enumerator"/> over a <see cref="DbDataReader"/>. It owns the reader, its command and its
+    /// connection, and disposes all three when closed.
     /// </summary>
     class AdoReaderEnumerator : Enumerator
     {
@@ -20,12 +21,13 @@ namespace Apache.Calcite.Adapter.AdoNet
         readonly Function0 _rowBuilder;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance, creating the row builder from the reader.
         /// </summary>
-        /// <param name="connection"></param>
-        /// <param name="command"></param>
-        /// <param name="reader"></param>
-        /// <param name="rowBuilderFactory"></param>
+        /// <param name="connection">The connection the reader was opened on.</param>
+        /// <param name="command">The command that produced the reader.</param>
+        /// <param name="reader">The reader.</param>
+        /// <param name="rowBuilderFactory">A <see cref="Function1"/> from the reader to a <see cref="Function0"/>
+        /// that returns the current row.</param>
         public AdoReaderEnumerator(DbConnection connection, DbCommand command, DbDataReader reader, Function1 rowBuilderFactory)
         {
             _connection = connection ?? throw new ArgumentNullException(nameof(connection));
@@ -36,33 +38,34 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Moves to the next row.
+        /// Advances the reader.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>Whether there is a row.</returns>
         public bool moveNext()
         {
             return _reader.Read();
         }
 
         /// <summary>
-        /// Gets the current row.
+        /// Builds the current row. Each call builds it again.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The row.</returns>
         public object current()
         {
             return _rowBuilder.apply();
         }
 
         /// <summary>
-        /// Resets the reader.
+        /// Not supported: a reader cannot be rewound.
         /// </summary>
+        /// <exception cref="NotImplementedException">Always.</exception>
         public void reset()
         {
             throw new NotImplementedException();
         }
 
         /// <summary>
-        /// Closes the instance.
+        /// Disposes the reader, the command and the connection, ignoring any exception each throws.
         /// </summary>
         public void close()
         {
@@ -72,7 +75,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Disposes of the instance.
+        /// Calls <see cref="close"/>.
         /// </summary>
         public void Dispose()
         {
@@ -81,9 +84,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Attempts to dispose the instance, ignoring any exceptions.
+        /// Disposes an object, ignoring any exception it throws.
         /// </summary>
-        /// <param name="disposable"></param>
+        /// <param name="disposable">The object to dispose.</param>
         void TryDispose(IDisposable disposable)
         {
             try

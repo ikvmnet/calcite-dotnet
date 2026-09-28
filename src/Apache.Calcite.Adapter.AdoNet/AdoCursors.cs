@@ -9,32 +9,36 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Opens a statement's <see cref="DbDataReader"/> as a <see cref="ClrCursor{T}"/>.
+    /// Runs a statement and returns its <see cref="DbDataReader"/> as an <see cref="IClrCursor{T}"/>. The code
+    /// <see cref="Rel.Convert.AdoToClrCursorConverter"/> generates calls these.
     /// </summary>
     /// <remarks>
-    /// The leaf of a plan of the cursor convention over this adapter, and the shape the convention exists
-    /// for: a <see cref="DbDataReader"/> is a forward-only cursor with <c>Read</c> and
-    /// <c>ReadAsync(token)</c> over one position, so the cursor handed back is the reader itself with one
-    /// row built per advance, and the token each advance is given is the token the provider's
-    /// <see cref="DbDataReader.ReadAsync(CancellationToken)"/> is given.
-    ///
-    /// <para>The open is the acquisition, as Calcite's JDBC leaf executes its statement at
-    /// <c>enumerator()</c>: the connection is opened and the statement sent here, so a failing statement
-    /// fails the open rather than the first advance.
-    /// <see cref="OpenAsync"/> opens the connection and executes with await, under the open's token.</para>
+    /// <para>
+    /// Opening is where the work happens, as Calcite's JDBC adapter executes its statement in
+    /// <c>enumerator()</c>: the connection is opened and the statement executed before the cursor is returned,
+    /// so a statement the provider rejects fails the open rather than the first read.
+    /// </para>
+    /// <para>
+    /// Each <c>Read</c> or <c>ReadAsync</c> of the cursor advances the provider's reader once and builds one row.
+    /// The cursor owns the reader, the command and the connection, and disposes them when it is disposed.
+    /// </para>
     /// </remarks>
     public static class AdoCursors
     {
 
         /// <summary>
-        /// Opens the statement and returns its rows as a cursor.
+        /// Opens a connection, executes the statement and returns its rows as a cursor.
         /// </summary>
-        /// <typeparam name="TRow"></typeparam>
-        /// <param name="dataSource">The source to open a connection against.</param>
+        /// <typeparam name="TRow">The row type.</typeparam>
+        /// <param name="dataSource">The data source to open a connection from.</param>
         /// <param name="sql">The statement.</param>
-        /// <param name="rowBuilder">Builds one row from the reader positioned on it.</param>
-        /// <param name="enricher">Fills the command's parameters, or <see langword="null"/> where it has none.</param>
-        /// <returns></returns>
+        /// <param name="rowBuilder">Builds the row the reader is positioned on.</param>
+        /// <param name="enricher">Adds the command's parameters, or <see langword="null"/> where it has none.</param>
+        /// <returns>The cursor, positioned before the first row.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="dataSource"/>, <paramref name="sql"/> or
+        /// <paramref name="rowBuilder"/> is <see langword="null"/>.</exception>
+        /// <exception cref="AdoCalciteException">The provider raised a <see cref="DbException"/>. Anything opened is
+        /// disposed first.</exception>
         public static IClrCursor<TRow> Open<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
@@ -47,16 +51,20 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Opens the statement with await and returns its rows as a cursor.
+        /// Opens a connection and executes the statement asynchronously, and returns its rows as a cursor.
         /// </summary>
-        /// <typeparam name="TRow"></typeparam>
-        /// <param name="dataSource">The source to open a connection against.</param>
+        /// <typeparam name="TRow">The row type.</typeparam>
+        /// <param name="dataSource">The data source to open a connection from.</param>
         /// <param name="sql">The statement.</param>
-        /// <param name="rowBuilder">Builds one row from the reader positioned on it.</param>
-        /// <param name="enricher">Fills the command's parameters, or <see langword="null"/> where it has none.</param>
-        /// <param name="cancellationToken">The token the open runs under, which is the statement's: each
-        /// advance brings its own, and the reader is advanced under both.</param>
-        /// <returns></returns>
+        /// <param name="rowBuilder">Builds the row the reader is positioned on.</param>
+        /// <param name="enricher">Adds the command's parameters, or <see langword="null"/> where it has none.</param>
+        /// <param name="cancellationToken">Cancels opening and executing, and also every later
+        /// <c>ReadAsync</c> of the cursor, together with the token that call is given.</param>
+        /// <returns>The cursor, positioned before the first row.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="dataSource"/>, <paramref name="sql"/> or
+        /// <paramref name="rowBuilder"/> is <see langword="null"/>.</exception>
+        /// <exception cref="AdoCalciteException">The provider raised a <see cref="DbException"/>. Anything opened is
+        /// disposed first.</exception>
         public static async ValueTask<IClrCursor<TRow>> OpenAsync<TRow>(AdoDataSource dataSource, string sql, Func<DbDataReader, TRow> rowBuilder, DbCommandEnricher? enricher, CancellationToken cancellationToken)
         {
             ArgumentNullException.ThrowIfNull(dataSource);
@@ -79,8 +87,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             }
             catch (DbException e)
             {
-                // what was opened before the failure is nobody else's to close: the cursor that would have
-                // owned it is never returned
+                // no cursor is returned to own these
                 if (created is not null)
                     await created.DisposeAsync().ConfigureAwait(false);
                 if (opened is not null)
@@ -91,7 +98,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Opens a connection, fills the command and executes it, closing what it opened if that fails.
+        /// Opens a connection, prepares the command and executes it, disposing what it opened if the provider
+        /// raises a <see cref="DbException"/>.
         /// </summary>
         static void Execute(AdoDataSource dataSource, string sql, DbCommandEnricher? enricher, out DbConnection connection, out DbCommand command, out DbDataReader reader)
         {
@@ -111,8 +119,7 @@ namespace Apache.Calcite.Adapter.AdoNet
             }
             catch (DbException e)
             {
-                // what was opened before the failure is nobody else's to close: the sequence that would have
-                // owned it is never returned
+                // no cursor is returned to own these
                 created?.Dispose();
                 opened?.Dispose();
 
@@ -121,14 +128,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// The reader as a cursor, owning the command and the connection it was opened over.
+        /// A reader as a cursor, owning the reader, its command and its connection.
         /// </summary>
         /// <remarks>
-        /// An awaited advance runs the provider's <c>ReadAsync</c> under the advance's token and the open's
-        /// together. The open's is the statement's, which <c>DbCommand.Cancel</c> and a read the provider
-        /// refused both cancel, so a statement cancelled between two advances stops the reader on the next
-        /// one, as it did when the reader was enumerated under that token alone. The two are linked only
-        /// where both can be cancelled; where one cannot, the other is passed as it is.
+        /// <c>ReadAsync</c> passes the provider both the token it is given and the token the cursor was opened
+        /// under, so cancelling the statement's token stops the next read. A linked source is created only when
+        /// both tokens can be cancelled.
         /// </remarks>
         sealed class ReaderCursor<TRow>(DbConnection connection, DbCommand command, DbDataReader reader, Func<DbDataReader, TRow> rowBuilder, CancellationToken open) : ClrCursor<TRow>
         {

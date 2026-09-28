@@ -12,10 +12,10 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance of the <see cref="CalciteColumn"/> class.
         /// </summary>
-        /// <param name="name"></param>
-        /// <param name="clrType"></param>
-        /// <param name="providerTypeName"></param>
-        /// <param name="allowDbNull"></param>
+        /// <param name="name">The column name.</param>
+        /// <param name="clrType">The .NET type the column's values are read as.</param>
+        /// <param name="providerTypeName">The Calcite SQL type name.</param>
+        /// <param name="allowDbNull">Whether the column is nullable.</param>
         public CalciteColumn(string name, Type clrType, string providerTypeName, bool allowDbNull)
         {
             Name = name ?? throw new ArgumentNullException(nameof(name));
@@ -30,12 +30,12 @@ namespace Apache.Calcite.Data.Internal
         public string Name { get; }
 
         /// <summary>
-        /// Gets the CLR type that values in this column will be materialized as.
+        /// Gets the .NET type the column's values are read as.
         /// </summary>
         public Type ClrType { get; }
 
         /// <summary>
-        /// Gets the Calcite-side provider type name for this column.
+        /// Gets the Calcite SQL type name of the column.
         /// </summary>
         public string ProviderTypeName { get; }
 

@@ -14,17 +14,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The bounding rectangle, which is where the antimeridian stops being an abstraction.
+    /// Tests <c>CLR_ST_GEOG_ENVELOPE</c>, <c>CLR_ST_GEOG_EXTENT</c> and <c>CLR_ST_GEOG_EXPAND</c>.
     /// </summary>
     /// <remarks>
-    /// A planar envelope is the least and greatest of the coordinates. That is the wrong answer for anything
-    /// that crosses longitude 180: a shape two degrees across gets a rectangle 358 degrees wide, and every
-    /// index and every pre-filter built on it then reads most of the globe. S2's rectangle knows a longitude
-    /// interval may wrap.
-    ///
-    /// <para>An expansion has the same shape of problem one dimension down. Growing a box by a degree moves
-    /// its northern edge further than its eastern one everywhere off the equator, so the planar function has
-    /// no fixed meaning on the Earth; this grows by metres.</para>
+    /// A planar envelope is the least and greatest coordinates, so a shape crossing longitude 180 gets a
+    /// rectangle nearly 360 degrees wide. The envelope here is S2's rectangle, whose longitude interval may
+    /// wrap. The expansion is a distance in metres rather than in degrees.
     /// </remarks>
     public class GeographyBoundsTests
     {
@@ -40,7 +35,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An ordinary shape gets an ordinary box, and agrees with Calcite.
+        /// Away from the antimeridian the envelope agrees with Calcite's.
         /// </summary>
         [Fact]
         public void ShouldBoundAnOrdinaryShapeAsCalciteDoes()
@@ -55,13 +50,9 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The whole reason this function exists.
+        /// A shape two degrees wide across the antimeridian gets an envelope in two one-degree pieces, where
+        /// Calcite's spans 358 degrees.
         /// </summary>
-        /// <remarks>
-        /// Two degrees of shape across the antimeridian. Calcite answers a box spanning 358 degrees of
-        /// longitude, because -179 and 179 are its least and greatest coordinates; this answers the two
-        /// degrees that are actually there, as the two halves either side of the line.
-        /// </remarks>
         [Fact]
         public void ShouldNotSpanTheGlobeAcrossTheAntimeridian()
         {
@@ -72,20 +63,19 @@ namespace Apache.Calcite.Geography.Tests
 
             var ours = GeographyFunctions.Envelope(shape);
 
-            // two pieces, and neither is wide
             ours!.getNumGeometries().Should().Be(2);
             Span(ours.getGeometryN(0)).Should().BeApproximately(1, 1e-6);
             Span(ours.getGeometryN(1)).Should().BeApproximately(1, 1e-6);
         }
 
         /// <summary>
-        /// A degenerate rectangle answers what JTS answers for one.
+        /// A degenerate envelope is a point or a line, as JTS's is.
         /// </summary>
         [Fact]
         public void ShouldDegenerateAsJtsDoes()
         {
-            // approximately, because the rectangle is the sphere's: a coordinate reaches it as a unit
-            // vector and comes back a few bits shy of the degrees it went in as
+            // Approximate: the rectangle is computed on the sphere, and a coordinate converted to a unit
+            // vector and back is not exactly the degrees it started as.
             var point = GeographyFunctions.Envelope(Wkt("POINT(1 2)"))!;
             point.getGeometryType().Should().Be("Point");
             point.getCoordinate().getX().Should().BeApproximately(1, 1e-12);
@@ -95,7 +85,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The extent is the same rectangle, as Calcite's two are the same call.
+        /// The extent is the envelope, as in Calcite.
         /// </summary>
         [Fact]
         public void ShouldAnswerTheSameForExtent()
@@ -106,13 +96,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An expansion is in metres, and a degree of longitude is not a degree of latitude.
+        /// The expansion is in metres.
         /// </summary>
         /// <remarks>
-        /// At 60 degrees north a degree of longitude is about half a degree of latitude on the ground, so a
-        /// box grown by the same distance in every direction grows about twice as far in longitude as in
-        /// latitude. A planar expansion grows both by the same number and is therefore short to the east and
-        /// west by half.
+        /// At 60 degrees north a degree of longitude is about half a degree of latitude on the ground, so an
+        /// expansion by the same distance in every direction spans about twice as many degrees of longitude as
+        /// of latitude.
         /// </remarks>
         [Fact]
         public void ShouldExpandInMetresRatherThanDegrees()
@@ -130,7 +119,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Nothing to expand is nothing.
+        /// <c>Envelope</c>, <c>Extent</c> and <c>Expand</c> return <c>null</c> when any argument is <c>null</c>.
         /// </summary>
         [Fact]
         public void ShouldAnswerNullForANullArgument()
@@ -142,7 +131,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// All three run as operators.
+        /// <c>CLR_ST_GEOG_ENVELOPE</c>, <c>CLR_ST_GEOG_EXTENT</c> and <c>CLR_ST_GEOG_EXPAND</c> each run as an operator
+        /// in a query.
         /// </summary>
         [Fact]
         public void ShouldRunEachAsAnOperator()

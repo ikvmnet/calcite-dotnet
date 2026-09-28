@@ -4,11 +4,13 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Verifies the SQL JSON functions execute end-to-end. Calcite implements these through json-path's
-    /// jackson providers, whose dependencies are undeclared in json-path's published POM and are supplied
-    /// by the <c>Dependencies</c> declaration on the calcite-core reference; a regression here most likely
-    /// means json.path.dll is once again compiling against jackson stubs.
+    /// Verifies the SQL JSON functions execute end to end.
     /// </summary>
+    /// <remarks>
+    /// Calcite implements these through json-path's jackson providers. json-path's POM does not declare the
+    /// jackson dependencies; the <c>Dependencies</c> element on the calcite-core reference supplies them. A
+    /// failure here usually means json-path was compiled without jackson available.
+    /// </remarks>
     public class CalciteJsonFunctionTests
     {
 
@@ -49,13 +51,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>RETURNING</c> clause naming an array type, which is the only spelling that reads a JSON
-        /// array as a collection rather than as its text.
+        /// <c>JSON_QUERY</c> with a <c>RETURNING</c> clause naming an array type reads a JSON array as a
+        /// collection rather than as text.
         /// </summary>
         /// <remarks>
-        /// <c>JSON_VALUE</c> takes the same clause and answers null for an array, because its runtime is
-        /// scalar-only and the default <c>NULL ON ERROR</c> swallows the refusal. That is Calcite's, not
-        /// ours — both conventions agree on it, and so does Calcite's own JDBC driver on a JVM.
+        /// <c>JSON_VALUE</c> accepts the same clause but returns null for an array: its runtime handles only
+        /// scalars, and the default <c>NULL ON ERROR</c> suppresses the error. That is Calcite's behaviour.
         /// </remarks>
         [Fact]
         public void JsonQuery_should_return_an_array()

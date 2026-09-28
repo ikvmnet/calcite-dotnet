@@ -89,8 +89,7 @@ jobs:
         path: dist/tests.tar.gz
   test:
     strategy:
-      # One suite failing says nothing about the others, and the default cancels them: the two DELETE
-      # tests red against the 1.43 snapshot were taking down all fifty jobs, so no convention test ever ran.
+      # Let every suite finish when one fails.
       fail-fast: false
       matrix:
         run:
@@ -120,10 +119,8 @@ jobs:
       uses: actions/setup-dotnet@v6
       with:
         dotnet-version: 10.0.x
-    # This job never checks the repository out, so the nuget.config that names the feed is not on disk
-    # and there is no source here to authenticate: it has to be added outright. The build job, which
-    # does check out, updates the source its config already names instead — adding it there fails on the
-    # name being taken.
+    # This job does not check out the repository, so the feed from nuget.config is added here rather
+    # than updated.
     - name: Add NuGet Source (GitHub)
       shell: pwsh
       run: dotnet nuget add source $env:GITHUB_REPOS --name ${{ github.repository_owner }} --username USERNAME --password $env:GITHUB_TOKEN --store-password-in-clear-text
@@ -136,8 +133,8 @@ jobs:
         name: tests
     - name: Restore Tests
       run: tar xzvf tests.tar.gz
-    # `dotnet test` would launch the app host, and the artifact carries the build's, linux-x64. The muxer
-    # runs the assembly on any of them. A filter after `?` is xunit's query filter language.
+    # Run with `dotnet exec`: the artifact was built on linux-x64, so its app host runs nowhere else.
+    # A filter after `?` in a suite name uses xunit's query filter language.
     - name: Execute Tests
       timeout-minutes: 480
       shell: pwsh
@@ -195,9 +192,8 @@ jobs:
     - test
     runs-on: ubuntu-latest
     env:
-      # One switch for the GitHub release and the nuget.org push together, so neither happens without the
-      # other. Nothing reaches nuget.org implicitly: either a tag drives the build, or the run was asked
-      # for it by hand. The GitHub Packages push below is not gated by this and still runs on every build.
+      # Gates both the GitHub release and the nuget.org push: true for a tag build or a manual run that
+      # asks to publish. The GitHub Packages push is not gated and runs on every non-PR build.
       PUBLISH: ${{ github.ref_type == 'tag' || inputs.publish == true }}
     steps:
     - name: Checkout Source
@@ -220,11 +216,9 @@ jobs:
       with:
         name: nuget
         path: dist/nuget
-    # `commit` is what lets this run from a branch: with no tag of this name yet the action creates one
-    # there, which is the tag that no longer has to be made by hand. Where the tag does already exist and
-    # carries a release -- an explicit tag build, or a re-run -- allowUpdates keeps that from failing and
-    # updates it in place instead, omitBodyDuringUpdate leaves notes written by hand alone, and
-    # replacesArtifacts refreshes the packages rather than colliding with the ones already attached.
+    # `commit` lets the action create the tag when it does not exist. When the release already exists
+    # (a tag build or a re-run) it is updated in place, keeping hand-written notes and replacing the
+    # packages.
     - name: Create Release
       if: env.PUBLISH == 'true'
       uses: ncipollo/release-action@v1
@@ -245,16 +239,7 @@ jobs:
       env:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-    # --skip-duplicate so a version nuget.org already carries is a no-op here rather than a failure.
-    #
-    # Be aware that this run has rebuilt the package. GitVersion labels main `pre.N`, the same shape a
-    # release tag takes, so the version this pushes is one GitHub Packages already received from the
-    # build that produced it, and skipped as a duplicate when this run pushed above. The two feeds then
-    # carry different assemblies under one version -- which is how `2.0.0-pre.9` came to be a build from
-    # August on GitHub Packages and a September one on nuget.org, and how a consumer restoring from both
-    # gets Apache.Calcite.Data compiled against a Signature the Apache.Calcite.Extensions beside it does
-    # not carry. Publishing the artifact the original run built, rather than a rebuild of it, is what
-    # would close that.
+    # --skip-duplicate makes pushing a version nuget.org already has a no-op.
     - name: Push NuGet
       if: env.PUBLISH == 'true'
       shell: pwsh

@@ -1,94 +1,69 @@
 # Apache Calcite for .NET
 
-This repository provides .NET projects that expose [Apache Calcite](https://calcite.apache.org/) — the SQL parser, optimizer, and execution framework — through standard ADO.NET abstractions, powered by [IKVM](https://github.com/ikvmnet/ikvm).
+[Apache Calcite](https://calcite.apache.org/) — the SQL parser, optimizer and query engine — for .NET, running
+in-process under [IKVM](https://github.com/ikvmnet/ikvm) and exposed through ADO.NET. There is no JDBC driver,
+no Avatica server and no separate process: a `DbCommand` goes to Calcite's planner and the rows come back
+through a `DbDataReader`. Queries are compiled to .NET code rather than to Java.
+
+All packages target .NET 8 and are tested on .NET 8 and .NET 10.
 
 ## Packages
 
-### [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) · `src/Apache.Calcite.Data`
-
-The core ADO.NET provider. Exposes `CalciteConnection`, `CalciteCommand`, `CalciteDataReader`, `CalciteBatch`, `CalciteDataSource`, `CalciteProviderFactory`, and `CalciteConnectionStringBuilder` so any .NET code that speaks `DbConnection` / `DbCommand` / `DbDataReader` can execute Calcite SQL.
-
-The Calcite engine runs fully in-process via IKVM — no JDBC driver, no Avatica server, no extra process.
+| Package | What it is |
+|---|---|
+| [`Apache.Calcite.Data`](src/Apache.Calcite.Data/README.md) | The ADO.NET provider: `CalciteConnection`, `CalciteCommand`, `CalciteDataReader`, `CalciteDataSource`, `CalciteProviderFactory` and the rest. Start here. |
+| [`Apache.Calcite.Adapter.AdoNet`](src/Apache.Calcite.Adapter.AdoNet/README.md) | Exposes any ADO.NET database as a Calcite schema, pushing filters, projections, joins, aggregations, sorts and set operations down to it. Built-in support for SQL Server, SQLite, ODBC, OLE DB and `INFORMATION_SCHEMA` databases. |
+| [`Apache.Calcite.Extensions`](src/Apache.Calcite.Extensions/README.md) | The query engine the provider runs on: a Calcite calling convention that compiles a plan to `System.Linq.Expressions`, the pipeline that prepares a statement for it, and typed Calcite connection properties. Reference it directly to drive Calcite's planner without ADO.NET. |
+| [`Apache.Calcite.Data.Common`](src/Apache.Calcite.Data.Common/README.md) | The mapping between Calcite SQL types and .NET types, shared by the provider and the adapter, and extensible with your own resolvers. |
+| [`Apache.Calcite.Geography`](src/Apache.Calcite.Geography/README.md) | Optional. `CLR_ST_GEOG_*` functions that treat coordinates as WGS84 and answer geodesically, in metres, using Google's S2 and GeographicLib. |
+| [`Apache.Calcite.FullText`](src/Apache.Calcite.FullText/README.md) | Optional. `CLR_FT_*` full-text search functions for adapters to push down to a store that supports them. It declares the functions; it does not evaluate them. |
 
 ```sh
 dotnet add package Apache.Calcite.Data
 ```
 
-### [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) · `src/Apache.Calcite.Adapter.AdoNet`
+## Example
 
-Federated query adapter that bridges Calcite to external ADO.NET data sources. Exposes any database reachable via `DbProviderFactory` or `DbDataSource` as a Calcite schema, with pushdown of filters, projections, joins, aggregations, sorts, and set operations.
-
-Ships built-in metadata for SQL Server, SQLite, ODBC, OLE DB, and any `INFORMATION_SCHEMA`-compliant database.
-
-```sh
-dotnet add package Apache.Calcite.Adapter.AdoNet
-```
-
-### [`Apache.Calcite.Extensions`](https://www.nuget.org/packages/Apache.Calcite.Extensions) · `src/Apache.Calcite.Extensions`
-
-`ClrCursorConvention` — a calling convention that runs a query plan as a compiled `System.Linq.Expressions` tree instead of generating Java source and compiling it with Janino. A plan opens a cursor, synchronously or with await, and the cursor is advanced either way on every row, which is the shape `DbDataReader` has. It mirrors Calcite's own `EnumerableConvention` node for node and uses the same row types, and converters exist in both directions, so a plan can mix the two.
-
-With it, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop helpers both need — including `CalciteConnectionProperties`, a strongly-typed wrapper over Calcite's `java.util.Properties`, so you can configure the engine with compile-time-safe .NET properties instead of raw string keys.
-
-The plan holds a method rather than its name, so a user-defined function written in .NET runs in this convention without a class name ever being written out. Calcite's own engine runs one too, as long as IKVM can read the class-loader stamp `IKVM.Maven.Sdk` puts on `calcite-core`: IKVM 8.14.0 and 8.15.0 could not, so Janino could not resolve the `cli.`-prefixed name IKVM gives a CLR type and such a query had no plan under `EnumerableConvention` at all. IKVM 8.16.0 fixes that, so the difference between the two engines is the compile rather than the capability.
-
-Targets .NET 8, and is verified on .NET 8 and .NET 10.
-
-```sh
-dotnet add package Apache.Calcite.Extensions
-```
-
-### [`Apache.Calcite.Geography`](https://www.nuget.org/packages/Apache.Calcite.Geography) · `src/Apache.Calcite.Geography`
-
-A set of `CLR_ST_GEOG_*` operators that read coordinates as WGS84 and answer in metres.
-
-Calcite has `GEOMETRY` and no `GEOGRAPHY`: its spatial library is planar JTS answering in the units of an unprojected coordinate system, while the stores that speak WGS84 — PostGIS `geography`, BigQuery, Snowflake, Elasticsearch, MongoDB — are geodesic. The two disagree about what identically-named functions mean, and the disagreement is not a scale factor. The type keeps them apart: Calcite's own `ST_*` refuse a geography at validation, and the crossing between the two readings has to be written down.
-
-Optional, and nothing else here depends on it. The geodesic engine is Google's S2.
-
-```sh
-dotnet add package Apache.Calcite.Geography
-```
-
-## Test and distribution projects
-
-| Project | Purpose |
-|---------|---------|
-| `Apache.Calcite.Tests` | Core engine integration tests, and the convention and prepare pipeline tests — including the differential suites that run the same SQL through `ClrCursorConvention` and `EnumerableConvention` and require the same rows |
-| `Apache.Calcite.Data.Tests` | Provider integration tests |
-| `Apache.Calcite.Adapter.AdoNet.Tests` | Adapter integration tests |
-| `Apache.Calcite.Geography.Tests` | Geography type, operator table and geodesic evaluator tests |
-| `dist-nuget` | Packages NuGet artifacts |
-| `dist-tests` | Packages test artifacts for CI |
-
-## Quick example
+Query a SQLite database through Calcite:
 
 ```csharp
+using Apache.Calcite.Adapter.AdoNet;
 using Apache.Calcite.Data;
+using Microsoft.Data.Sqlite;
 
-const string model = """
-{
-  "version": "1.0",
-  "defaultSchema": "HR",
-  "schemas": [{
-    "name": "HR",
-    "type": "custom",
-    "factory": "org.apache.calcite.adapter.csv.CsvSchemaFactory",
-    "operand": { "directory": "hr" }
-  }]
-}
-""";
+var sqlite = SqliteFactory.Instance.CreateDataSource("Data Source=sales.db");
 
-await using var conn = new CalciteConnection($"Model=inline:{model}");
-await conn.OpenAsync();
+await using var dataSource = new CalciteDataSourceBuilder()
+    .ConfigureRootSchema(root => root.add("SALES", AdoSchema.Create(root, "SALES", sqlite, null, null)))
+    .Build();
 
+await using var conn = await dataSource.OpenConnectionAsync();
 await using var cmd = conn.CreateCommand();
-cmd.CommandText = "SELECT \"NAME\", \"DEPTNO\" FROM \"EMPS\" ORDER BY \"NAME\"";
+cmd.CommandText = "SELECT \"NAME\", \"DEPTNO\" FROM \"SALES\".\"EMPS\" ORDER BY \"NAME\"";
 
 await using var reader = await cmd.ExecuteReaderAsync();
 while (await reader.ReadAsync())
     Console.WriteLine($"{reader.GetString(0)}\t{reader.GetInt32(1)}");
 ```
+
+Each package's README covers configuration, JSON models, code-driven schemas and user-defined functions.
+
+## Building from source
+
+```sh
+dotnet build Apache.Calcite.slnx
+```
+
+The build resolves Calcite from Maven through `IKVM.Maven.Sdk`. The IKVM packages come from the organization's
+GitHub Packages feed named in `nuget.config`, which requires a GitHub token to read; see the comment in that file.
+
+| Test project | Covers |
+|---|---|
+| `Apache.Calcite.Tests` | The calling convention and prepare pipeline, including differential tests that run each query through both this convention and Calcite's own and require the same rows |
+| `Apache.Calcite.Data.Tests` | The ADO.NET provider |
+| `Apache.Calcite.Adapter.AdoNet.Tests` | The ADO.NET adapter |
+| `Apache.Calcite.Geography.Tests` | The geography functions |
+| `Apache.Calcite.FullText.Tests` | The full-text function declarations |
 
 ## Further reading
 
@@ -99,4 +74,4 @@ while (await reader.ReadAsync())
 
 ## License
 
-Apache License 2.0.
+Apache License 2.0. This project is not an Apache Software Foundation project.

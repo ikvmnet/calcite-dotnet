@@ -22,40 +22,29 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The operators run under <c>ClrCursorConvention</c>, read either way, and answer what Calcite's own
-    /// engine answers.
+    /// Runs the operators under <c>ClrCursorConvention</c>, read synchronously and awaited, and requires the
+    /// rows Calcite's <c>EnumerableConvention</c> gives.
     /// </summary>
     /// <remarks>
-    /// <see cref="GeographyExecutionTests"/> runs everything through <c>EnumerableConvention</c>, where the
-    /// block is Java source compiled by Janino. This convention translates Calcite's tree into
-    /// <c>System.Linq.Expressions</c> instead, so nothing about the first run says the second will work — the
-    /// two reach a row, a cast and a method call by different machinery.
+    /// <see cref="GeographyExecutionTests"/> runs through <c>EnumerableConvention</c>, which compiles Java
+    /// source with Janino; <c>ClrCursorConvention</c> translates Calcite's tree into
+    /// <c>System.Linq.Expressions</c>, so rows, casts and method calls are reached by different code. Values
+    /// are compared rendered as text, because one side reads through a <c>ResultSet</c> and the other takes
+    /// the row as the plan built it.
     ///
-    /// <para>The geography type is what makes this worth pinning rather than assuming. Its carrier is a CLR
-    /// class, so a scan of a geography column has to type its rows as that class and a call has to reach a
-    /// method declared over it; <c>JavaTypeFactoryImpl.getJavaClass</c> answers <c>Geography</c> for the type
-    /// because it is an ordinary <c>JavaType</c>, and a type that was not one would have answered
-    /// <c>Object</c> and left every operand needing a cast the convention would have had to invent.</para>
-    ///
-    /// <para>Calcite is the oracle, as everywhere else here: each query is run through both conventions,
-    /// the Clr one read both ways, and the rows must match. The comparison is on rendered values rather than objects, because one side
-    /// reads through a <c>ResultSet</c> and the other takes the row as the plan built it.</para>
-    ///
-    /// <para>The package itself references no convention of this repository's — <c>Apache.Calcite.Geography</c> depends on
-    /// nothing in this repository, deliberately. This test project references
-    /// <c>Apache.Calcite.Extensions</c> so that the claim can be measured rather than argued.</para>
+    /// <para><c>Apache.Calcite.Geography</c> references nothing else in this repository; only this test
+    /// project references <c>Apache.Calcite.Extensions</c>.</para>
     /// </remarks>
     public class GeographyConventionTests
     {
 
         /// <summary>
-        /// The queries every convention must agree on.
+        /// The queries both conventions must agree on.
         /// </summary>
         /// <remarks>
-        /// One with no table, to reach a constructor and a measurement; one carrying a geography column out of
-        /// a scan and into a predicate, which is the case a carrier class could break and a bare geometry
-        /// could not; one reading a column into an accessor; and one crossing out to Calcite's own planar
-        /// function, which takes the geometry inside rather than the geography.
+        /// A constructor and a measurement with no table; a geometry column carried from a scan into a
+        /// predicate; column values passed to a serializer and to accessors; and a call to Calcite's own
+        /// planar <c>ST_DISTANCE</c>.
         /// </remarks>
         static readonly string[] queries =
         [
@@ -67,7 +56,7 @@ namespace Apache.Calcite.Geography.Tests
         ];
 
         /// <summary>
-        /// How many rows the queries answer between them: one, one, two, two, one.
+        /// The total number of rows the queries return: one, one, two, two and one.
         /// </summary>
         const int ExpectedRows = 7;
 
@@ -89,7 +78,7 @@ namespace Apache.Calcite.Geography.Tests
 
             differences.Should().BeEmpty(string.Join("\n", differences));
 
-            // two empty answers agree with one another, so the row count is what says a comparison happened
+            // Two empty answers would agree, so the row count shows that rows were compared.
             rows.Should().Be(ExpectedRows);
         }
 
@@ -114,13 +103,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geography column is typed by its carrier class all the way into the plan.
+        /// A geometry column keeps its geometry type in the physical plan, not only after validation.
         /// </summary>
-        /// <remarks>
-        /// The rows the scan yields hold ordinary JTS geometries, and the block the
-        /// convention builds reads them as that class. Pinning it here says the type survived planning rather
-        /// than only validation.
-        /// </remarks>
         [Fact]
         public void ShouldCarryTheCarrierClassThroughAPlan()
         {
@@ -176,7 +160,7 @@ namespace Apache.Calcite.Geography.Tests
 
         static async Task<List<string[]>> RunClrAsync(string sql)
         {
-            // the same rules and the same plan as the synchronous run above; only the open differs
+            // The same plan as RunClr; only the open differs.
             var (physical, rootSchema, parameters) = PlanClr(sql);
             var factory = Implement(physical, parameters);
 
@@ -189,13 +173,14 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The configuration a caller driving its own planner needs: the operator table, the convention's
-        /// rules on the planner in front, and then <c>Programs.standard</c> with the calc pass after it.
+        /// Builds a planner configuration over the given schema: the fixture's operator table, and a program
+        /// that adds <paramref name="rules"/> to the planner, runs <c>Programs.standard</c>, and then runs
+        /// <paramref name="calcRules"/> as a hep pass.
         /// </summary>
-        /// <param name="rootSchema"></param>
-        /// <param name="rules"></param>
-        /// <param name="calcRules"></param>
-        /// <returns></returns>
+        /// <param name="rootSchema">The schema queries are resolved against.</param>
+        /// <param name="rules">The rules added to the planner before <c>Programs.standard</c> runs.</param>
+        /// <param name="calcRules">The rules run as a hep pass after <c>Programs.standard</c>.</param>
+        /// <returns>The configuration to build a <c>Frameworks</c> planner from.</returns>
         static FrameworkConfig Config(SchemaPlus rootSchema, IReadOnlyList<RelOptRule> rules, IReadOnlyList<RelOptRule> calcRules)
         {
             var calc = new java.util.ArrayList();
@@ -214,15 +199,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A pass that puts rules on the planner and changes the plan not at all.
+        /// A program that adds rules to the planner and returns the plan unchanged.
         /// </summary>
-        /// <param name="rules"></param>
         /// <remarks>
-        /// A <c>Frameworks</c> planner carries Calcite's default rules and has never heard of the Clr
-        /// convention, and <c>Programs.standard</c>'s planner pass installs nothing — so the rules go on in a
-        /// pass of their own, in front. What <c>ClrPrepareImpl.CreatePlanner</c> does for a prepared
-        /// statement, for a caller driving the planner itself.
+        /// A <c>Frameworks</c> planner carries only Calcite's default rules, and <c>Programs.standard</c>'s
+        /// planner pass adds none, so the convention's rules are added by a pass that runs first.
         /// </remarks>
+        /// <param name="rules">The rules added to the planner each time the program runs.</param>
         sealed class AddRules(IReadOnlyList<RelOptRule> rules) : Program
         {
 

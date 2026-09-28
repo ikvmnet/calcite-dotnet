@@ -12,34 +12,25 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
 {
 
     /// <summary>
-    /// Provides the metadata handlers a <see cref="RelMetadataQuery"/> asks for, built as CLR types and
-    /// <c>System.Linq.Expressions</c> rather than generated as Java source and compiled by Janino.
+    /// Supplies the metadata handlers a <see cref="RelMetadataQuery"/> uses, emitted as CLR types rather than
+    /// generated as Java source and compiled with Janino.
     /// </summary>
     /// <remarks>
-    /// <c>JaninoRelMetadataProvider</c>, and it answers the same questions the same way: the handlers come
-    /// from the same <see cref="RelMetadataProvider"/>, the class a rel dispatches to is chosen by the same
-    /// rule, and the results are cached in the query's own table under the same keys, cycles included.
+    /// The counterpart of Calcite's <c>JaninoRelMetadataProvider</c>, with the same behaviour: handlers
+    /// come from the given <see cref="RelMetadataProvider"/>, dispatch on the rel's class follows the same
+    /// rule, and results are cached in the query's table under the same keys, with the same cycle
+    /// detection. Each handler is built once per provider and handler interface, without running a Java
+    /// compiler.
     ///
-    /// <para>What moves is the compile. A handler is built once per provider and handler interface, as
-    /// Janino's is, but building one no longer runs a Java compiler.</para>
-    ///
-    /// <para>It used to be more than that. Calcite's generated source names the handler class and each rel
-    /// class in Java, and IKVM's name for a CLR class begins <c>cli.</c>. Janino resolves one through the
-    /// class loader <c>IKVM.Maven.Sdk</c> stamps onto <c>calcite-core</c>; IKVM 8.14.0 and 8.15.0 could not
-    /// read that stamp, so it answered "Cannot determine simple type name cli" and a handler written in .NET
-    /// could answer here and nowhere else. IKVM 8.16.0 reads it again and Janino compiles that handler too,
-    /// measured at one commit either side. Nothing here writes a name either way; what is left of the reason
-    /// is the compile.</para>
-    ///
-    /// <para>Reached through <see cref="RelOptCluster.setMetadataQuerySupplier"/>:
-    /// <c>RelMetadataQueryBase.THREAD_PROVIDERS</c> is typed to Janino's provider and cannot hold this one,
-    /// and <c>RelMetadataQuery.instance()</c> is the only thing that reads it.</para>
+    /// <para>Install it on a cluster with <see cref="RelOptCluster.setMetadataQuerySupplier"/> and
+    /// <see cref="QuerySupplier"/>. <c>RelMetadataQueryBase.THREAD_PROVIDERS</c> is typed to Janino's
+    /// provider and cannot hold this one.</para>
     /// </remarks>
     public sealed class ClrRelMetadataProvider : MetadataHandlerProvider
     {
 
         /// <summary>
-        /// The provider over Calcite's own handlers.
+        /// A provider over <c>DefaultRelMetadataProvider.INSTANCE</c>, Calcite's own handlers.
         /// </summary>
         public static readonly ClrRelMetadataProvider Default = Of(DefaultRelMetadataProvider.INSTANCE);
 
@@ -48,8 +39,10 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// <summary>
         /// Returns a provider over <paramref name="provider"/>'s handlers.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <returns></returns>
+        /// <param name="provider">The source of the handlers.</param>
+        /// <returns>The provider. Providers over equal sources are equal and share built handlers.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="provider"/> is
+        /// <see langword="null"/>.</exception>
         public static ClrRelMetadataProvider Of(RelMetadataProvider provider)
         {
             ArgumentNullException.ThrowIfNull(provider);
@@ -59,10 +52,11 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
 
         /// <summary>
         /// Returns a supplier of queries over <paramref name="provider"/>, for
-        /// <see cref="RelOptCluster.setMetadataQuerySupplier"/>, which requires a fresh query each time.
+        /// <see cref="RelOptCluster.setMetadataQuerySupplier"/>.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <returns></returns>
+        /// <param name="provider">The source of the handlers.</param>
+        /// <returns>A supplier that returns a new <see cref="RelMetadataQuery"/> on each call, as a cluster
+        /// requires.</returns>
         public static java.util.function.Supplier QuerySupplier(RelMetadataProvider provider)
         {
             return new Supplier(Of(provider));
@@ -73,29 +67,22 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="provider"></param>
+        /// <param name="provider">The source of the handlers.</param>
         ClrRelMetadataProvider(RelMetadataProvider provider)
         {
             this.provider = provider;
         }
 
         /// <summary>
-        /// Returns the handler of <paramref name="handlerClass"/>.
+        /// Returns the handler for <paramref name="handlerClass"/>.
         /// </summary>
-        /// <param name="handlerClass"></param>
-        /// <returns></returns>
+        /// <param name="handlerClass">The handler interface.</param>
+        /// <returns>The built handler.</returns>
         /// <remarks>
-        /// The handler itself, where Janino's provider answers a <c>java.lang.reflect.Proxy</c> that throws
-        /// <c>NoHandler</c> so that <see cref="revise"/> builds one only for the handlers a statement
-        /// reaches. That deferral buys Janino a Java compile it may not have to run; there is nothing here to
-        /// defer, because a handler is emitted once per provider and interface and then answered from a
-        /// dictionary.
-        ///
-        /// <para>The proxy was also a cost and a hazard. <see cref="RelMetadataQuery"/> asks for all
-        /// twenty-seven every time one is constructed, and the planner constructs one whenever a rule
-        /// transforms — so the proxy route meant twenty-seven dynamic proxy classes and reflection accessors
-        /// per transformation, built through IKVM's own <c>Reflection.Emit</c> path, which is where
-        /// <c>InvalidProgramException</c> was coming from.</para>
+        /// Returns the built handler directly, where Janino's provider returns a proxy that throws
+        /// <c>NoHandler</c> so that a handler is compiled only when first used. A <see cref="RelMetadataQuery"/>
+        /// asks for every handler each time one is constructed, which the planner does often, and a built
+        /// handler here is cached, so there is nothing to gain from deferring.
         /// </remarks>
         public MetadataHandler handler(java.lang.Class handlerClass)
         {
@@ -103,11 +90,13 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Returns the handler of <paramref name="handlerClass"/>, building it the first time a provider is
-        /// asked for it.
+        /// Returns the handler for <paramref name="handlerClass"/>, building it the first time it is asked
+        /// for.
         /// </summary>
-        /// <param name="handlerClass"></param>
-        /// <returns></returns>
+        /// <param name="handlerClass">The handler interface.</param>
+        /// <returns>The built handler, shared by every provider over an equal source.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="handlerClass"/> is
+        /// <see langword="null"/>.</exception>
         public MetadataHandler revise(java.lang.Class handlerClass)
         {
             ArgumentNullException.ThrowIfNull(handlerClass);
@@ -129,16 +118,16 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Builds the handler of <paramref name="handlerClass"/> over <paramref name="provider"/>.
+        /// Builds the handler for <paramref name="handlerClass"/> over <paramref name="provider"/>.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <param name="type"></param>
-        /// <param name="handlerClass"></param>
-        /// <returns></returns>
+        /// <param name="provider">The provider whose handlers the new handler delegates to.</param>
+        /// <param name="type">The CLR type of the handler interface.</param>
+        /// <param name="handlerClass">The Java class of the handler interface, as <c>RelMetadataProvider.handlers</c> takes it.</param>
+        /// <returns>An emitted handler that dispatches each method to the first of the provider's distinct handlers declaring it for the rel's class.</returns>
         static MetadataHandler Build(RelMetadataProvider provider, Type type, java.lang.Class handlerClass)
         {
-            // handlers().stream().distinct(): the first of each, in the order the provider gave them, which
-            // is the order the chain resolves a rel class in
+            // handlers().stream().distinct(), as in Calcite: order matters, since the first handler to declare
+            // a rel class answers for it
             var list = provider.handlers(handlerClass);
             var underlying = new List<MetadataHandler>(list.size());
             for (int i = 0; i < list.size(); i++)
@@ -154,13 +143,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         /// <summary>
         /// Returns the methods of a handler interface, in the order Calcite indexes them.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>MetadataHandler.handlerMethods</c>: what the interface itself declares, less <c>getDef</c> and
-        /// anything static or synthetic, by name. Reading it from the CLR rather than calling it keeps the
-        /// members in the reflection the dispatch and the emitter are written in.
+        /// Mirrors <c>MetadataHandler.handlerMethods</c>: the interface's abstract instance methods other than
+        /// <c>getDef</c>, ordered by name, read as CLR methods.
         /// </remarks>
+        /// <param name="type">The CLR type of the handler interface.</param>
+        /// <returns>The methods, ordered by name.</returns>
         static MethodInfo[] Methods(Type type)
         {
             return type.GetMethods()
@@ -170,9 +158,9 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// Supplies a fresh query over this provider, which is what a cluster requires.
+        /// Supplies a new query over a provider on each call.
         /// </summary>
-        /// <param name="provider"></param>
+        /// <param name="provider">The provider each new query reads metadata from.</param>
         sealed class Supplier(ClrRelMetadataProvider provider) : java.util.function.Supplier
         {
 
