@@ -15,7 +15,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     ///
     /// <para><see cref="Rules"/> corresponds to <c>EnumerableRules.ENUMERABLE_RULES</c> plus the two converters
     /// between this convention and <c>EnumerableConvention</c>. It has no table modification or
-    /// <c>MATCH_RECOGNIZE</c> rule, because this convention has no such nodes; those are left to
+    /// <c>MATCH_RECOGNIZE</c> rule, because this convention does not yet have those nodes; they are left to
     /// <c>EnumerableConvention</c> and reach this convention through a converter. As in Calcite, the sorted
     /// aggregate, batch nested loop join and limit sort rules are not in the list, and neither is the
     /// interpreter rule; a caller adds them explicitly.</para>

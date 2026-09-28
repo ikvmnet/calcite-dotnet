@@ -93,8 +93,12 @@ version present; the POMs do not show it.
 - **`JavaCast` is for conversions Java performs implicitly** (boxing, unboxing, numeric promotion, `byte` sign
   extension), not for reconciling types that should already agree.
 - **A package-private Calcite member** can be ported, reached by a public route, or called via
-  `setAccessible(true)` and `ikvm.runtime.Util.getDelegateFromMethod` (see `JavaDelegates`). A
-  package-private *type* that Calcite casts to cannot be substituted; leave that part to Calcite.
+  `setAccessible(true)` and `ikvm.runtime.Util.getDelegateFromMethod` (see `JavaDelegates` and
+  `PhysTypeImplWorkaround`). A package-private *type* that Calcite casts to cannot be replaced by a lookalike
+  class, but the real one can be constructed the same way, through a delegate over its constructor
+  (`EnumerableMatchInputGetterTests`). A rename upstream then fails at run time, not at compile time.
+- **MATCH_RECOGNIZE has no node in this convention yet**; the planner leaves the subtree in
+  `EnumerableConvention` under a converter. Nothing prevents writing one.
 - **Metadata handlers are keyed by rel class.** Anything Calcite keys on an `Enumerable*` class needs the same
   handler keyed on the `ClrCursor*` class in `ClrCursorRelMetadata.Provider`, or an override on the node.
 - **`Rules()` goes on the planner; `CalcRules()` is a separate hep pass afterwards.** Calc and project rules on

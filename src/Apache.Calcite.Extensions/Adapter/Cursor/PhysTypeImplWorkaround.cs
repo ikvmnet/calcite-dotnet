@@ -1,5 +1,8 @@
 using System;
-using System.Reflection;
+
+using Apache.Calcite.Extensions.Interop;
+
+using IKVM.Runtime;
 
 using org.apache.calcite.adapter.enumerable;
 using org.apache.calcite.adapter.java;
@@ -20,12 +23,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     {
 
         /// <summary>
-        /// The package private <c>PhysTypeImpl.of(JavaTypeFactory, Type)</c>. IKVM compiles a package private
-        /// member to an internal one, which reflection can reach.
+        /// A delegate over the package private <c>PhysTypeImpl.of(JavaTypeFactory, Type)</c>.
         /// </summary>
-        static readonly MethodInfo OfJavaRowClass =
-            typeof(PhysTypeImpl).GetMethod("of", BindingFlags.NonPublic | BindingFlags.Static, [typeof(JavaTypeFactory), typeof(java.lang.reflect.Type)])
-            ?? throw new NotSupportedException("Calcite's PhysTypeImpl has no package private of(JavaTypeFactory, Type).");
+        /// <remarks>
+        /// The method is found by its Java name and signature, made accessible, and wrapped by
+        /// <c>ikvm.runtime.Util.getDelegateFromMethod</c>. If Calcite renames or removes it, the class
+        /// initializer throws.
+        /// </remarks>
+        static readonly MH<object, object, object> OfJavaRowClass = CreateOfJavaRowClass();
+
+        /// <summary>
+        /// Resolves <c>PhysTypeImpl.of(JavaTypeFactory, Type)</c> and returns a delegate that calls it.
+        /// </summary>
+        /// <returns>A delegate taking the type factory and the row class and returning the physical type.</returns>
+        static MH<object, object, object> CreateOfJavaRowClass()
+        {
+            var method = ((java.lang.Class)typeof(PhysTypeImpl)).getDeclaredMethod("of", (java.lang.Class)typeof(JavaTypeFactory), (java.lang.Class)typeof(java.lang.reflect.Type));
+            method.setAccessible(true);
+            return (MH<object, object, object>)JavaDelegates.FromMethod(method);
+        }
 
         /// <summary>
         /// Returns the physical type of a row described by a Java row class rather than a relational type.
@@ -33,23 +49,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="typeFactory">The type factory the physical type uses.</param>
         /// <param name="javaRowClass">The row class, such as a synthetic record over accumulator state types.</param>
         /// <returns>A physical type whose row class is <paramref name="javaRowClass"/>.</returns>
-        /// <remarks>
-        /// An exception Calcite throws is rethrown unwrapped, with its original stack trace.
-        /// </remarks>
         public static PhysType Of(JavaTypeFactory typeFactory, java.lang.reflect.Type javaRowClass)
         {
             ArgumentNullException.ThrowIfNull(typeFactory);
             ArgumentNullException.ThrowIfNull(javaRowClass);
 
-            try
-            {
-                return (PhysType)OfJavaRowClass.Invoke(null, [typeFactory, javaRowClass])!;
-            }
-            catch (TargetInvocationException e) when (e.InnerException is not null)
-            {
-                System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(e.InnerException).Throw();
-                throw;
-            }
+            return (PhysType)OfJavaRowClass(typeFactory, javaRowClass);
         }
 
     }

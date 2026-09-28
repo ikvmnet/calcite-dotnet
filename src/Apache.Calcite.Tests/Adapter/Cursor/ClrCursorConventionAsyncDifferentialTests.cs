@@ -905,11 +905,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// This convention has no MATCH_RECOGNIZE node, because <c>PassedRowsInputGetter</c> and
-        /// <c>PrevInputGetter</c> are package-private types Calcite casts to by name. The node is Calcite's, and
-        /// its input reaches <c>EnumerableConvention</c> through the converter out of this convention. Generated
-        /// Java cannot await, so the sub-plan under that converter is opened synchronously and the asynchronous
-        /// leaf inside it is read by blocking a thread per row.
+        /// This convention does not yet have a MATCH_RECOGNIZE node, so the node is Calcite's, and its input
+        /// reaches <c>EnumerableConvention</c> through the converter out of this convention. Generated Java
+        /// cannot await, so the sub-plan under that converter is opened synchronously and the asynchronous leaf
+        /// inside it is read by blocking a thread per row.
         /// </remarks>
         [Fact]
         public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()
