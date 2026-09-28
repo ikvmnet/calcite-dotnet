@@ -537,14 +537,20 @@ record. The cost is that a rename in a snapshot fails at run time, not compile t
 methods of the same name, and C# resolves the member to the method group. `Pair` is a `Map.Entry`, so
 `getKey()` and `getValue()` are the way in.
 
-**A package private *type* Calcite casts to cannot be ported at all.** The rule above is about members, and
-a member can be written again. `EnumerableMatch.PassedRowsInputGetter` and `PrevInputGetter` are types:
-`RexToLixTranslator.implementPrev` and `RexImpTable.LastImplementor` cast the input getter to them by name,
-and `RexToLixTranslator` suppresses its field-read cache for a `PrevInputGetter` specifically. A class of
-the same shape fails all three casts, and IKVM makes them `internal`, so C# can name them and cannot
-construct them. **Reflection is not the answer** — where this happens, either let Calcite build that part
-of the block, or accept that the node cannot be written. A MATCH_RECOGNIZE query still runs: the planner
-leaves the whole subtree in `EnumerableConvention` and one converter carries the rows.
+**A package private *type* Calcite casts to cannot be ported, but it can be constructed.** The rule above
+is about members, and a member can be written again. `EnumerableMatch.PassedRowsInputGetter` and
+`PrevInputGetter` are types: `RexToLixTranslator.implementPrev` and `RexImpTable.LastImplementor` cast the
+input getter to them by name, and `RexToLixTranslator` suppresses its field-read cache for a
+`PrevInputGetter` specifically. A class of the same shape fails all three casts, and IKVM makes them
+`internal`, so C# can name them and cannot call `new` on them. **A delegate over the constructor can** —
+`setAccessible(true)` and `ikvm.runtime.Util.getDelegateFromMethod`, as for a package private member — and
+what it returns is Calcite's own class, so every cast passes. `EnumerableMatchInputGetterTests` builds both,
+calls `setOffset` the same way, and reads a field through each. This file said for a long time that the
+node could not be written, and it was never true: Java's own `Constructor.newInstance` after
+`setAccessible` would have built them at any time. What stopped it was a line here reading "reflection is
+not the answer", written on the reasoning that a lookalike class fails the casts, which says nothing about
+constructing the real one. **The node is not written yet**: a MATCH_RECOGNIZE query runs because the
+planner leaves the whole subtree in `EnumerableConvention` and one converter carries the rows.
 
 **An anonymous class of one method is a lambda; one of several is a thing.** `Anonymous` turns the first
 into a lambda and the second into an object holding a delegate per method — `DelegateEnumerator` for the
