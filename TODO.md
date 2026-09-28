@@ -575,3 +575,22 @@ GitHub Packages already holds from the original build, and is skipped there as a
 carry different assemblies under one version, and a consumer restoring from both can get
 `Apache.Calcite.Data` compiled against members the `Apache.Calcite.Extensions` beside it lacks. Publish the
 build job's artifact instead.
+
+## A CLR counterpart of `QueryableTable`
+
+This project's table SPI has `IClrScannableTable` and `IClrCursorTable`, and no counterpart of
+`QueryableTable`. The one it had was removed rather than kept in a shape that could not be right: it was a
+`Table` with an element type and an expression compiled into the plan, and nothing more.
+
+What Calcite's `QueryableTable` is for, and what a counterpart would have to decide for each:
+
+- **`asQueryable`.** The part that gives the interface its purpose, and what the scan reads a
+  `QueryableTable` through (`Schemas.tableExpression` calls `Schemas.queryable`). The CLR's equivalent is an
+  `IQueryable<T>` whose provider receives the operators; whether anything above the scan would hand it any
+  is the first question.
+- **Writability.** `ModifiableTable` extends `QueryableTable`, so a writable table is one. A counterpart that
+  is not a route to modification leaves a .NET table implementing Calcite's interfaces to be writable.
+- **A declared element type.** Calcite's row formats for it are designed around erasure: a one-column
+  `QueryableTable` whose element type is `Object[]` yields the values themselves, which an
+  `IEnumerable<object[]>` cannot. A counterpart has to say what a declared type means for one column, for
+  `object`, and for a class (Calcite's CUSTOM format, which Calcite cannot compile for a root record).
