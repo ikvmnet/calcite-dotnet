@@ -520,13 +520,18 @@ a variable that no longer exists. `ClrCursorCorrelate` needs this.
 
 **Calcite keeps a lot of what a port needs package private** — `EnumUtils.joinSelector`,
 `generatePredicate`, `fieldTypes`, `fieldRowTypes`, `javaClass`, `EnumerableAggregateBase`'s four helpers,
-`PhysTypeImpl.of(typeFactory, javaRowType)` **and `PhysTypeImpl`'s own constructor** — so
-`PhysTypeImplWorkaround` has to go back out through the public `of`, and cannot pass the row class
-through the way Calcite does — `EnumerableWindow`'s five private helpers and its constructor,
+`PhysTypeImpl.of(typeFactory, javaRowType)` **and `PhysTypeImpl`'s own constructor** —
+`EnumerableWindow`'s five private helpers and its constructor,
 and **every `RexToLixTranslator.translate` overload** — only the `translateList` forms are public, and
 `translateList(operands, storageTypes)` is `translate(operand, storageType)` once per element, so a list of
 one is the same call by a reachable name. Expect to port rather than reuse, or to find a public route: a
-`ConverterRule`'s `convert` is public even when its node's constructor is not.
+`ConverterRule`'s `convert` is public even when its node's constructor is not. **Or call the member
+itself**: `setAccessible(true)` and `ikvm.runtime.Util.getDelegateFromMethod` (IKVM 8.16.0) give a
+delegate over a package private or private member, and `PhysTypeImplWorkaround` calls
+`PhysTypeImpl.of(typeFactory, javaRowType)` that way. That one *had* to be called rather than rewritten:
+going back out through the public `of` derives the row class again from an interned row type, and two
+accumulators with no public fields share one — `ST_UNION` after `ST_COLLECT` was handed the collect's
+record. The cost is that a rename in a snapshot fails at run time, not compile time.
 
 **A Calcite `Pair`'s `left` and `right` are unreachable from C#** — the fields are shadowed by the static
 methods of the same name, and C# resolves the member to the method group. `Pair` is a `Map.Entry`, so
