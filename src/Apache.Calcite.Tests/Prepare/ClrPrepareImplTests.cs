@@ -18,14 +18,14 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
 {
 
     /// <summary>
-    /// The ported members of <c>CalcitePrepareImpl</c> and <c>Prepare</c>, against the behaviour Calcite
-    /// specifies for them.
+    /// Tests of the members of <c>CalcitePrepareImpl</c> and <c>Prepare</c> that <see cref="ClrPrepareImpl"/>
+    /// ports, against the behaviour Calcite's source gives them.
     /// </summary>
     /// <remarks>
-    /// Every one of these is a private static there, so it is written again here rather than called, and a
-    /// row-level comparison cannot see most of them: a type name, a precision or an origin is reported to a
-    /// caller and never touches a value. Where Calcite's own member is reachable it is the oracle; where it
-    /// is not, the assertion states the behaviour its source specifies and names it.
+    /// Most of these members are private in Calcite, and most of what they produce (a type name, a precision,
+    /// an origin) is reported to a caller without affecting any row, so a row comparison cannot check them.
+    /// Where Calcite's member is reachable it is the oracle; otherwise the test asserts what its source does
+    /// and names the member.
     /// </remarks>
     public class ClrPrepareImplTests
     {
@@ -33,10 +33,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         static readonly JavaTypeFactoryImpl TypeFactory = new();
 
         /// <summary>
-        /// Prepares a statement and returns the one column it produces.
+        /// Prepares a statement and returns the column at <paramref name="ordinal"/>.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="ordinal">The zero-based position of the column.</param>
+        /// <returns>The column's metadata as <c>ClrPrepareImpl</c> reports it.</returns>
         static ColumnMetaData Column(string sql, int ordinal = 0)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -48,12 +49,14 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
 
         /// <summary>
         /// A one-column result is the value and a wider one is an array, whatever element type the caller
-        /// asked to prefer.
+        /// asks for.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <param name="expected">The name of the cursor factory's style.</param>
         /// <remarks>
         /// <c>Meta.CursorFactory.deduce</c> answers <c>OBJECT</c> for a single column before it looks at the
-        /// class at all, so preparing with <c>Object[]</c> — which every caller here does — does not make a
-        /// one-column row an array. An <c>EXPLAIN</c> is one column, and so is DML's <c>ROWCOUNT</c>.
+        /// class, so preparing with <c>Object[]</c> does not make a one-column row an array. An <c>EXPLAIN</c>
+        /// has one column, as does DML's <c>ROWCOUNT</c>.
         /// </remarks>
         [Theory]
         [InlineData("SELECT ID FROM SALES", "OBJECT")]
@@ -68,9 +71,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// <c>getTypeName</c> rewrites seven interval names and renders the collection types by
-        /// <c>toString</c>. Everything else is the SQL type's own name.
+        /// <c>getTypeName</c> rewrites seven interval names and renders the collection and row types by
+        /// <c>toString</c>; every other type reports its SQL type name.
         /// </summary>
+        /// <param name="sql">A statement of one column of the type under test.</param>
+        /// <param name="expected">The type name the column should report.</param>
         [Theory]
         [InlineData("SELECT INTERVAL '1' YEAR FROM SALES", "INTERVAL_YEAR")]
         [InlineData("SELECT INTERVAL '1-2' YEAR TO MONTH FROM SALES", "INTERVAL_YEAR_TO_MONTH")]
@@ -93,8 +98,8 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// </summary>
         /// <remarks>
         /// <c>getPrecision</c> and <c>getScale</c> test against <c>RelDataType.PRECISION_NOT_SPECIFIED</c>
-        /// and <c>SCALE_NOT_SPECIFIED</c>, which are -1. Reporting the sentinel would put -1 into
-        /// <c>ColumnMetaData</c> and out through the reader's schema table.
+        /// and <c>SCALE_NOT_SPECIFIED</c>, which are -1, so the sentinel never reaches <c>ColumnMetaData</c>
+        /// or the reader's schema table.
         /// </remarks>
         [Fact]
         public void Unspecified_precision_and_scale_should_be_zero()
@@ -113,8 +118,8 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// </summary>
         /// <remarks>
         /// <c>origin(origins, offsetFromEnd)</c> indexes <c>size() - 1 - offsetFromEnd</c>, and
-        /// <c>metaData</c> passes 0, 2 and 1 for the column, catalog and schema in that order. Getting the
-        /// direction wrong reports the catalog as the column name, which no row comparison would show.
+        /// <c>metaData</c> passes 0, 2 and 1 for the column, catalog and schema in that order. Reading from the
+        /// wrong end reports the catalog as the column name.
         /// </remarks>
         [Fact]
         public void Origins_should_be_read_from_the_end()
@@ -142,12 +147,12 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <summary>
         /// A column reports the class its Avatica type names, not <c>Object</c>.
         /// </summary>
+        /// <param name="sql">A statement of one column.</param>
+        /// <param name="expected">The Java class name the column should report.</param>
         /// <remarks>
-        /// Worth pinning because there are two class names in <c>prepare2_</c> and they differ.
-        /// <c>metaData</c> passes <c>avaticaType.columnClassName()</c> for a column, which follows the type;
-        /// <c>getClassName</c> — the one that returns <c>Object</c> unconditionally for CALCITE-2613 — is
-        /// used for an <c>AvaticaParameter</c> and nowhere else. Reading the wrong one for a column would
-        /// report every column as an Object and nothing about the rows would change.
+        /// <c>prepare2_</c> has two sources of a class name. <c>metaData</c> passes
+        /// <c>avaticaType.columnClassName()</c> for a column, which follows the type; <c>getClassName</c>, which
+        /// always returns <c>Object</c>, is used only for an <c>AvaticaParameter</c>.
         /// </remarks>
         [Theory]
         [InlineData("SELECT ID FROM SALES", "java.lang.Integer")]
@@ -161,9 +166,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <summary>
         /// A statement is DML for exactly four kinds and SELECT for everything else.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <param name="expected">The name of the statement type it should report.</param>
         /// <remarks>
-        /// <c>getStatementType(SqlKind)</c>. EXPLAIN is not among them, which is why an EXPLAIN reports
-        /// SELECT while taking the DML branch for its row type.
+        /// Mirrors <c>getStatementType(SqlKind)</c>. <c>EXPLAIN</c> is not among the four, so an
+        /// <c>EXPLAIN</c> reports <c>SELECT</c> while taking the DML branch for its row type.
         /// </remarks>
         [Theory]
         [InlineData("SELECT ID FROM SALES", "SELECT")]
@@ -180,9 +187,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// An EXPLAIN of a plan renders the plan; an EXPLAIN of a type renders the type.
         /// </summary>
         /// <remarks>
-        /// <c>Prepare.prepareSql</c> has two exits for an EXPLAIN and they are not the same: depth TYPE
-        /// leaves before flattening and renders <c>RelOptUtil.dumpType</c>, and the default depth renders
-        /// the plan after optimization. A port that took only one exit would answer both the same.
+        /// <c>Prepare.prepareSql</c> has two exits for an <c>EXPLAIN</c>: depth <c>TYPE</c> returns before
+        /// flattening and renders <c>RelOptUtil.dumpType</c>, and the default depth renders the plan after
+        /// optimization.
         /// </remarks>
         [Fact]
         public void Explain_of_a_type_should_render_the_type()
@@ -210,9 +217,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// An EXPLAIN reports one column of four null origins and no collations.
         /// </summary>
         /// <remarks>
-        /// <c>PreparedExplain.getFieldOrigins</c> returns <c>singletonList(nCopies(4, null))</c>, and it
-        /// implements <c>PreparedResult</c> directly rather than extending <c>PreparedResultImpl</c> — which
-        /// is why Calcite's own driver reports no collations for one, and why ours does too.
+        /// <c>PreparedExplain.getFieldOrigins</c> returns <c>singletonList(nCopies(4, null))</c>, and
+        /// <c>PreparedExplain</c> implements <c>PreparedResult</c> directly rather than extending
+        /// <c>PreparedResultImpl</c>, so Calcite reports no collations for it.
         /// </remarks>
         [Fact]
         public void Explain_should_report_one_column_and_no_collations()
@@ -229,9 +236,8 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// A negative limit means no limit and zero means zero rows.
         /// </summary>
         /// <remarks>
-        /// <c>CalciteSignature.enumerable</c> says it outright: "In JDBC 0 means no limit. But for us, -1
-        /// means no limit, and 0 is a valid limit." Taking JDBC's reading would return every row where the
-        /// caller asked for none.
+        /// This follows <c>CalciteSignature.enumerable</c>, where -1 means no limit and 0 is a valid limit,
+        /// unlike JDBC's reading of 0 as no limit.
         /// </remarks>
         [Fact]
         public void Zero_max_row_count_should_mean_zero_rows()
@@ -241,12 +247,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// A row of one column is the value, not a one-element array.
+        /// The cursor factory, which decides whether a one-column row is the value or an array, matches the
+        /// one Calcite deduces.
         /// </summary>
-        /// <remarks>
-        /// The cursor factory Calcite deduces decides this, and it is the shape that has broken twice. Read
-        /// against Calcite's own deduction rather than asserted by hand.
-        /// </remarks>
+        /// <param name="sql">The statement.</param>
         [Theory]
         [InlineData("SELECT ID FROM SALES")]
         [InlineData("SELECT * FROM SALES")]
@@ -290,9 +294,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// The internal parameters carry the conformance the statement was planned under.
         /// </summary>
         /// <remarks>
-        /// <c>CalcitePreparingStmt.implement</c> puts <c>_conformance</c> into its own map, and Calcite's
-        /// driver hands that map to the <c>DataContext</c>. Ours is the map the plan was built against
-        /// rather than the private one a subclass never writes to.
+        /// <c>CalcitePreparingStmt.implement</c> puts <c>_conformance</c> into its internal parameters, and
+        /// Calcite's driver hands that map to the <c>DataContext</c>. The signature exposes the map the plan was
+        /// built against.
         /// </remarks>
         [Fact]
         public void Internal_parameters_should_carry_the_conformance()
@@ -308,11 +312,12 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// The six statements <c>SIMPLE_SQLS</c> names skip planning and answer one row of one column
         /// called <c>EXPR$0</c>.
         /// </summary>
+        /// <param name="sql">One of the six statements, spelled exactly as <c>SIMPLE_SQLS</c> holds it.</param>
         /// <remarks>
         /// <c>prepare_</c> tests <c>SIMPLE_SQLS.contains(query.sql)</c> before it builds a catalog reader,
         /// and <c>simplePrepare</c> answers a signature over <c>ImmutableList.of(1)</c>. The column is
         /// <c>SqlUtil.deriveAliasFromOrdinal(0)</c>, and the row is a <c>java.lang.Integer</c> because a
-        /// one-column result is the value.
+        /// one-column row is the value itself.
         /// </remarks>
         [Theory]
         [InlineData("SELECT 1")]
@@ -336,13 +341,9 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// A statement <c>SIMPLE_SQLS</c> does not name is planned, and answers what the fast path would
-        /// have.
+        /// A statement <c>SIMPLE_SQLS</c> does not name is planned, and gives the same answer as the fast path:
+        /// <c>SELECT 1</c> is named and <c>SELECT  1</c>, with two spaces, is not.
         /// </summary>
-        /// <remarks>
-        /// The fast path is a short cut and not a different answer, which is the only thing about it worth
-        /// holding: <c>SELECT 1</c> is named and <c>SELECT  1</c>, two spaces, is not.
-        /// </remarks>
         [Fact]
         public void A_statement_the_fast_path_misses_should_answer_the_same()
         {
@@ -357,14 +358,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// <c>AGGREGATE</c> over a measure is expanded, which is what the <c>measure</c> pass does and
-        /// nothing else in the pipeline does.
+        /// <c>AGGREGATE</c> over a measure is expanded by the <c>measure</c> pass of <c>Programs.standard</c>.
         /// </summary>
         /// <remarks>
-        /// <c>Programs.measure</c> is <c>MeasureRules</c> guarded by <c>containsAggM2v</c> — a plan holding
-        /// an <c>AGG_M2V</c> aggregate call, which is what <c>AGGREGATE(m)</c> converts to. It is one of the
-        /// six passes <c>Programs.standard</c> runs, and without it the planner cannot implement the call.
-        /// The shape is <c>measure.iq</c>'s: <c>GROUP BY ()</c> is implicit under <c>AGGREGATE</c>.
+        /// <c>Programs.measure</c> runs <c>MeasureRules</c> when <c>containsAggM2v</c> finds an <c>AGG_M2V</c>
+        /// aggregate call, which is what <c>AGGREGATE(m)</c> converts to; without it the planner cannot
+        /// implement the call. The statement follows Calcite's <c>measure.iq</c>, where <c>GROUP BY ()</c> is
+        /// implicit under <c>AGGREGATE</c>.
         /// </remarks>
         [Fact]
         public void An_aggregate_over_a_measure_should_be_expanded()
@@ -384,14 +384,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// A correlated sub-query is decorrelated under <c>topDownGeneralDecorrelationEnabled</c>, which is
-        /// the flag that turns off the decorrelation <c>prepareSql</c> does.
+        /// A correlated sub-query is decorrelated when <c>topDownGeneralDecorrelationEnabled</c> is set.
         /// </summary>
         /// <remarks>
         /// <c>Prepare.prepareSql</c> decorrelates only when <c>forceDecorrelate</c> is set and this flag is
-        /// not, because the flag's decorrelation belongs to <c>DecorrelateProgram</c>, which
-        /// <c>Programs.standard</c> runs and which dispatches to <c>TopDownGeneralDecorrelator</c>. Both
-        /// halves have to be there or the query is planned with its correlation intact.
+        /// not. With the flag set, decorrelation is left to <c>DecorrelateProgram</c>, which
+        /// <c>Programs.standard</c> runs and which dispatches to <c>TopDownGeneralDecorrelator</c>; if either
+        /// half is missing the plan keeps its correlation.
         /// </remarks>
         [Fact]
         public void A_correlated_sub_query_should_decorrelate_top_down()

@@ -14,22 +14,17 @@ namespace Apache.Calcite.Data.Tests
     /// Tests that a view is expanded and queried correctly through the ADO.NET surface.
     /// </summary>
     /// <remarks>
-    /// View expansion is supplied by <c>CalcitePreparingStmt.expandView</c>, which the prepare path
-    /// reaches through Calcite's own preparing statement rather than through anything this project
-    /// writes. Nothing else in this suite queries a view, so a change to how the preparing statement is
-    /// constructed could drop view support without a single test failing. These are that test.
+    /// View expansion is the preparing statement's <c>expandView</c>, which nothing else in this suite
+    /// reaches.
     ///
     /// <para>Both routes to a view are covered, because they enter at different points: a view declared
     /// in the model is a <c>ViewTable</c> built by <c>ModelHandler</c> at connection time, while
     /// <c>CREATE VIEW</c> is a DDL statement executed by <c>ServerDdlExecutor</c> against a live schema.
     /// Only the second needs the server parser.</para>
     ///
-    /// <para><b>A view is not a table, and the metadata collections have to say so separately.</b> Both
-    /// routes register a view as a <c>TableMacro</c> of no arguments, which lands in the schema's function
-    /// map rather than its table map — so <c>getTableNames()</c> does not see one, and
-    /// <c>GetSchema("Tables")</c> listed no views at all until <c>CalciteSchemaInfo.TablesOf</c> started
-    /// reading the function map as well. Querying a view worked the whole time, which is why this needs
-    /// its own tests.</para>
+    /// <para>Both routes register a view as a <c>TableMacro</c> of no arguments, which lands in the
+    /// schema's function map rather than its table map, so <c>getTableNames()</c> does not see one. The
+    /// metadata tests check that <c>GetSchema</c> lists views from the function map as well.</para>
     /// </remarks>
     public class CalciteViewTests
     {
@@ -85,8 +80,7 @@ namespace Apache.Calcite.Data.Tests
         /// <c>ServerDdlExecutor.populate</c> — which is how <c>CREATE MATERIALIZED VIEW</c> and
         /// <c>CREATE TABLE ... AS SELECT</c> load their rows — builds its <c>INSERT</c> against
         /// <c>context.getRootSchema()</c> and nothing else, so a statement naming objects in a sub-schema
-        /// cannot resolve them. Upstream's own tests use a connection shaped like this one for the same
-        /// reason; see <see cref="Materialized_view_in_a_sub_schema_fails_before_a_runner_is_asked_for"/>.
+        /// cannot resolve them; see <see cref="Materialized_view_in_a_sub_schema_fails_before_a_runner_is_asked_for"/>.
         /// </remarks>
         static readonly string RootDdlConnectionString = new CalciteConnectionStringBuilder
         {
@@ -163,9 +157,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A view's row type is the source of the result's column metadata, so it is worth asserting
-        /// separately from the rows: the metadata is built from the validated row type rather than from
-        /// anything the view's plan produces.
+        /// The result's column metadata comes from the validated row type rather than from the rows, so it
+        /// is asserted separately.
         /// </summary>
         [Fact]
         public void Model_view_should_report_column_metadata()
@@ -292,7 +285,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A view is expanded against the schema path it was <i>declared</i> with, not the connection's, so
+        /// A view is expanded against the schema path it was declared with, not the connection's, so
         /// one in another schema resolves its own tables and is reachable by a qualified name.
         /// </summary>
         [Fact]
@@ -346,34 +339,25 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>A view's definition is analyzed under Calcite's default configuration, not this
-        /// connection's</b> — and that is Calcite's behaviour, not this provider's.
+        /// A view's definition is analyzed under Calcite's default configuration, not this connection's.
+        /// This is Calcite's behaviour, and a plain <c>jdbc:calcite:</c> connection behaves the same way.
         /// </summary>
         /// <remarks>
         /// <c>ViewTableMacro.apply</c> calls
         /// <c>Schemas.analyzeView(MaterializedViewTable.MATERIALIZATION_CONNECTION, ...)</c>, and
-        /// <c>Schemas.makeContext</c> builds its context from <c>connection.config()</c> — that connection
-        /// being a <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
+        /// <c>Schemas.makeContext</c> builds its context from <c>connection.config()</c>. That connection is a
+        /// <c>DriverManager.getConnection("jdbc:calcite:")</c> held in a <c>static final</c>, so its
         /// configuration is the default one. <c>CalcitePrepareImpl.parse_</c> builds the catalog reader and
         /// the validator from it, so <c>fun</c>, <c>conformance</c> and <c>caseSensitive</c> never reach a
-        /// view definition, even though <c>ClrPrepareImpl.PreparingStmt.expandView</c> uses the real configuration when
-        /// the view is later expanded into a plan.
+        /// view definition, even though <c>ClrPrepareImpl.PreparingStmt.expandView</c> uses the connection's
+        /// configuration when the view is expanded into a plan.
         ///
-        /// <para><b>Measured against stock Calcite, and it does the same.</b> A plain
-        /// <c>jdbc:calcite:</c> connection with <c>fun=standard,oracle</c> and this model evaluates
-        /// <c>NVL</c> in a query and answers
-        /// <c>No match found for function signature NVL(&lt;NUMERIC&gt;, &lt;NUMERIC&gt;)</c> for the same
-        /// expression inside the view — nothing of this project involved. So this is reproduced rather than
-        /// fixed: a divergence here would be one we own alone and could diff against nothing, and the
-        /// argument belongs upstream.</para>
-        ///
-        /// <para>Not <c>lex</c>, though — <c>parse_</c> parses with <c>createParser(sql)</c> and
-        /// <c>expandView</c> with <c>SqlParser.config()</c>, both Calcite's default, so a view definition's
-        /// quoting and casing never come from the connection either way.</para>
+        /// <para><c>lex</c> does not reach it either way: <c>parse_</c> parses with <c>createParser(sql)</c>
+        /// and <c>expandView</c> with <c>SqlParser.config()</c>, both Calcite's default.</para>
         ///
         /// <para>NVL is in Calcite's Oracle library and this connection asks for <c>standard,oracle</c>.
-        /// The first half of the test is what makes the second meaningful — without it, a failing second
-        /// half would only show that NVL resolves nowhere.</para>
+        /// The first half of the test shows the connection resolves NVL, so that the failure in the second
+        /// half is the view's.</para>
         /// </remarks>
         [Fact]
         public void Model_view_is_analyzed_under_calcites_default_config()
@@ -408,7 +392,7 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// A view registered through <c>ViewTable.viewMacro</c> is Calcite's macro, so it is
-        /// analyzed the same way — the extension is ergonomics, not semantics.
+        /// analyzed the same way.
         /// </summary>
         [Fact]
         public void Added_view_is_analyzed_under_calcites_default_config()
@@ -442,7 +426,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The extension registering a view that bridges two back ends, which is what it is for.
+        /// A view registered through <c>ViewTable.viewMacro</c> that joins two back ends.
         /// </summary>
         [Fact]
         public void Added_view_should_bridge_two_back_ends()
@@ -561,10 +545,9 @@ namespace Apache.Calcite.Data.Tests
         /// </summary>
         /// <remarks>
         /// A view is expanded to be described — <c>ViewTableMacro.apply</c> runs the whole front end over
-        /// its SQL — so where the restriction is applied is not a detail. Applied after, one unresolvable
-        /// view in a schema breaks every metadata call that touches that schema, including calls about
-        /// unrelated tables. <c>BROKEN</c> is here to fail if the ordering regresses; nothing in this test
-        /// mentions it.
+        /// its SQL — so the name restriction has to be applied before expansion. Applied after, one
+        /// unresolvable view breaks every metadata call on its schema. <c>BROKEN</c> fails the test if any
+        /// view other than the named one is expanded.
         /// </remarks>
         [Fact]
         public void GetSchema_Columns_for_one_view_should_not_expand_the_others()
@@ -593,9 +576,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The corollary, stated so it is not mistaken for an accident: an <i>unrestricted</i> listing does
-        /// expand every view, because <c>TABLE_TYPE</c> comes from the expanded table, so a schema holding
-        /// a view that no longer resolves cannot be listed whole.
+        /// An unrestricted listing expands every view, because <c>TABLE_TYPE</c> comes from the expanded
+        /// table, so a schema holding a view that does not resolve cannot be listed whole.
         /// </summary>
         [Fact]
         public void GetSchema_Tables_unrestricted_expands_every_view()
@@ -607,16 +589,14 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And so does a listing restricted to <c>TABLE</c>, which wants no views at all.
+        /// A listing restricted to <c>TABLE</c> also expands every view, although it returns none.
         /// </summary>
         /// <remarks>
-        /// The type restriction cannot be applied before the expansion the way the name one is:
-        /// <c>TABLE_TYPE</c> is <c>Table.getJdbcTableType()</c>, so a view is expanded in order to be
-        /// typed and only then discarded. Deciding it from the macro's class instead would be a guess —
-        /// <c>ViewTableMacro.apply</c> is overridable — and a wrong <c>TABLE_TYPE</c> is worse than a slow
-        /// one. Asserted so the asymmetry with
-        /// <see cref="GetSchema_Tables_for_one_view_should_not_expand_the_others"/> is on the record
-        /// rather than waiting to surprise someone.
+        /// Unlike the name restriction in
+        /// <see cref="GetSchema_Tables_for_one_view_should_not_expand_the_others"/>, the type restriction
+        /// cannot be applied before expansion: <c>TABLE_TYPE</c> is <c>Table.getJdbcTableType()</c>, so a
+        /// view is expanded in order to be typed and only then discarded. Deciding the type from the macro's
+        /// class instead would be a guess, because <c>ViewTableMacro.apply</c> is overridable.
         /// </remarks>
         [Fact]
         public void GetSchema_Tables_restricted_to_tables_still_expands_views()
@@ -628,8 +608,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A view created by DDL is registered the same way a model view is — as a macro — so it has to be
-        /// listed by the same route.
+        /// A view created by DDL is registered as a macro, as a model view is, and is listed the same way.
         /// </summary>
         [Fact]
         public void GetSchema_Tables_should_list_a_created_view_as_a_view()
@@ -684,7 +663,7 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// A view holds its definition, not its rows, so a row inserted after the view was created is in
-        /// it. This is what separates a view from the materialized view below.
+        /// it.
         /// </summary>
         [Fact]
         public void Created_view_should_see_rows_inserted_after_it_was_created()
@@ -905,11 +884,9 @@ namespace Apache.Calcite.Data.Tests
         /// A view joined to a real table, from a query that does not know it is a view.
         /// </summary>
         /// <remarks>
-        /// This is the property that makes a view usable as a table rather than as a saved query.
         /// <c>ViewTable</c> is a <c>TranslatableTable</c>, so the validator sees a name with a row type
-        /// and <c>SqlToRelConverter.toRel</c> replaces the scan with the view's own plan before the
-        /// planner sees anything — the join is built against the expanded subtree, not against an opaque
-        /// node, and the outer predicate can be pushed into it.
+        /// and <c>SqlToRelConverter</c> replaces the scan with the view's own plan before the planner sees
+        /// anything. The join is built against the expanded subtree.
         /// </remarks>
         [Fact]
         public void View_should_join_to_a_table()
@@ -947,12 +924,9 @@ namespace Apache.Calcite.Data.Tests
         /// A view whose definition joins two different back ends, then joined and aggregated from outside.
         /// </summary>
         /// <remarks>
-        /// One side is a table <c>CREATE TABLE</c> made, the other a <see cref="ViewTestBackEnd"/> —
-        /// a <c>Schema</c> of <c>ScannableTable</c>, which is all an adapter is to Calcite. Nothing about
-        /// crossing a back end is view-specific: expansion splices the view's plan into the caller's, and
-        /// what the planner then has is the same mixed plan a hand-written join across the two schemas
-        /// would produce, converters and all. That is the point of the test — the view is not a barrier,
-        /// so a query can join it, filter it and aggregate it without knowing what is underneath.
+        /// One side is a table <c>CREATE TABLE</c> made, the other a <see cref="ViewTestBackEnd"/>, a
+        /// <c>Schema</c> of <c>ScannableTable</c>. Expansion splices the view's plan into the caller's, so
+        /// the planner has the same mixed plan a hand-written join across the two schemas would produce.
         /// </remarks>
         [Fact]
         public void View_should_bridge_two_back_ends_and_still_join_and_aggregate()
@@ -1042,12 +1016,10 @@ namespace Apache.Calcite.Data.Tests
         /// A modifiable view does accept an INSERT, and fills the columns its own WHERE clause constrains.
         /// </summary>
         /// <remarks>
-        /// There is no SQL route to one: <c>ServerDdlExecutor</c> hard-codes <c>modifiable = false</c> and a
-        /// model view asking for <c>modifiable</c> can only sit over whatever the model can declare. So the
-        /// macro is registered through the schema SPI, over a table <c>CREATE TABLE</c> made — that being a
-        /// <c>MutableArrayTable</c>, which is the <c>ModifiableTable</c> the view needs underneath. This is
-        /// the one test here that reaches Calcite through <see cref="CalciteDataSourceBuilder.ConfigureRootSchema"/>
-        /// rather than through SQL, because that is the only way in.
+        /// <c>ServerDdlExecutor</c> hard-codes <c>modifiable = false</c>, and a model view asking for
+        /// <c>modifiable</c> can only sit over what the model can declare. So the macro is registered through
+        /// <see cref="CalciteDataSourceBuilder.ConfigureRootSchema"/>, over a table <c>CREATE TABLE</c> made:
+        /// a <c>MutableArrayTable</c>, which is the <c>ModifiableTable</c> the view needs underneath.
         /// </remarks>
         [Fact]
         public void Insert_into_a_modifiable_view_should_write_through_to_its_table()
@@ -1084,23 +1056,18 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------------
 
         /// <summary>
-        /// <c>CREATE MATERIALIZED VIEW</c> is refused, and this pins why.
+        /// <c>CREATE MATERIALIZED VIEW</c> is refused, with a message naming the statement.
         /// </summary>
         /// <remarks>
-        /// A materialized view is a real table holding a snapshot, so it has rows to load, and
-        /// <c>ServerDdlExecutor.populate</c> loads them by building an INSERT and calling
+        /// A materialized view is a table with rows to load, and <c>ServerDdlExecutor.populate</c> loads them
+        /// by building an INSERT and calling
         /// <c>context.getRelRunner().prepareStatement(rel).executeUpdate()</c>.
-        /// <c>RelRunner.prepareStatement</c> is declared to return a <c>java.sql.PreparedStatement</c>, and
-        /// this provider implements no JDBC, so <c>PrepareContext.getRelRunner</c> refuses.
+        /// <c>RelRunner.prepareStatement</c> returns a <c>java.sql.PreparedStatement</c>, and this provider
+        /// implements no JDBC, so <c>PrepareContext.getRelRunner</c> refuses.
         ///
-        /// <para>The planning half is not what is missing — <c>ClrPrepareImpl.PrepareSql</c> over an <c>IClrPrepare.Query.Of(rel)</c> is the
-        /// <c>prepare2_</c> branch Calcite's own runner uses. What is missing is a hundred-odd members of
-        /// <c>PreparedStatement</c> that exist so that two of them can be called.</para>
-        ///
-        /// <para><b>The table is created first and the statement fails after</b>, which is
-        /// <c>ServerDdlExecutor</c>'s ordering and not something this side can change; the assertion below
-        /// records it rather than pretending otherwise. <c>CREATE TABLE ... AS SELECT</c> shares the path —
-        /// see <c>CalciteDdlTests</c>.</para>
+        /// <para><c>ServerDdlExecutor</c> creates the table before it fills it, so the statement fails with
+        /// an empty table left behind. <c>CREATE TABLE ... AS SELECT</c> shares the path; see
+        /// <c>CalciteDdlTests</c>.</para>
         /// </remarks>
         [Fact]
         public void Create_materialized_view_should_be_refused_with_a_reason()
@@ -1118,24 +1085,19 @@ namespace Apache.Calcite.Data.Tests
             var ex = Assert.ThrowsAny<Exception>(() => cmd.ExecuteNonQuery());
             Assert.Contains("CREATE MATERIALIZED VIEW", ex.ToString(), StringComparison.Ordinal);
 
-            // upstream added the table before it tried to fill it, so the name now resolves and is empty
+            // ServerDdlExecutor adds the table before it fills it, so the name resolves to an empty table
             cmd.CommandText = "SELECT COUNT(*) FROM \"mv\"";
             Assert.Equal(0L, Convert.ToInt64(cmd.ExecuteScalar()));
         }
 
         /// <summary>
-        /// In a sub-schema the same statement fails earlier, and for a different reason that is Calcite's
-        /// rather than this project's.
+        /// In a sub-schema the same statement fails earlier, in Calcite, before a runner is asked for.
         /// </summary>
         /// <remarks>
         /// <c>populate</c> plans its INSERT through a <c>FrameworkConfig</c> whose default schema is
-        /// <c>context.getRootSchema().plus()</c> — the root, unconditionally — so neither the new table nor
-        /// the source of the query resolves when either lives one level down, and it fails at validation
-        /// before any runner is asked for. Upstream never sees it: <c>ServerTest.connect()</c> opens a
-        /// connection with no model, so everything it creates is in the root schema.
-        ///
-        /// <para>Worth keeping separate from the test above, because the two failures would not be fixed by
-        /// the same thing: a runner would not make this one work.</para>
+        /// <c>context.getRootSchema().plus()</c>, the root, so neither the new table nor the source of the
+        /// query resolves when either lives one level down, and validation fails. A runner would not make
+        /// this case work.
         /// </remarks>
         [Fact]
         public void Materialized_view_in_a_sub_schema_fails_before_a_runner_is_asked_for()

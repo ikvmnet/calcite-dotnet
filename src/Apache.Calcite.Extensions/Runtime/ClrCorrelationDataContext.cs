@@ -9,16 +9,14 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// A <see cref="DataContext"/> that answers a correlation variable by name and everything else from the
-    /// context it wraps.
+    /// A <see cref="DataContext"/> that answers the named correlation variables with the rows it was given,
+    /// and every other request from the context it wraps.
     /// </summary>
     /// <remarks>
-    /// What a sub-plan of the Clr convention reads its correlation variables through when it runs under a
-    /// correlate of Calcite's. <c>EnumerableCorrelate</c> makes the outer row a parameter of the Java lambda
-    /// it generates and the inner block reads it lexically; a sub-plan compiled apart from that lambda cannot
-    /// see the parameter, so the converter hands the row in through the context instead — as a row of the
-    /// <c>ARRAY</c> format whose fields Calcite's own getter read out of the parameter. The sub-plan's
-    /// implementor registers the variable as a read of <see cref="get"/> and reads its fields from there.
+    /// Used when a sub-plan of the cursor convention runs under Calcite's <c>EnumerableCorrelate</c>. The
+    /// correlate's generated Java code holds the outer row as a lambda parameter, which a separately compiled
+    /// sub-plan cannot see, so the converter passes each outer row in through this context as an
+    /// <c>object[]</c>, and the sub-plan reads it with <see cref="get"/>.
     /// </remarks>
     public sealed class ClrCorrelationDataContext : DataContext
     {
@@ -33,6 +31,9 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <param name="parent">The context the plan was bound with.</param>
         /// <param name="names">The correlation variables' names.</param>
         /// <param name="rows">The outer rows, one per name, each an <c>object[]</c> of the row's fields.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
+        /// <exception cref="ArgumentException"><paramref name="names"/> and <paramref name="rows"/> differ in
+        /// length.</exception>
         public ClrCorrelationDataContext(DataContext parent, string[] names, object?[] rows)
         {
             this.parent = parent ?? throw new ArgumentNullException(nameof(parent));

@@ -14,17 +14,23 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Planner rule that converts a <see cref="Join"/> expressed in the default calling
-    /// convention to an <see cref="AdoJoin"/> in the <see cref="AdoConvention"/>.
+    /// The rule that converts a logical <see cref="Join"/> into an <see cref="AdoJoin"/>. Mirrors
+    /// <c>JdbcRules.JdbcJoinRule</c>.
     /// </summary>
+    /// <remarks>
+    /// Semi- and anti-joins are not converted; other join types are. The condition may use only
+    /// input references, literals, dynamic parameters, <c>AND</c>, <c>OR</c>, the comparisons,
+    /// <c>IS [NOT] NULL</c>, <c>IS [NOT] TRUE</c>, <c>IS [NOT] FALSE</c>, <c>IS NOT DISTINCT FROM</c> and
+    /// <c>CAST</c>.
+    /// </remarks>
     public class AdoJoinRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoJoinRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to.</param>
+        /// <returns>The rule.</returns>
         public static AdoJoinRule Create(AdoConvention convention)
         {
             return (AdoJoinRule)Config.INSTANCE
@@ -67,14 +73,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoJoinRule(Config config) :
             base(config)
         {
 
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns an <see cref="AdoJoin"/> over the join's inputs converted to this convention, or
+        /// <see langword="null"/> where the join cannot be pushed down.
+        /// </summary>
+        /// <param name="rn">The join.</param>
+        /// <returns>The converted join, or <see langword="null"/>.</returns>
         public override RelNode? convert(RelNode rn)
         {
             var join = (Join)rn;
@@ -88,7 +99,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             }
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Builds the <see cref="AdoJoin"/>. Mirrors <c>JdbcJoinRule.convert(Join, boolean)</c>.
+        /// </summary>
+        /// <param name="join">The join.</param>
+        /// <param name="convertInputTraits">Whether to convert the inputs and check the condition.</param>
+        /// <returns>The converted join, or <see langword="null"/>.</returns>
         AdoJoin? Convert(Join join, bool convertInputTraits)
         {
             var n = new System.Collections.Generic.List<RelNode>(2);

@@ -8,14 +8,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Result of implementing a relational expression of the <see cref="ClrCursorConvention"/> calling
-    /// convention, as an open that acquires synchronously.
+    /// Result of <see cref="ClrCursorRel.Implement"/>: an expression that opens a cursor synchronously, and
+    /// the physical type of its rows.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRel.Result</c>. Calcite carries a linq4j block whose value is the
-    /// enumerable it returns; this carries the expression whose value is the opened cursor, a
-    /// <c>IClrCursor&lt;TRow&gt;</c> of the physical row type, because a parent composes it into its own
-    /// open rather than appending to a method body.
+    /// Mirrors <c>EnumerableRel.Result</c>, but carries an expression of type <c>IClrCursor&lt;TRow&gt;</c>
+    /// rather than a linq4j block, because a parent composes it into its own expression. Create one with
+    /// <see cref="ClrCursorRelImplementor.Result"/>.
     /// </remarks>
     public class ClrCursorResult
     {
@@ -23,13 +22,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="expression">Expression whose value is the opened cursor.</param>
-        /// <param name="physType">The Java type returned by this relational expression, and how it maps onto the fields of the logical row type.</param>
-        /// <param name="format">How a row is represented.</param>
+        /// <param name="expression">The expression whose value is the opened cursor.</param>
+        /// <param name="physType">The physical type of the rows.</param>
+        /// <param name="format">The row format.</param>
         /// <remarks>
-        /// Internal, so that <see cref="ClrCursorRelImplementor.Result"/> is the only way a node has of
-        /// making one. That method is where the cursor is required to carry the rows its physical type says
-        /// it carries, and a node that built its own result would not be asked.
+        /// Internal so that nodes create results through <see cref="ClrCursorRelImplementor.Result"/>, which
+        /// checks the cursor's element type against the physical type.
         /// </remarks>
         internal ClrCursorResult(Expression expression, ClrPhysType physType, JavaRowFormat format)
         {
@@ -44,13 +42,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         public Expression Expression { get; }
 
         /// <summary>
-        /// Gets the Java type returned by this relational expression, and how it maps onto the fields of the
-        /// logical row type.
+        /// Gets the physical type of the rows: their CLR type and how it maps onto the logical row type.
         /// </summary>
         public ClrPhysType PhysType { get; }
 
         /// <summary>
-        /// Gets how a row is represented.
+        /// Gets the row format.
         /// </summary>
         public JavaRowFormat Format { get; }
 

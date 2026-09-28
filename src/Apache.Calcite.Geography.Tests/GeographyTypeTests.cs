@@ -14,16 +14,13 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What a geography column's type is, which is Calcite's <c>GEOMETRY</c> and nothing of this package's
-    /// own.
+    /// Tests that the type <see cref="GeographyTypes.Of"/> returns is Calcite's <c>GEOMETRY</c>, carried by the
+    /// JTS <c>Geometry</c> class.
     /// </summary>
     /// <remarks>
-    /// There was a <c>GEOGRAPHY</c> type here — a <c>JavaType</c> subclass answering
-    /// <see cref="SqlTypeName.OTHER"/> — and it worked for a host that chained an operator table by hand. It
-    /// could not work for anything else: a schema function's parameter type is compared under
-    /// <c>SqlTypeAssignmentRule</c>, which has no entry for <c>OTHER</c> and asserts rather than rejects, and
-    /// a schema is the only way an adapter can bring its functions with it. These tests pin what was given up,
-    /// so that the giving up stays deliberate rather than becoming folklore.
+    /// There is no separate geography type: a schema function's parameter types are checked with
+    /// <c>SqlTypeAssignmentRule</c>, which has no entry for a type name such as <c>OTHER</c> and asserts rather
+    /// than rejects, and a schema is how an adapter brings its functions with it.
     /// </remarks>
     public class GeographyTypeTests
     {
@@ -37,7 +34,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The runtime carrier is an ordinary JTS geometry, asked either way round.
+        /// The type's Java class is JTS <c>Geometry</c>, whether asked of the type or of the type factory.
         /// </summary>
         [Fact]
         public void ShouldReportJtsGeometryAsItsJavaClass()
@@ -50,11 +47,10 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geography and a geometry are one type, and nothing tells them apart.
+        /// <see cref="GeographyTypes.IsGeometry"/> accepts both this type and Calcite's plain <c>GEOMETRY</c>.
         /// </summary>
         /// <remarks>
-        /// The cost of the design, stated as an assertion so that it cannot be mislaid. What says a value is
-        /// to be read geodesically is the name of the operator applied to it, and nothing else.
+        /// Only the name of the operator applied to a value says it is to be read geodesically.
         /// </remarks>
         [Fact]
         public void ShouldBeTheSameTypeAsCalcitesGeometry()
@@ -67,7 +63,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The type is interned, so two asks give one instance.
+        /// The type is interned, so two calls return the same instance.
         /// </summary>
         [Fact]
         public void ShouldInternTheType()
@@ -78,13 +74,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A column an adapter declares <c>NOT NULL</c> is still a geography column.
+        /// A column declared <c>NOT NULL</c> keeps the geometry type.
         /// </summary>
         /// <remarks>
-        /// The shape an adapter reaches for, and the one a type of this package's own could not survive:
-        /// <c>RelDataTypeFactoryImpl.copySimpleType</c> answers a change of a <c>JavaType</c>'s nullability by
-        /// constructing a plain one, so a subclass was dropped the first time a column was declared
-        /// <c>NOT NULL</c>. Being Calcite's own type, there is nothing left to drop.
+        /// <c>RelDataTypeFactoryImpl.copySimpleType</c> changes a <c>JavaType</c>'s nullability by constructing
+        /// a plain <c>JavaType</c>, which would lose any subclass.
         /// </remarks>
         [Fact]
         public void ShouldSurviveAColumnDeclaredNotNull()
@@ -100,17 +94,14 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geography and a geometry can be brought together.
+        /// The least restrictive type of this type and Calcite's plain <c>GEOMETRY</c>, as a <c>UNION</c>
+        /// computes, is a geometry.
         /// </summary>
-        /// <remarks>
-        /// <c>leastRestrictive</c> is what a <c>UNION</c> asks. It used to throw over one of each, reaching
-        /// the assignment rules for <c>OTHER</c>; there being one type, there is nothing left to refuse.
-        /// </remarks>
         [Fact]
         public void ShouldBringAnyTwoGeometriesTogether()
         {
             var typeFactory = GeographyFixture.TypeFactory();
-            // the java type and the plain SQL type are two instances, and a UNION over them settles
+            // the Java type and the SQL type are distinct instances
             var javaType = GeographyTypes.Of(typeFactory);
             var sqlType = typeFactory.createSqlType(SqlTypeName.GEOMETRY);
 

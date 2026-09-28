@@ -11,33 +11,30 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Thin wrapper over an object returned by Calcite. Provides the final conversion methods to coerce the type to and from various CLR
-    /// types.
+    /// One cell of a result row: the value Calcite produced, with its column's type and mapping, and the
+    /// conversions every reader accessor goes through.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <b>Nothing here knows a Java class or a <see cref="SqlTypeName"/>, and every accessor is one lookup
-    /// in the mapping table.</b> A typed getter answers where an entry pairs the column's
-    /// <see cref="RelDataType"/> with the type that getter returns, and refuses where none does — the same
-    /// rule <see cref="GetFieldValue{T}"/> follows and the same rule that decides what may be written, so
-    /// what a column can be read as is one table and not a table plus a switch that drifts from it. Which
-    /// classes Calcite holds a value in belongs to the mapping; a <c>DATE</c> is a count of days and a
-    /// <c>TIMESTAMP</c> a count of milliseconds, and neither is therefore an integer to a caller.
+    /// Every accessor is a lookup in the session's <see cref="ClrTypeRegistry"/>; nothing here switches on a
+    /// Java class or a <see cref="SqlTypeName"/>. A typed getter answers where the registry pairs the
+    /// column's <see cref="RelDataType"/> with the type the getter returns, and throws
+    /// <see cref="InvalidCastException"/> where it does not. That is the same table
+    /// <see cref="GetFieldValue{T}"/> and parameter binding use, so what a column can be read as and what can
+    /// be written to it cannot drift apart. Following <c>Microsoft.Data.SqlClient</c>, a typed getter is a
+    /// cast to one of the column's readings and never a conversion between types.
     /// </para>
-    ///
     /// <para>
-    /// Three Calcite types say nothing about what they hold — <c>ANY</c>, <c>OTHER</c> and <c>VARIANT</c> —
-    /// and there <b>the value's own class stands in for the declared type</b>. Standing in for it is all it
-    /// does: a <c>java.lang.Integer</c> in an <c>ANY</c> column is an <c>INTEGER</c>, so it reads through
-    /// <see cref="GetInt32"/> and <see cref="GetInt64"/> refuses it exactly as it refuses an
-    /// <c>INTEGER</c> column. What it adds is the case no column type could state: a
-    /// <c>java.sql.Timestamp</c> or a <c>java.time.LocalDate</c> says what it is by being what it is, and
-    /// <c>ANY</c> is not <c>TIMESTAMP</c> or <c>DATE</c>. Which types those are is
-    /// <see cref="ClrTypeMapping.DescribesValue"/>, so this does not carry a list of its own.
+    /// For the three Calcite types that do not describe their values — <c>ANY</c>, <c>OTHER</c> and
+    /// <c>VARIANT</c>, identified by <see cref="ClrTypeMapping.DescribesValue"/> — the value's own class
+    /// stands in for the declared type, with the same strictness: a <c>java.lang.Integer</c> in an
+    /// <c>ANY</c> column reads through <see cref="GetInt32"/> and is refused by <see cref="GetInt64"/>, as
+    /// in an <c>INTEGER</c> column.
     /// </para>
-    ///
-    /// <para><see cref="CalciteValues"/> holds the conversion itself, in both directions and recursively,
-    /// so that a collection of an <c>ANY</c> is read the same way the <c>ANY</c> is.</para>
+    /// <para>
+    /// <see cref="CalciteValues"/> holds the recursive conversion of collections, so a collection of
+    /// <c>ANY</c> is read the same way an <c>ANY</c> is.
+    /// </para>
     /// </remarks>
     internal readonly struct CalciteResultValue
     {
@@ -48,17 +45,16 @@ namespace Apache.Calcite.Data.Internal
         readonly object? _value;
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance with the column's mapping already resolved.
         /// </summary>
-        /// <param name="type"></param>
+        /// <param name="type">The column's Calcite type.</param>
         /// <param name="registry">The mappings the value is read through.</param>
         /// <param name="mapping">The mapping the column reads back through, or <see langword="null"/> where
-        /// the chain has none for its type.</param>
-        /// <param name="value"></param>
+        /// the registry has none for its type.</param>
+        /// <param name="value">The value as Calcite's runtime produced it.</param>
         /// <remarks>
-        /// The mapping is handed in rather than looked up, because it is a property of the column and not
-        /// of the value: resolving it here asked the registry once per cell, and the registry's key is
-        /// <c>getFullTypeString()</c>.
+        /// The mapping belongs to the column, so the result resolves it once and passes it to every cell
+        /// rather than each cell asking the registry.
         /// </remarks>
         public CalciteResultValue(RelDataType type, ClrTypeRegistry registry, ClrTypeMapping? mapping, object? value)
         {
@@ -69,11 +65,11 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Initializes a new instance, resolving the column's mapping.
+        /// Initializes a new instance, resolving the column's mapping from <paramref name="registry"/>.
         /// </summary>
-        /// <param name="type"></param>
+        /// <param name="type">The column's Calcite type.</param>
         /// <param name="registry">The mappings the value is read through.</param>
-        /// <param name="value"></param>
+        /// <param name="value">The value as Calcite's runtime produced it.</param>
         public CalciteResultValue(RelDataType type, ClrTypeRegistry registry, object? value) :
             this(type, registry, (registry ?? throw new ArgumentNullException(nameof(registry))).GetMapping(null, type ?? throw new ArgumentNullException(nameof(type))), value)
         {
@@ -84,26 +80,20 @@ namespace Apache.Calcite.Data.Internal
         /// Gets the value exactly as Calcite's runtime produced it, with nothing converted.
         /// </summary>
         /// <remarks>
-        /// The one thing on this type that is not a conversion, and the only way past the rule that no Java
-        /// object reaches a caller. It exists so a caller that knows Calcite can have what Calcite has —
-        /// a <c>UuidValue</c>, a JTS <c>Geometry</c>, a <c>VariantValue</c>, a <c>java.util.List</c> — rather
-        /// than the .NET reading of it.
+        /// The only member that can hand a Java object to a caller, through
+        /// <see cref="CalciteDataReader.GetCalciteValue"/>.
         /// </remarks>
         public object? CalciteValue => _value;
 
         /// <summary>
-        /// Returns the exception an accessor throws where the value is not the thing asked for.
+        /// Returns the exception an accessor throws where the value cannot be read as <paramref name="target"/>.
         /// </summary>
-        /// <param name="target"></param>
-        /// <param name="inner">The refusal the mapping layer made, where it is what decided this.</param>
-        /// <returns></returns>
+        /// <param name="target">The name of the type asked for.</param>
+        /// <param name="inner">The mapping layer's refusal, where that is what decided it.</param>
+        /// <returns>The exception to throw.</returns>
         /// <remarks>
-        /// <b>A null gets its own sentence.</b> The other one renders the value's class and the value, and a
-        /// null has neither, so it reads as two empty quotes and says nothing about the one fact there is.
-        /// The refusal itself is not in question: every typed getter here refuses a null, whether or not
-        /// its type could hold one, and <c>A_null_collection_should_be_refused</c> has held that for the two
-        /// spellings of <c>GetArray</c> since they were written. What the caller is missing is the name of
-        /// the accessor that answers instead.
+        /// A null gets its own message, naming <c>IsDBNull</c>, because the general message renders the
+        /// value's class and value and a null has neither.
         /// </remarks>
         InvalidCastException Cannot(string target, Exception? inner = null)
         {
@@ -115,16 +105,13 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the value converted by its own type, which is what an accessor over a column whose type
-        /// says nothing reads. Null everywhere else, so an arm written against it cannot fire for a column
-        /// that does say what it holds.
+        /// Returns the value converted according to its own class where the column's type does not describe
+        /// its values, and <see langword="null"/> for every other column.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The converted value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <b>Which columns those are is the mapping's answer, not a list of type names kept here.</b>
-        /// <c>ANY</c>, <c>OTHER</c> and <c>VARIANT</c> are the three, and the registry is where that is
-        /// written down; a second list here is one that falls behind it, and an accessor reading a column
-        /// the registry knows about and this does not refuses a value <c>GetValue</c> returns.
+        /// Which columns do not describe their values is <see cref="ClrTypeMapping.DescribesValue"/>, so this
+        /// keeps no list of type names of its own.
         /// </remarks>
         object? Untyped()
         {
@@ -132,14 +119,12 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the value as the column reads it back, through the mapping the result resolved once.
+        /// Returns the value as the column reads back by default, through the column's mapping.
         /// </summary>
         /// <returns>The .NET value, or <see langword="null"/> where the value is null.</returns>
-        /// <exception cref="ClrTypeMappingException">Where nothing maps the column's type.</exception>
+        /// <exception cref="ClrTypeMappingException">No mapping covers the column's type.</exception>
         /// <remarks>
-        /// What <c>ClrTypeRegistry.FromCalcite</c> does, with the lookup already made: it is the column's
-        /// mapping and not the value's, so asking per value asked the same question of the same type for
-        /// every row.
+        /// <c>ClrTypeRegistry.FromCalcite</c> with the lookup already made.
         /// </remarks>
         object? Read()
         {
@@ -153,30 +138,19 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the value read as <typeparamref name="T"/>, which is the whole of what a typed getter is.
+        /// Reads the value as <typeparamref name="T"/>; the implementation of every typed getter.
         /// </summary>
-        /// <typeparam name="T">The CLR type the accessor answers with.</typeparam>
-        /// <param name="target">The name of that type, as the refusal spells it.</param>
-        /// <returns></returns>
-        /// <exception cref="InvalidCastException">Where nothing carries the column to
-        /// <typeparamref name="T"/>.</exception>
+        /// <typeparam name="T">The type the getter returns.</typeparam>
+        /// <param name="target">The name of that type, for the exception message.</param>
+        /// <returns>The value.</returns>
+        /// <exception cref="InvalidCastException">The value is null, or the registry has no mapping between
+        /// the column's type and <typeparamref name="T"/>.</exception>
         /// <remarks>
-        /// <para>
-        /// <b>A typed getter is the mapping table asked for one pair.</b> An entry exists for the column's
-        /// Calcite type and <typeparamref name="T"/>, or the column is not that thing — which is the same
-        /// rule <c>GetFieldValue{T}</c> follows and the same rule that decides what may be written. There is
-        /// no second table of what an accessor accepts, because a second table is a table that drifts.
-        /// </para>
-        /// <para>
-        /// <b>And it is the Calcite type that is asked about, never the class the value arrives in.</b>
-        /// Calcite stores a <c>DATE</c> as a count of days in a <c>java.lang.Integer</c> and a
-        /// <c>TIMESTAMP</c> as a count of milliseconds in a <c>java.lang.Long</c>, so matching the class
-        /// would let <c>GetInt32</c> answer 18263 for 2020-01-02 out of a column this reader's own
-        /// <c>GetFieldType</c> calls a <see cref="DateTime"/>. The table pairs a <c>DATE</c> with
-        /// <see cref="DateTime"/> and <see cref="DateOnly"/> and with nothing else, and that is the whole
-        /// of what is allowed — which is what <c>ClrTypeMapping.RepresentationType</c> exists to keep
-        /// apart from <c>ClrType</c>: the class a value is held in is not the type it is.
-        /// </para>
+        /// The mapping is looked up by the column's Calcite type, never by the class the value is held in.
+        /// Calcite holds a <c>DATE</c> as a count of days in a <c>java.lang.Integer</c>, so matching on the
+        /// class would let <c>GetInt32</c> return a day count from a column <c>GetFieldType</c> reports as
+        /// <see cref="DateTime"/>. <c>ClrTypeMapping.RepresentationType</c> and <c>ClrType</c> keep the
+        /// holding class and the presented type apart for this reason.
         /// </remarks>
         T Get<T>(string target)
         {
@@ -203,17 +177,14 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns <c>true</c> if the value is DBNull.
+        /// Returns whether the value is a SQL null.
         /// </summary>
-        /// <returns></returns>
+        /// <returns><see langword="true"/> where the value is null.</returns>
         /// <remarks>
-        /// <b>Two spellings, because a variant's null is an object.</b> Everywhere else Calcite holds a SQL
-        /// null as a Java null, and there is no API of Calcite's that says otherwise — <c>SqlFunctions</c>
-        /// has no null predicate, and <c>NullSentinel</c> is a placeholder the metadata cache and the
-        /// profiler use and never reaches a row. A <c>VARIANT</c> is the exception: a <c>VariantSqlNull</c>
-        /// is a SQL null that remembers the type it was null of, and a <c>VariantNull</c> is the variant
-        /// type's own null, the one a JSON <c>null</c> parses to. An ADO.NET caller has one null and all
-        /// three are it.
+        /// Calcite holds a SQL null as a Java null everywhere except in a <c>VARIANT</c>, where a
+        /// <c>VariantSqlNull</c> (a SQL null that remembers its type) and a <c>VariantNull</c> (the variant's
+        /// own null, which a JSON <c>null</c> parses to) are objects. The column's mapping recognizes those,
+        /// and all three are null to an ADO.NET caller.
         /// </remarks>
         public bool IsDbNull()
         {
@@ -221,31 +192,28 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetFieldValue operation.
+        /// Implements <c>GetFieldValue&lt;T&gt;</c>.
         /// </summary>
-        /// <typeparam name="T"></typeparam>
-        /// <returns></returns>
+        /// <typeparam name="T">The type asked for.</typeparam>
+        /// <returns>The value as <typeparamref name="T"/>, or <see langword="null"/> for a null value where
+        /// <typeparamref name="T"/> can hold one.</returns>
+        /// <exception cref="InvalidCastException">The value is null and <typeparamref name="T"/> is a
+        /// non-nullable value type, or none of the steps below reaches <typeparamref name="T"/>.</exception>
         /// <remarks>
+        /// <para>Tries, in order:</para>
+        /// <list type="number">
+        /// <item>The column's default reading, as <see cref="GetValue"/> returns it, so
+        /// <c>GetFieldValue&lt;object&gt;</c> matches <see cref="GetValue"/> and <c>GetFieldValue&lt;int[]&gt;</c>
+        /// reads an <c>INTEGER ARRAY</c>.</item>
+        /// <item>The registry's mapping between the column's type and <typeparamref name="T"/>, which reaches a
+        /// reading that is not the default — a <c>DATE</c> as <see cref="DateOnly"/> rather than
+        /// <see cref="DateTime"/>.</item>
+        /// <item>A collection or map reshaped to the element types <typeparamref name="T"/> names, such as
+        /// <c>object[]</c> for a column that reads back as <c>int[]</c>.</item>
+        /// </list>
         /// <para>
-        /// <b>This is <see cref="GetValue"/> and the two things a type argument can say that it cannot.</b>
-        /// The column's own reading is tried first, so <c>GetFieldValue&lt;object&gt;()</c> answers what
-        /// <see cref="GetValue"/> answers and <c>GetFieldValue&lt;int[]&gt;()</c> answers an
-        /// <c>INTEGER ARRAY</c> without anything further.
-        /// </para>
-        /// <para>
-        /// What a type argument adds is a choice. A Calcite type may have more than one reading — a
-        /// <c>DATE</c> is a <see cref="DateTime"/> by default and a <see cref="DateOnly"/> when asked — and
-        /// naming one selects the mapping that carries it, which is the only way to reach a reading that is
-        /// nobody's default. Naming element types is the same choice one level down, and reaches a shape the
-        /// conversion did not produce: an <c>object[]</c> where the column reads back as an <c>int[]</c>.
-        /// </para>
-        /// <para>
-        /// <b>And nothing else.</b> There were twenty branches below this calling the typed getters, and a
-        /// last arm that handed back the Java object when a caller named its class. The first became dead
-        /// when this went through the type mappings — measured, across every pair they could answer, the two
-        /// arms above them answer all of it — and the second was a second way out of the rule that no Java
-        /// object reaches a caller, reached without naming a method that admits it.
-        /// <c>CalciteDataReader.GetCalciteValue</c> is that, by name.
+        /// Naming the Java class the value is held in is refused, with a message pointing to
+        /// <see cref="CalciteDataReader.GetCalciteValue"/>; that method is the only route to a Java object.
         /// </para>
         /// </remarks>
         public T GetFieldValue<T>()
@@ -275,8 +243,8 @@ namespace Apache.Calcite.Data.Internal
                 if (_registry.GetMapping(Nullable.GetUnderlyingType(target) ?? target, _type) is { } named && named.FromCalcite(_value) is T asked)
                     return asked;
 
-                // a collection or a map whose element types the caller named rather than the ones the values
-                // measured, which is the one shape the conversion above cannot have produced
+                // a collection or a map with element types the caller named rather than the ones the elements
+                // share, a shape the default conversion does not produce
                 if (CalciteValues.TryConvertTo(_value, _type, target, out var shaped) && shaped is T reshaped)
                     return reshaped;
             }
@@ -298,9 +266,9 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetValue operation.
+        /// Implements <c>GetValue</c>: the column's default reading, or <see cref="DBNull.Value"/> for a null.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value, or <see cref="DBNull.Value"/>.</returns>
         public object GetValue()
         {
             // a variant holding a null converts to one, so the coalesce is reachable and not a formality
@@ -308,34 +276,37 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetBoolean operation.
+        /// Implements <c>GetBoolean</c>.
         /// </summary>
+        /// <returns>The value as a <see cref="bool"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public bool GetBoolean() => Get<bool>("Boolean");
 
         /// <summary>
-        /// Implements the GetString operation.
+        /// Implements <c>GetString</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="string"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public string GetString() => Get<string>("String");
 
         /// <summary>
-        /// Implements the GetChar operation. A <c>CHAR</c> column means a character: Calcite's
-        /// runtime representation of the character family is a string, so the value converts
-        /// when the SQL type is <c>CHAR</c> and the string holds exactly one character. Any
-        /// other SQL type or length is not a character and does not convert.
+        /// Implements <c>GetChar</c>. Calcite holds character data as a string; the registry reads it as a
+        /// <see cref="char"/> only for a <c>CHAR</c> column holding exactly one character.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="char"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public char GetChar() => Get<char>("Char");
 
         /// <summary>
-        /// Implements the GetBytes operation to a destination buffer.
+        /// Implements <c>GetBytes</c>: copies bytes from a binary value into <paramref name="buffer"/>.
         /// </summary>
-        /// <param name="dataOffset"></param>
-        /// <param name="buffer"></param>
-        /// <param name="bufferOffset"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
-        /// <exception cref="InvalidOperationException"></exception>
+        /// <param name="dataOffset">The offset in the value to start copying from.</param>
+        /// <param name="buffer">The destination, or <see langword="null"/> to return the value's length.</param>
+        /// <param name="bufferOffset">The offset in <paramref name="buffer"/> to copy to.</param>
+        /// <param name="length">The maximum number of bytes to copy.</param>
+        /// <returns>The number of bytes copied, the value's length where <paramref name="buffer"/> is
+        /// <see langword="null"/>, or 0 for a null value.</returns>
+        /// <exception cref="InvalidCastException">The value does not read back as a <see cref="byte"/> array.</exception>
         public long GetBytes(long dataOffset, byte[]? buffer, int bufferOffset, int length)
         {
             if (_value is null)
@@ -357,13 +328,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetChars operation to a destination buffer.
+        /// Implements <c>GetChars</c>: copies characters from a string value into <paramref name="buffer"/>.
         /// </summary>
-        /// <param name="dataOffset"></param>
-        /// <param name="buffer"></param>
-        /// <param name="bufferOffset"></param>
-        /// <param name="length"></param>
-        /// <returns></returns>
+        /// <param name="dataOffset">The offset in the value to start copying from.</param>
+        /// <param name="buffer">The destination, or <see langword="null"/> to return the value's length.</param>
+        /// <param name="bufferOffset">The offset in <paramref name="buffer"/> to copy to.</param>
+        /// <param name="length">The maximum number of characters to copy.</param>
+        /// <returns>The number of characters copied, or the value's length where <paramref name="buffer"/> is
+        /// <see langword="null"/>.</returns>
+        /// <exception cref="InvalidCastException">The value is null or does not read as a string.</exception>
         public long GetChars(long dataOffset, char[]? buffer, int bufferOffset, int length)
         {
             var s = GetString();
@@ -380,64 +353,58 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetDateTime operation. Only valid for DATE and TIMESTAMP columns.
+        /// Implements <c>GetDateTime</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="DateTime"/>, read through the registry's mapping for the
+        /// column's type.</returns>
         public DateTime GetDateTime() => Get<DateTime>("DateTime");
 
         /// <summary>
-        /// Implements the GetDateTimeOffset operation. Only valid for zoned TIMESTAMP / TIME columns.
+        /// Implements <c>GetDateTimeOffset</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="DateTimeOffset"/>, read through the registry's mapping for the
+        /// column's type.</returns>
         public DateTimeOffset GetDateTimeOffset() => Get<DateTimeOffset>("DateTimeOffset");
 
         /// <summary>
-        /// Implements the GetTimeSpan operation. Only valid for TIME columns.
+        /// Implements <c>GetTimeSpan</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="TimeSpan"/>, read through the registry's mapping for the
+        /// column's type.</returns>
         public TimeSpan GetTimeSpan() => Get<TimeSpan>("TimeSpan");
 
         /// <summary>
-        /// Implements the GetDecimal operation.
+        /// Implements <c>GetDecimal</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="decimal"/>, read through the registry's mapping for the
+        /// column's type.</returns>
         public decimal GetDecimal() => Get<decimal>("Decimal");
 
         /// <summary>
-        /// Implements the GetDouble operation.
+        /// Implements <c>GetDouble</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="double"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public double GetDouble() => Get<double>("Double");
 
         /// <summary>
-        /// Implements the GetFloat operation.
+        /// Implements <c>GetFloat</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="float"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public float GetFloat() => Get<float>("Single");
 
         /// <summary>
-        /// Implements the GetArray operation.
+        /// Implements <c>GetArray</c>: reads an <c>ARRAY</c> or <c>MULTISET</c> column as an array of the
+        /// element type's default reading.
         /// </summary>
         /// <returns>The column's value as an array.</returns>
-        /// <exception cref="InvalidCastException">Where the column is not a collection.</exception>
+        /// <exception cref="InvalidCastException">The value is null, or the column is not a collection.</exception>
         /// <remarks>
-        /// <para>
-        /// A collection is a core Calcite type and ADO.NET has no accessor for one, so this is the
-        /// provider's. <c>ARRAY</c> and <c>MULTISET</c> both read as an array, differing in whether the
-        /// order of the elements means anything rather than in what holds them, so both answer here; a
-        /// <c>MAP</c> does not, being pairs.
-        /// </para>
-        /// <para>
-        /// Strict like every other typed getter: a column that is not a collection is refused rather than
-        /// wrapped in an array of one. The exception is a column whose type says nothing — an <c>ANY</c> or
-        /// a <c>VARIANT</c> — where the value's own class decides here as it does everywhere else, so a
-        /// list in an <c>ANY</c> column reads through this.
-        /// </para>
-        /// <para>
-        /// The array is of whatever the element type reads back as, so an <c>INTEGER ARRAY</c> is an
-        /// <c>int[]</c> and an <c>INTEGER ARRAY ARRAY</c> an <c>int[][]</c>, and an element that may be null
-        /// makes it an <c>int?[]</c>, an array having no other way to carry one.
-        /// </para>
+        /// A column counts as a collection where its mapping is a <see cref="CollectionClrTypeMapping"/>, so a
+        /// <c>VARBINARY</c>, whose reading is a <c>byte[]</c>, is refused. A <c>MAP</c> is refused. A column
+        /// that does not describe its values (<c>ANY</c>, <c>VARIANT</c>) answers where its value reads back
+        /// as an array. A nullable element type gives an array of <see cref="Nullable{T}"/>.
         /// </remarks>
         public Array GetArray()
         {
@@ -463,29 +430,19 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetArray operation for a caller that names the element type.
+        /// Implements <c>GetArray&lt;T&gt;</c>: reads a collection column as an array of
+        /// <typeparamref name="T"/>.
         /// </summary>
         /// <typeparam name="T">The element type.</typeparam>
         /// <returns>The column's value as an array of <typeparamref name="T"/>.</returns>
-        /// <exception cref="InvalidCastException">Where the column is not a collection, or nothing carries
-        /// its elements to <typeparamref name="T"/>.</exception>
+        /// <exception cref="InvalidCastException">The value is null, the column is not a collection, or no
+        /// mapping carries its elements to <typeparamref name="T"/>.</exception>
         /// <remarks>
-        /// <para>
-        /// The same conversion as <see cref="GetArray"/>, with the element type named instead of taken from
-        /// the column. Naming it <em>selects a mapping</em> rather than casting the result: a <c>DATE</c>
-        /// reads back as a <see cref="DateTime"/> by default and as a <see cref="DateOnly"/> when asked,
-        /// because the chain carries both, and asking is the only way to reach the second.
-        /// </para>
-        /// <para>
-        /// Which is why this walks the collection rather than converting it and casting. The conversion
-        /// answers the column's own reading, and a cast can only narrow what that produced — it cannot
-        /// reach a conversion that was never run.
-        /// </para>
-        /// <para>
-        /// The array is exactly <c>T[]</c>, so a null element in a column whose elements may be null is
-        /// refused where <typeparamref name="T"/> is a value type. <c>GetArray&lt;int?&gt;</c> is how a
-        /// caller says it expects one.
-        /// </para>
+        /// Goes through <see cref="GetFieldValue{T}"/> for <c>T[]</c>, so naming the element type selects the
+        /// elements' mapping rather than casting the default result: a <c>DATE ARRAY</c> read as
+        /// <see cref="DateOnly"/> converts each element. Unlike <see cref="GetFieldValue{T}"/>, a null column
+        /// is refused rather than returned as <see langword="null"/>. A null element is refused where
+        /// <typeparamref name="T"/> is a non-nullable value type.
         /// </remarks>
         public T[] GetArray<T>()
         {
@@ -498,74 +455,86 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Implements the GetGuid operation. Calcite's runtime representation of <c>UUID</c> is a
-        /// <see cref="java.util.UUID"/>, and that is the only thing this reads: a character column
-        /// holding text in canonical GUID form is a character column, and parsing it here would be
-        /// <see cref="GetGuid"/> answering for a type the column does not have. <c>CAST(x AS UUID)</c> is
-        /// how a caller says it means one.
+        /// Implements <c>GetGuid</c>. Reads a <c>UUID</c> column, which Calcite holds as a <c>UuidValue</c>.
+        /// A character column holding GUID text is not read as one; <c>CAST(x AS UUID)</c> makes it one.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="Guid"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public Guid GetGuid() => Get<Guid>("Guid");
 
         /// <summary>
-        /// Implements the GetInt16 operation.
+        /// Implements <c>GetInt16</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="short"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public short GetInt16() => Get<short>("Int16");
 
         /// <summary>
-        /// Implements the GetInt32 operation.
+        /// Implements <c>GetInt32</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as an <see cref="int"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public int GetInt32() => Get<int>("Int32");
 
         /// <summary>
-        /// Implements the GetInt64 operation.
+        /// Implements <c>GetInt64</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="long"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public long GetInt64() => Get<long>("Int64");
 
         /// <summary>
-        /// Implements the GetByte operation. A <see cref="byte"/> is a <c>TINYINT UNSIGNED</c>, which
-        /// Calcite's runtime holds as an <c>org.joou.UByte</c>; a signed <c>TINYINT</c> is not one.
+        /// Implements <c>GetByte</c>. A <see cref="byte"/> is a <c>TINYINT UNSIGNED</c>, which Calcite holds as
+        /// an <c>org.joou.UByte</c>; a signed <c>TINYINT</c> is not one.
         /// </summary>
+        /// <returns>The value as a <see cref="byte"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public byte GetByte() => Get<byte>("Byte");
 
         /// <summary>
-        /// Implements the GetSByte operation. An <see cref="sbyte"/> is a <c>TINYINT</c>, which Java
-        /// signs and Calcite holds as a <c>java.lang.Byte</c>.
+        /// Implements <c>GetSByte</c>. An <see cref="sbyte"/> is a <c>TINYINT</c>, which Calcite holds as a
+        /// signed <c>java.lang.Byte</c>.
         /// </summary>
+        /// <returns>The value as an <see cref="sbyte"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public sbyte GetSByte() => Get<sbyte>("SByte");
 
         /// <summary>
-        /// Implements the GetUInt16 operation. A <see cref="ushort"/> is a <c>SMALLINT UNSIGNED</c>,
-        /// which Calcite's runtime holds as an <c>org.joou.UShort</c>.
+        /// Implements <c>GetUInt16</c>. A <see cref="ushort"/> is a <c>SMALLINT UNSIGNED</c>, which Calcite
+        /// holds as an <c>org.joou.UShort</c>.
         /// </summary>
+        /// <returns>The value as a <see cref="ushort"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public ushort GetUInt16() => Get<ushort>("UInt16");
 
         /// <summary>
-        /// Implements the GetUInt32 operation. A <see cref="uint"/> is an <c>INTEGER UNSIGNED</c>, which
-        /// Calcite's runtime holds as an <c>org.joou.UInteger</c>.
+        /// Implements <c>GetUInt32</c>. A <see cref="uint"/> is an <c>INTEGER UNSIGNED</c>, which Calcite
+        /// holds as an <c>org.joou.UInteger</c>.
         /// </summary>
+        /// <returns>The value as a <see cref="uint"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public uint GetUInt32() => Get<uint>("UInt32");
 
         /// <summary>
-        /// Implements the GetUInt64 operation. A <see cref="ulong"/> is a <c>BIGINT UNSIGNED</c>, which
-        /// Calcite's runtime holds as an <c>org.joou.ULong</c>; a <c>DECIMAL</c> wide enough to hold the
-        /// same number is still a <c>DECIMAL</c>.
+        /// Implements <c>GetUInt64</c>. A <see cref="ulong"/> is a <c>BIGINT UNSIGNED</c>, which Calcite holds
+        /// as an <c>org.joou.ULong</c>; a <c>DECIMAL</c> is not read as one whatever its value.
         /// </summary>
+        /// <returns>The value as a <see cref="ulong"/>, read through the registry's mapping for the column's
+        /// type.</returns>
         public ulong GetUInt64() => Get<ulong>("UInt64");
 
         /// <summary>
-        /// Implements the GetDateOnly operation. Only valid for DATE columns.
+        /// Implements <c>GetDateOnly</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="DateOnly"/>, read through the registry's mapping for the
+        /// column's type.</returns>
         public DateOnly GetDateOnly() => Get<DateOnly>("DateOnly");
 
         /// <summary>
-        /// Implements the GetTimeOnly operation. Only valid for TIME columns.
+        /// Implements <c>GetTimeOnly</c>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The value as a <see cref="TimeOnly"/>, read through the registry's mapping for the
+        /// column's type.</returns>
         public TimeOnly GetTimeOnly() => Get<TimeOnly>("TimeOnly");
 
     }

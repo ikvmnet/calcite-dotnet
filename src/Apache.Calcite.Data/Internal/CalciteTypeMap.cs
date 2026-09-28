@@ -5,16 +5,22 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Centralizes mappings between Calcite SQL types, CLR types, and ADO.NET <see cref="DbType"/> values.
+    /// Maps between CLR types and ADO.NET <see cref="DbType"/> values for parameters.
     /// </summary>
+    /// <remarks>
+    /// A parameter's <see cref="DbType"/> is inferred from its value with <see cref="ToDbType"/>, and
+    /// <see cref="ParameterBinder"/> turns a <see cref="DbType"/> back into the CLR type it uses to select a
+    /// mapping with <see cref="ToClrType"/>. Result columns do not go through this class.
+    /// </remarks>
     internal static class CalciteTypeMap
     {
 
         /// <summary>
-        /// Returns the <see cref="DbType"/> that best represents the supplied CLR type.
+        /// Returns the <see cref="DbType"/> for a CLR type, or <see cref="DbType.Object"/> where none fits.
         /// </summary>
-        /// <param name="clrType"></param>
-        /// <returns></returns>
+        /// <param name="clrType">The CLR type; a nullable value type is treated as its underlying type.</param>
+        /// <returns>The <see cref="DbType"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="clrType"/> is <see langword="null"/>.</exception>
         public static DbType ToDbType(Type clrType)
         {
             if (clrType is null)
@@ -48,10 +54,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the canonical CLR type for the supplied <see cref="DbType"/>.
+        /// Returns the CLR type a <see cref="DbType"/> stands for, or <see cref="object"/> where none fits.
         /// </summary>
-        /// <param name="dbType"></param>
-        /// <returns></returns>
+        /// <param name="dbType">The <see cref="DbType"/>.</param>
+        /// <returns>The CLR type.</returns>
+        /// <remarks>
+        /// <see cref="DbType.Date"/> gives <see cref="DateTime"/> and <see cref="DbType.Time"/> gives
+        /// <see cref="TimeSpan"/>, so this is not the inverse of <see cref="ToDbType"/> for
+        /// <see cref="DateOnly"/> and <see cref="TimeOnly"/>.
+        /// </remarks>
         public static Type ToClrType(DbType dbType)
         {
             return dbType switch

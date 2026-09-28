@@ -9,39 +9,33 @@ namespace Apache.Calcite.Geography.Rel.Type
 {
 
     /// <summary>
-    /// The type this package deals in, which is Calcite's own <c>GEOMETRY</c>.
+    /// The SQL type of a geography, which is Calcite's own <c>GEOMETRY</c>.
     /// </summary>
     /// <remarks>
-    /// There is no <c>GEOGRAPHY</c> type. A geography and a geometry are the same type, carried by the same
-    /// class, and what says a value is to be read geodesically is the name of the operator applied to it —
-    /// <c>CLR_ST_GEOG_DISTANCE</c> rather than <c>ST_DISTANCE</c>. That is the whole marking.
+    /// There is no <c>GEOGRAPHY</c> type. A value is read geodesically because a <c>CLR_ST_GEOG_*</c> operator is
+    /// applied to it, and the type does not record which reading is meant.
     ///
-    /// <para>It is not the design anyone would choose first, and it is the only one Calcite permits.
-    /// <c>SqlTypeName</c> is a closed enum, so a type of this package's own has to impersonate one of
-    /// Calcite's; and the enum is not a label but the key to the tables that make a type behave — the
-    /// assignment rules, the coercion rules, the family map, <c>getJavaClass</c>. A name with no entry in
-    /// the assignment table is not rejected but asserted on, so a function declared through a schema over
-    /// such a type takes the validator down. Since a schema is the only way an adapter can bring its
-    /// functions with it, and bringing them is the point, the type gives way to the registration.</para>
+    /// <para><c>SqlTypeName</c> is a closed enum, and a type outside it (reported as <c>OTHER</c>) makes Calcite's
+    /// routine resolution fail with an assertion when a function over it is declared on a schema. Using
+    /// <c>GEOMETRY</c> is what allows <see cref="Schema.GeographySchema"/> to exist.</para>
     ///
-    /// <para>What that costs is a mixed expression nothing refuses:
-    /// <c>CLR_ST_GEOG_DISTANCE(ST_BUFFER(g, 0.1), h)</c> buffers in degrees and then measures in metres, and
-    /// both halves run. There is no run-time guard underneath either — see
-    /// <c>SridPropagationTests</c>: Calcite's own spatial functions drop the SRID off a geometry they
-    /// derive, so a stamp cannot be relied on to say what a value means.</para>
+    /// <para>As a consequence nothing prevents mixing the readings: <c>CLR_ST_GEOG_DISTANCE(ST_BUFFER(g, 0.1), h)</c>
+    /// buffers by 0.1 degrees and then measures in metres. Nor can an SRID guard against it, because Calcite's own
+    /// spatial functions return results with an SRID of zero.</para>
     /// </remarks>
     public static class GeographyTypes
     {
 
         /// <summary>
-        /// Returns the type a geography column has, which is Calcite's <c>GEOMETRY</c>.
+        /// Returns the type to declare a geography column with.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <returns></returns>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <returns>The type <c>createJavaType</c> gives JTS <c>Geometry</c>, which Calcite reports as <c>GEOMETRY</c>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="typeFactory"/> is <c>null</c>.</exception>
         /// <remarks>
-        /// <c>createJavaType(Geometry.class)</c> rather than <c>createSqlType(GEOMETRY)</c>, because that is
-        /// what <c>ScalarFunctionImpl</c> derives from an <c>ST_*</c> method's signature and so what every
-        /// declaration here has to line up with.
+        /// A Java type rather than <c>createSqlType(GEOMETRY)</c>, because that is the type <c>ScalarFunctionImpl</c>
+        /// derives from a method taking a <c>Geometry</c>, and so the type Calcite's <c>ST_*</c> functions and these
+        /// operators are declared with.
         /// </remarks>
         public static RelDataType Of(RelDataTypeFactory typeFactory)
         {
@@ -51,15 +45,13 @@ namespace Apache.Calcite.Geography.Rel.Type
         }
 
         /// <summary>
-        /// Returns whether the given type is a geometry — which is to say, whether a <c>CLR_ST_GEOG_</c>
-        /// operator can be applied to it.
+        /// Returns whether a type is a geometry, and so can be passed to a <c>CLR_ST_GEOG_*</c> operator.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// There is no predicate that tells a geography from a geometry, because there is nothing to tell
-        /// apart. Both spellings of the question answer this.
-        /// </remarks>
+        /// <param name="type">The type, or <c>null</c>.</param>
+        /// <returns>
+        /// <c>true</c> for the Java type of JTS <c>Geometry</c> or any type whose <c>SqlTypeName</c> is
+        /// <c>GEOMETRY</c>; <c>false</c> otherwise, including for <c>null</c>.
+        /// </returns>
         public static bool IsGeometry(RelDataType? type)
         {
             if (type is null)

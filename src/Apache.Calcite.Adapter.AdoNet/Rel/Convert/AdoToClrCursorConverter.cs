@@ -20,22 +20,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Relational operator that converts a tree of <see cref="AdoConvention"/> nodes into a
-    /// <see cref="ClrCursorConvention"/> result by executing the generated SQL against the underlying
-    /// ADO.NET data source.
+    /// Runs a subtree of an <see cref="AdoConvention"/> as one SQL statement and hands its rows to
+    /// <see cref="ClrCursorConvention"/>. The counterpart of <see cref="AdoToEnumerableConverter"/>, generating the
+    /// same SQL.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <see cref="AdoToEnumerableConverter"/>, generating the same SQL by the same route,
-    /// and the leaf the cursor convention exists for. The rows are read
-    /// through <see cref="AdoCursors"/>, which hands the <see cref="DbDataReader"/> back as the cursor: an
-    /// advance of the plan is an advance of the reader, and the token a caller gives
-    /// <c>ReadAsync</c> is the token the provider's <c>ReadAsync</c> is given.
-    ///
-    /// <para><b>Two bodies, and one line between them.</b> <see cref="Implement"/> opens with
-    /// <see cref="AdoCursors.Open{TRow}"/>, which opens the connection and sends the statement there, and
-    /// <see cref="ImplementAsync"/> with <see cref="AdoCursors.OpenAsync{TRow}"/>, which does both with
-    /// await under the open's token. Everything else — the SQL, the parameters, the enricher, the row
-    /// builder — is the same code building the same tree, because none of it is about the cursor.</para>
+    /// <para>
+    /// The rows are read through <see cref="AdoCursors"/>, which returns the provider's
+    /// <see cref="DbDataReader"/> as the plan's cursor: each read of the plan is one read of the provider's
+    /// reader, and the token given to <c>ReadAsync</c> is passed to the provider's <c>ReadAsync</c>.
+    /// </para>
+    /// <para>
+    /// <see cref="Implement"/> opens with <see cref="AdoCursors.Open{TRow}"/> and <see cref="ImplementAsync"/> with
+    /// <see cref="AdoCursors.OpenAsync{TRow}"/>, which opens the connection and executes asynchronously under the
+    /// open's token. The SQL, parameters and row builder are the same in both.
+    /// </para>
     /// </remarks>
     public class AdoToClrCursorConverter : ConverterImpl, ClrCursorRel
     {
@@ -56,9 +55,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="input"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traits">The traits, whose convention is <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The subtree of the <see cref="AdoConvention"/>.</param>
         public AdoToClrCursorConverter(RelOptCluster cluster, RelTraitSet traits, RelNode input) :
             base(cluster, ConventionTraitDef.INSTANCE, traits, input)
         {
@@ -71,11 +70,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             return new AdoToClrCursorConverter(getCluster(), traitSet, (RelNode)sole(inputs));
         }
 
-        /// <inheritdoc />
-        /// <remarks>
-        /// <c>JdbcToEnumerableConverter.computeSelfCost</c>, this converter being that one with the rows
-        /// handed to a cursor rather than to a Java enumerable.
-        /// </remarks>
+        /// <summary>
+        /// Returns the base cost multiplied by 0.1. Mirrors <c>JdbcToEnumerableConverter.computeSelfCost</c>.
+        /// </summary>
+        /// <param name="planner">The planner.</param>
+        /// <param name="mq">The metadata query.</param>
+        /// <returns>The cost, or <see langword="null"/>.</returns>
         public override RelOptCost? computeSelfCost(RelOptPlanner planner, org.apache.calcite.rel.metadata.RelMetadataQuery mq)
         {
             var cost = base.computeSelfCost(planner, mq);
@@ -86,6 +86,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
+        /// <exception cref="AdoCalciteException">The input is not an <see cref="AdoRel"/> of an <see cref="AdoConvention"/>.</exception>
         public ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (getInput() is not AdoRel self)
@@ -106,14 +107,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var sql = writer.toSqlString().getSql();
             Hook.QUERY_PLAN.run(sql);
 
-            // the schema SPI defines a convention's expression as linq4j, so this is the one thing here that
-            // arrives as a linq4j tree, and it is translated where it is produced rather than composed into
-            // anything first. Everything else this node builds is an expression tree from the start.
+            // the schema SPI gives the convention's expression as linq4j; it is translated here, where it is
+            // produced
             var dataSource = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
 
-            // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
-            // live on the context the builder closed over the outer row. Without the enricher the command is
-            // handed to the provider unfilled.
+            // each parameter in the SQL, whether a dynamic parameter or a correlation variable, is filled from
+            // the context when the command is created
             var enricher = parameters.isEmpty()
                 ? (Expression)Expression.Constant(null, typeof(DbCommandEnricher))
                 : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
@@ -128,6 +127,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <inheritdoc />
+        /// <exception cref="AdoCalciteException">The input is not an <see cref="AdoRel"/> of an <see cref="AdoConvention"/>.</exception>
         public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (getInput() is not AdoRel self)
@@ -148,21 +148,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
             var sql = writer.toSqlString().getSql();
             Hook.QUERY_PLAN.run(sql);
 
-            // the schema SPI defines a convention's expression as linq4j, so this is the one thing here that
-            // arrives as a linq4j tree, and it is translated where it is produced rather than composed into
-            // anything first. Everything else this node builds is an expression tree from the start.
+            // the schema SPI gives the convention's expression as linq4j; it is translated here, where it is
+            // produced
             var dataSource = implementor.Translator.Translate(Schemas.unwrap(convention.Expression, typeof(AdoDataSource)));
 
-            // a correlated sub-query leaves a parameter per correlation variable in the SQL, and the values
-            // live on the context the builder closed over the outer row. Without the enricher the command is
-            // handed to the provider unfilled.
+            // each parameter in the SQL, whether a dynamic parameter or a correlation variable, is filled from
+            // the context when the command is created
             var enricher = parameters.isEmpty()
                 ? (Expression)Expression.Constant(null, typeof(DbCommandEnricher))
                 : Expression.Call(null, CreateEnricherMethod, dataSource, Expression.Constant(parameters), Expression.Constant(parameterTypeNames), dataContextBuilder.Build());
 
-            // through ClrCursorBuiltInMethod.CallAsync rather than Expression.Call, because the open ends
-            // in a CancellationToken like every other awaiting one, and that is what appends the
-            // implementor's token parameter
+            // CallAsync appends the implementor's cancellation token as the last argument
             return implementor.ResultAsync(physType,
                 ClrCursorBuiltInMethod.CallAsync(implementor,
                     OpenAsyncMethod.MakeGenericMethod(rowType),
@@ -174,20 +170,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 
 
         /// <summary>
-        /// Builds the delegate that reads one row from the data reader.
+        /// Builds the lambda that reads the reader's current row as a <paramref name="rowType"/>.
         /// </summary>
-        /// <param name="physType"></param>
-        /// <param name="rowType"></param>
-        /// <returns></returns>
+        /// <param name="physType">The row's physical type.</param>
+        /// <param name="rowType">The CLR type of a row.</param>
+        /// <returns>A <c>Func&lt;DbDataReader, TRow&gt;</c> lambda.</returns>
         /// <remarks>
-        /// The shape of a row is decided by how many fields it has, exactly as
-        /// <see cref="AdoToEnumerableConverter"/> decides it, because <c>JavaRowFormat.optimize</c> has
-        /// already told the physical type the same thing: no field is a null, one field is the value itself,
-        /// and only beyond that is a row an array.
-        ///
-        /// <para>Shared with <see cref="ImplementAsync"/>, which builds the same delegate
-        /// against the same reader: a row is the same thing whichever way the plan is opened and nothing
-        /// about building one from a materialized reader position awaits.</para>
+        /// As in <see cref="AdoToEnumerableConverter"/>, and matching <c>JavaRowFormat.optimize</c>: a row of no
+        /// fields is <see langword="null"/>, a row of one field is that field's value, and a wider row is an
+        /// <c>object[]</c>.
         /// </remarks>
         internal static Expression RowBuilder(ClrPhysType physType, Type rowType)
         {
@@ -208,9 +199,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
                 body = Expression.NewArrayInit(typeof(object), values);
             }
 
-            // the reader hands back a CLR value already, so what is left is the conversion a row of this
-            // shape needs: unboxing where the row is one column of a value type, and nothing at all where it
-            // is the Object[] every wider row is
+            // a one-column row is cast from object to its row type; an object[] row needs nothing
             if (body.Type != rowType)
                 body = Expression.Convert(body, rowType);
 
@@ -218,16 +207,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Returns the expression reading one field of the reader's current row.
+        /// Returns a call to <see cref="AdoReaderUtil.GetDbReaderValue(DbDataReader, int, SqlTypeName)"/> that reads
+        /// one field as its declared SQL type, whatever CLR type the provider returns.
         /// </summary>
-        /// <param name="reader"></param>
-        /// <param name="physType"></param>
-        /// <param name="index"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The declared SQL type decides how the value is read, not whatever the provider chose to surface it
-        /// as, so the row holds what the plan was built against.
-        /// </remarks>
+        /// <param name="reader">The reader parameter.</param>
+        /// <param name="physType">The row's physical type.</param>
+        /// <param name="index">The field's ordinal.</param>
+        /// <returns>The call.</returns>
         static Expression ReadField(ParameterExpression reader, ClrPhysType physType, int index)
         {
             var fieldType = ((RelDataTypeField)physType.RelRowType.getFieldList().get(index)).getType();
@@ -240,17 +226,15 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Generates the SQL string to implement the sequence.
+        /// Translates the subtree to SQL, applies the syntax's rewrite, and writes the statement with each
+        /// parameter named as the driver binds it.
         /// </summary>
-        /// <param name="convention"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="dataContextBuilder"></param>
-        /// <param name="input"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// Shared with <see cref="ImplementAsync"/>: the statement a subtree of the
-        /// adapter's convention becomes does not depend on how its rows are read.
-        /// </remarks>
+        /// <param name="convention">The convention, whose dialect and syntax the statement is written in.</param>
+        /// <param name="typeFactory">The type factory.</param>
+        /// <param name="dataContextBuilder">Registers each correlation variable the statement reads.</param>
+        /// <param name="input">The root of the subtree.</param>
+        /// <param name="implementor">The implementor used, which records each correlation variable's SQL type.</param>
+        /// <returns>The writer, holding the SQL and the variable index behind each parameter.</returns>
         internal static AdoSqlWriter GenerateSql(AdoConvention convention, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder, AdoRel input, out AdoImplementor implementor)
         {
             implementor = new AdoImplementor(convention.Dialect, typeFactory, dataContextBuilder);

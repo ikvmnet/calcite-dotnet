@@ -8,8 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="ExchangeFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// Exchange operators are not supported by the ADO adapter; this factory always throws.
+    /// An <see cref="ExchangeFactory"/> that throws: the adapter has no exchange node.
     /// </summary>
     public class AdoExchangeFactory : ExchangeFactory
     {

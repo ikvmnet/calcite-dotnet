@@ -21,23 +21,25 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What <see cref="GeographyRules"/> takes out of a plan, and that the rows are the same either way.
+    /// Tests the rewrites <see cref="GeographyRules"/> makes, and the operator declarations Calcite's own
+    /// simplifications read.
     /// </summary>
     /// <remarks>
-    /// Every rewrite is pinned twice: once as a plan, which is what it is for, and once against the rows the
-    /// same statement answers without the pass, which is the only thing that says the rewrite was sound.
+    /// Each rewrite is checked against the plan text, and where it can change a result, against the rows the
+    /// same statement returns without the pass.
     /// </remarks>
     public class GeographySimplificationTests
     {
 
         /// <summary>
-        /// Plans the given query into <c>EnumerableConvention</c>, with or without the pass.
+        /// Plans a query into <c>EnumerableConvention</c>, with an executor set, with or without the pass.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="simplify">Whether to run <see cref="GeographyRules.Program"/> in front.</param>
-        /// <param name="chained">Whether to chain the operator table rather than declare on the
-        /// schema.</param>
-        /// <returns></returns>
+        /// <param name="sql">The query text.</param>
+        /// <param name="simplify">Whether to run <see cref="GeographyRules.Program"/> before
+        /// <c>Programs.standard</c>.</param>
+        /// <param name="chained">Whether to supply the operators as an operator table rather than register
+        /// them on the schema.</param>
+        /// <returns>The physical plan.</returns>
         static RelNode Plan(string sql, bool simplify, bool chained = true)
         {
             var schema = Frameworks.createRootSchema(true);
@@ -61,23 +63,26 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The plan as a string, which is what each rewrite is pinned against.
+        /// Returns <see cref="Plan"/>'s result as text.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="simplify"></param>
-        /// <param name="chained"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query text.</param>
+        /// <param name="simplify">Whether to run <see cref="GeographyRules.Program"/> before <c>Programs.standard</c>.</param>
+        /// <param name="chained">Whether to supply the operators as an operator table rather than register them on the
+        /// schema.</param>
+        /// <returns>The physical plan as text.</returns>
         static string Explain(string sql, bool simplify, bool chained = true)
         {
             return RelOptUtil.toString(Plan(sql, simplify, chained));
         }
 
         /// <summary>
-        /// Runs the given query, with or without the pass, and returns the rows.
+        /// Runs a query, with or without the pass over its logical plan, and returns the rows with each value
+        /// as a string.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="simplify"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query text.</param>
+        /// <param name="simplify">Whether to run <see cref="GeographyRules.Program"/> over the logical plan before
+        /// executing it.</param>
+        /// <returns>The rows, each value as its string form or <c>null</c>.</returns>
         static List<object?[]> Run(string sql, bool simplify)
         {
             java.lang.Class.forName("org.apache.calcite.jdbc.Driver");
@@ -117,21 +122,22 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Runs the pass over a logical plan, which is the whole of what a host does with it.
+        /// Runs <see cref="GeographyRules.Program"/> over a logical plan.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>Programs.hep</c> builds its own <c>HepPlanner</c> and ignores the planner it is handed, so
-        /// there is nothing to pass one.
+        /// The planner argument is null because <c>Programs.hep</c> builds its own <c>HepPlanner</c> and
+        /// ignores the one it is given.
         /// </remarks>
+        /// <param name="rel">The logical plan to rewrite.</param>
+        /// <returns>The plan after the pass.</returns>
         static RelNode Simplify(RelNode rel)
         {
             return GeographyRules.Program().run(null!, rel, rel.getTraitSet(), java.util.Collections.emptyList(), java.util.Collections.emptyList());
         }
 
         /// <summary>
-        /// Both crossings are the identity, so a round trip is two dispatches per row and nothing else.
+        /// A round trip through <c>CLR_ST_GEOM_ASGEOG</c> and <c>CLR_ST_GEOG_ASGEOM</c>, both identities, is
+        /// removed.
         /// </summary>
         [Fact]
         public void ShouldDropACrossingRoundTrip()
@@ -143,14 +149,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A crossing that changes the type is not a crossing that converts nothing, and stays.
+        /// A conversion that changes the SQL type is kept.
         /// </summary>
         /// <remarks>
-        /// The two routes do not type a call alike: this package's operator answers
-        /// <c>createJavaType(Geometry.class)</c>, which is what the column is, and the one
-        /// <c>CalciteCatalogReader.toOp</c> builds around the schema declaration answers Calcite's
-        /// <c>GEOMETRY</c>. So the inner crossing of the same round trip is a real change of type on the
-        /// schema route, and dropping it would hand the outer expression something else.
+        /// This package's operator returns <c>createJavaType(Geometry.class)</c>, the column's type, while the
+        /// operator <c>CalciteCatalogReader.toOp</c> builds from the schema declaration returns Calcite's
+        /// <c>GEOMETRY</c>. Resolved through the schema, the inner conversion of the round trip changes the
+        /// type, so only the outer one is removed.
         /// </remarks>
         [Fact]
         public void ShouldKeepACrossingThatChangesTheType()
@@ -164,7 +169,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Two spellings of one function become one expression, so it is evaluated once.
+        /// A synonym is rewritten to the canonical name, so both spellings become one expression evaluated
+        /// once.
         /// </summary>
         [Theory]
         [InlineData("CLR_ST_GEOG_ASTEXT", "CLR_ST_GEOG_ASWKT")]
@@ -185,8 +191,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// <c>Disjoint</c> is <c>Intersects</c> negated, so a negation of either is the other, and an adapter
-        /// sees a bare call rather than one under a <c>NOT</c>.
+        /// <c>NOT</c> of <c>CLR_ST_GEOG_DISJOINT</c> becomes <c>CLR_ST_GEOG_INTERSECTS</c> and vice versa, so an
+        /// adapter sees a bare call.
         /// </summary>
         [Theory]
         [InlineData("CLR_ST_GEOG_DISJOINT", "CLR_ST_GEOG_INTERSECTS")]
@@ -205,7 +211,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A relation written in terms of another becomes that one, operands the other way round.
+        /// <c>CONTAINS</c> becomes <c>WITHIN</c>, and <c>COVEREDBY</c> becomes <c>COVERS</c>, with the operands
+        /// swapped.
         /// </summary>
         [Theory]
         [InlineData("CLR_ST_GEOG_CONTAINS", "CLR_ST_GEOG_WITHIN")]
@@ -224,7 +231,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A distance compared against a bound is the predicate a geodesic store can answer from an index.
+        /// <c>CLR_ST_GEOG_DISTANCE(a, b) &lt;= d</c> becomes <c>CLR_ST_GEOG_DWITHIN(a, b, d)</c>, which a geodesic
+        /// store can answer from an index.
         /// </summary>
         [Fact]
         public void ShouldRewriteADistanceBoundAsDWithin()
@@ -241,7 +249,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The bound the other way round is the same predicate.
+        /// <c>d &gt;= CLR_ST_GEOG_DISTANCE(a, b)</c> is rewritten the same way.
         /// </summary>
         [Fact]
         public void ShouldRewriteADistanceBoundWrittenTheOtherWayRound()
@@ -254,7 +262,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A strict bound is a different predicate at the boundary and there is no operator for it.
+        /// A strict bound (<c>&lt;</c>) is not rewritten, since <c>CLR_ST_GEOG_DWITHIN</c> includes the boundary.
         /// </summary>
         [Fact]
         public void ShouldNotRewriteAStrictDistanceBound()
@@ -265,13 +273,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A join condition is rewritten too, which is a rule of its own and not the filter's.
+        /// A join condition is rewritten, by the join rule rather than the filter rule.
         /// </summary>
         /// <remarks>
-        /// <c>RelNode.accept(RexShuttle)</c> is the whole of what each of the three rules does, and it is
-        /// <c>Join</c>, <c>Filter</c> and <c>Project</c> that override it —
-        /// <c>AbstractRelNode.accept(RexShuttle)</c> answers <c>this</c>. So a condition in an <c>ON</c>
-        /// clause is reached by the join rule and by nothing else.
+        /// Each of the three rules applies <c>RelNode.accept(RexShuttle)</c>, which <c>Join</c>, <c>Filter</c>
+        /// and <c>Project</c> override and <c>AbstractRelNode</c> implements as returning <c>this</c>, so only
+        /// the join rule reaches an <c>ON</c> condition.
         /// </remarks>
         [Fact]
         public void ShouldSimplifyAJoinCondition()
@@ -286,15 +293,14 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A predicate that rejects nulls turns an outer join into an inner one, which is Calcite's own
-        /// rewrite reading a fact this package declares.
+        /// A null-rejecting geography predicate above a left join lets Calcite make the join inner.
         /// </summary>
         /// <remarks>
-        /// <c>RelOptUtil.simplifyJoin</c> asks <c>Strong.isNotTrue</c> whether the filter can hold of a row
-        /// whose whole right side is null; a <c>Strong.Policy.ANY</c> operator says it cannot. Without the
-        /// declaration the join stays outer and the filter stays above it, so both sides are sorted and
-        /// merged first. Run on both routes because the declaration lives on the operator object and only one
-        /// route carries it — the other gets it back from the pass.
+        /// <c>RelOptUtil.simplifyJoin</c> asks <c>Strong.isNotTrue</c> whether the filter can hold for a row
+        /// whose right side is all null, and an operator with <c>Strong.Policy.ANY</c> says it cannot. The
+        /// policy is declared on this package's operator object, which an operator table supplies directly;
+        /// a call resolved through a schema gets it only after the pass rebinds the operator, so both routes
+        /// are tested.
         /// </remarks>
         [Theory]
         [InlineData(true)]
@@ -310,8 +316,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A call resolved through a schema carries Calcite's own operator, and the pass puts this package's
-        /// back, which is what makes the declarations on it reach the plan at all.
+        /// A name resolved through a schema yields an operator Calcite built, without this package's
+        /// declarations; <see cref="GeographyOperatorTable.Rebind"/> returns this package's operator for it.
         /// </summary>
         [Fact]
         public void ShouldPutThisPackagesOperatorBackOnACallResolvedThroughASchema()
@@ -328,7 +334,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A name this package did not declare the body of is left alone, whatever it is called.
+        /// A function with one of this package's names but a different implementation is not rebound.
         /// </summary>
         [Fact]
         public void ShouldNotRebindANameDeclaredOverSomeoneElsesBody()
@@ -341,18 +347,19 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A body of the right shape and the wrong provenance.
+        /// A function class with the same signature as <c>CLR_ST_GEOG_DWITHIN</c>'s implementation but not
+        /// this package's.
         /// </summary>
         public static class Impostor
         {
 
             /// <summary>
-            /// Answers nothing anyone should believe.
+            /// Returns true for any arguments.
             /// </summary>
-            /// <param name="a"></param>
-            /// <param name="b"></param>
-            /// <param name="distance"></param>
-            /// <returns></returns>
+            /// <param name="a">Ignored.</param>
+            /// <param name="b">Ignored.</param>
+            /// <param name="distance">Ignored.</param>
+            /// <returns><c>java.lang.Boolean.TRUE</c>.</returns>
             public static java.lang.Boolean? DWithin(org.locationtech.jts.geom.Geometry? a, org.locationtech.jts.geom.Geometry? b, java.lang.Object? distance)
             {
                 return java.lang.Boolean.TRUE;
@@ -361,11 +368,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The operator a schema hands back for a name.
+        /// Returns the first operator a <c>CalciteCatalogReader</c> over the schema finds for a function name.
         /// </summary>
-        /// <param name="schema"></param>
-        /// <param name="name"></param>
-        /// <returns></returns>
+        /// <param name="schema">The schema whose functions are looked up.</param>
+        /// <param name="name">The function name, matched case-sensitively.</param>
+        /// <returns>The first operator found; the test fails if there is none.</returns>
         static org.apache.calcite.sql.SqlOperator Resolve(SchemaPlus schema, string name)
         {
             var reader = new org.apache.calcite.prepare.CalciteCatalogReader(
@@ -388,7 +395,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A predicate answers null exactly when an argument is null, and says so.
+        /// Predicates and measurements, which return null exactly when an argument is null, declare
+        /// <c>Strong.Policy.ANY</c>.
         /// </summary>
         [Fact]
         public void ShouldDeclareAPredicateStrict()
@@ -399,13 +407,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A reader does not, and must not say it does.
+        /// Accessors and typed readers, which can return null for a non-null argument, do not declare
+        /// <c>Strong.Policy.ANY</c>.
         /// </summary>
         /// <remarks>
-        /// <c>Strong.Policy.ANY</c> is read in both directions —
-        /// <c>RexSimplify.simplifyIsNull</c> turns <c>f(a) IS NULL</c> into <c>a IS NULL</c> — so a function
-        /// that can answer null over a non-null argument must not carry it. <c>CLR_ST_GEOG_X</c> of anything
-        /// but a point is null, <c>ST_X</c> being <c>geom instanceof Point ? … : null</c>, and
+        /// The policy is read in both directions: <c>RexSimplify.simplifyIsNull</c> turns <c>f(a) IS NULL</c>
+        /// into <c>a IS NULL</c>. <c>CLR_ST_GEOG_X</c> of anything but a point is null, as <c>ST_X</c> is, and
         /// <c>CLR_ST_GEOG_POINTFROMTEXT</c> of text naming another shape is null.
         /// </remarks>
         [Fact]
@@ -418,7 +425,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A symmetrical operator is its own reverse, which is what <c>RexNormalize</c> demands of one.
+        /// A symmetrical operator is its own reverse, as <c>RexNormalize</c> requires; an asymmetrical one has
+        /// no reverse.
         /// </summary>
         [Fact]
         public void ShouldDeclareASymmetricalOperatorItsOwnReverse()
@@ -431,12 +439,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The same measurement written both ways round is one expression.
+        /// A symmetrical measurement written with its operands both ways round is one expression.
         /// </summary>
         /// <remarks>
-        /// The whole of what the symmetry declaration buys, and it needs no pass: <c>RexNormalize</c> builds
-        /// the digest of a symmetrical two-operand call from its operands unordered, so the two spellings are
-        /// one expression and the calc evaluates it once.
+        /// This needs no pass: <c>RexNormalize</c> orders the operands of a symmetrical two-operand call when
+        /// building its digest, so the calc evaluates the two spellings once.
         /// </remarks>
         [Fact]
         public void ShouldEvaluateASymmetricalMeasurementOnceHoweverItIsWritten()
@@ -449,16 +456,14 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A constant constructor is parsed once while the plan is built rather than once per row, where the
-        /// caller gave the planner an executor.
+        /// A constructor over a constant is evaluated once during planning, rather than once per row, when the
+        /// planner has an executor.
         /// </summary>
         /// <remarks>
-        /// Nothing of this package's does it — <c>CoreRules.FILTER_REDUCE_EXPRESSIONS</c> is registered by
-        /// <c>RelOptUtil.registerDefaultRules</c> and <c>ReduceExpressionsRule</c> gives up without an
-        /// executor, silently, saying in a comment that there is no mechanism for a warning. A
-        /// <c>jdbc:calcite:</c> connection always has one; a <c>Frameworks</c> config has whatever it was
-        /// given, which is nothing by default. Pinned here because it is the largest thing a caller can get
-        /// wrong about these operators and costs a WKT parse per row.
+        /// The reduction is Calcite's: <c>RelOptUtil.registerDefaultRules</c> registers
+        /// <c>CoreRules.FILTER_REDUCE_EXPRESSIONS</c>, and <c>ReduceExpressionsRule</c> silently does nothing
+        /// without an executor. A <c>jdbc:calcite:</c> connection always has one; a <c>Frameworks</c> config has
+        /// none unless one is set, and then the WKT is parsed for every row.
         /// </remarks>
         [Fact]
         public void ShouldReduceAConstantConstructorWhereTheCallerSetAnExecutor()
@@ -471,10 +476,10 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The same statement planned by a caller who named no executor.
+        /// Plans a query as <see cref="Explain"/> does but with no executor, and returns the plan as text.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query text.</param>
+        /// <returns>The physical plan as text.</returns>
         static string Without(string sql)
         {
             var schema = Frameworks.createRootSchema(true);
@@ -493,8 +498,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The rows are the same with the pass and without it, which is the only thing that says a rewrite
-        /// was sound.
+        /// Each statement returns the same rows with the pass and without it.
         /// </summary>
         [Theory]
         [InlineData("SELECT CLR_ST_GEOG_ASGEOM(CLR_ST_GEOM_ASGEOG(GEOG)) FROM GEO")]
@@ -511,11 +515,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// How many times a name appears in a plan.
+        /// Counts the non-overlapping occurrences of a name in a plan's text.
         /// </summary>
-        /// <param name="plan"></param>
-        /// <param name="name"></param>
-        /// <returns></returns>
+        /// <param name="plan">The plan text.</param>
+        /// <param name="name">The text to count, matched ordinally.</param>
+        /// <returns>The number of non-overlapping occurrences.</returns>
         static int Occurrences(string plan, string name)
         {
             var count = 0;

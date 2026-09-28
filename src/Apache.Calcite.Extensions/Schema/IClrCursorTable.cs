@@ -13,22 +13,19 @@ namespace Apache.Calcite.Extensions.Schema
     /// A table whose rows are read through a forward-only cursor it opens.
     /// </summary>
     /// <remarks>
-    /// The third of this project's table SPIs, for the table whose natural shape is a cursor rather than a
-    /// sequence: a <c>DbDataReader</c>, opened with <c>ExecuteReader</c> or <c>ExecuteReaderAsync</c> and
-    /// advanced with <c>Read</c> or <c>ReadAsync(token)</c>. An <see cref="IClrScannableTable"/> hands back
-    /// a sequence, and a sequence states once, at its enumerator, whether it will be pulled or awaited and
-    /// takes its token there; the cursor convention's scan opened a cursor over it and the token an advance
-    /// was given stopped at that cursor. A table implementing this hands the cursor itself in, and every
-    /// <see cref="ClrCursor.ReadAsync"/> reaches it with the token of that advance.
+    /// For a source that is naturally a cursor, such as a <c>DbDataReader</c>. The cursor the table opens
+    /// becomes the leaf of the plan, so each <see cref="IClrCursor.ReadAsync"/> on the plan's cursor reaches
+    /// the table's cursor with that advance's token. A sequence from an <see cref="IClrScannableTable"/>
+    /// takes a token only once, when it is enumerated.
     ///
-    /// <para><b><see cref="Open"/> is required and <see cref="OpenAsync"/> is optional</b>, the shape the
-    /// other two SPIs have and the reason they have it: one interface, both halves on it, so that a scan
-    /// never has to ask which kind a table is. A table whose open can only be awaited writes both, the
-    /// synchronous one by blocking with the context suppressed, and does not leave the default in place: the
-    /// default would hand a blocking open to a caller who asked to await.</para>
+    /// <para><see cref="Open"/> is required and <see cref="OpenAsync"/> defaults to it. A table whose open
+    /// can only be completed asynchronously implements <see cref="OpenAsync"/> and writes <see cref="Open"/>
+    /// by blocking on it. Blocking must be done with <see cref="System.Threading.SynchronizationContext"/>
+    /// cleared before the asynchronous call is made, or it can deadlock under a single-threaded context.</para>
     ///
-    /// <para>The values in each row are Java's, exactly as an <see cref="IClrScannableTable"/>'s are and for
-    /// the same reason: everything downstream is Calcite's.</para>
+    /// <para>The values in each row must be Java values of the types Calcite's type factory uses for the
+    /// columns — <c>java.lang.Integer</c>, <c>java.lang.String</c>, <c>java.math.BigDecimal</c> and so
+    /// on — as for any table Calcite reads.</para>
     /// </remarks>
     public interface IClrCursorTable : Table
     {
@@ -36,24 +33,24 @@ namespace Apache.Calcite.Extensions.Schema
         /// <summary>
         /// Opens a cursor over this table's rows.
         /// </summary>
-        /// <param name="root">The context the query is being run against, which is where a table reaches
-        /// the schema, the query's parameters and its cancel flag.</param>
+        /// <param name="root">The context the query is being run against, through which a table reaches the
+        /// schema, the query's parameter values and its cancel flag.</param>
         /// <returns>The cursor, positioned before its first row, one <c>object?[]</c> per row.</returns>
         /// <remarks>
-        /// Opening is the acquisition: a table over a statement sends the statement here, as
-        /// <c>ScannableTable.scan</c>'s enumerator does at <c>enumerator()</c>.
+        /// Called when the plan is opened. A table over a statement executes the statement here.
         /// </remarks>
         IClrCursor<object?[]> Open(DataContext root);
 
         /// <summary>
-        /// Opens a cursor over this table's rows, awaiting the acquisition.
+        /// Opens a cursor over this table's rows asynchronously.
         /// </summary>
         /// <param name="root">The context the query is being run against.</param>
-        /// <param name="cancellationToken">The token the open runs under; each advance brings its own.</param>
+        /// <param name="cancellationToken">The token that cancels the open. Each advance of the cursor takes
+        /// its own.</param>
         /// <returns>The cursor, positioned before its first row.</returns>
         /// <remarks>
-        /// By default <see cref="Open"/> completed, which is right for a table whose open does not wait on
-        /// anything and wrong for one whose <see cref="Open"/> blocks.
+        /// By default calls <see cref="Open"/> and returns its cursor as a completed task. Override it when
+        /// opening waits on I/O, so that an asynchronous caller is not blocked.
         /// </remarks>
         ValueTask<IClrCursor<object?[]>> OpenAsync(DataContext root, CancellationToken cancellationToken) => new(Open(root));
 

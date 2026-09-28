@@ -78,9 +78,11 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         }
 
         /// <summary>
-        /// The values whose <c>toString()</c> is scientific notation, which is what the text route could not
-        /// read: an adjusted exponent below -6, or a negative scale.
+        /// Values whose <c>toString()</c> uses scientific notation, which a parse of that text with
+        /// <c>NumberStyles.Number</c> cannot read: an adjusted exponent below -6, or a negative scale.
         /// </summary>
+        /// <param name="literal">The text the <c>BigDecimal</c> is constructed from.</param>
+        /// <param name="written">What <c>BigDecimal.toString()</c> writes for it.</param>
         [Theory]
         [InlineData("0.0000001", "1E-7")]
         [InlineData("0.00000012345", "1.2345E-7")]
@@ -96,7 +98,7 @@ namespace Apache.Calcite.Extensions.Interop.Tests
         [Fact]
         public void ShouldNormalizeANegativeScale()
         {
-            // 12e2 => unscaled=12, scale=-2 => value 1200, normalized to scale 0.
+            // unscaled 12, scale -2: the value 1200, read at scale 0
             var bd = new java.math.BigDecimal(java.math.BigInteger.valueOf(12L), -2);
 
             JavaDecimals.ToDecimal(bd).Should().Be(1200m);

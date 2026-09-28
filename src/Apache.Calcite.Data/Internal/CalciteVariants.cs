@@ -14,38 +14,30 @@ namespace Apache.Calcite.Data.Internal
     /// Reads a Calcite <c>VARIANT</c> as the .NET value it holds.
     /// </summary>
     /// <remarks>
-    /// A <c>VARIANT</c> is a value that carries its own type. Calcite's runtime holds one as a
-    /// <c>VariantValue</c> — <c>VariantNonNull</c> for a value, <c>VariantSqlNull</c> for the SQL null of
-    /// a declared type, <c>VariantNull</c> for the variant's own null — and none of those is a type a
-    /// .NET consumer can be handed, so none of them leaves this class. It is <see cref="SqlTypeName.ANY"/>
-    /// again with the type written down rather than absent, and it reads the same way: the payload's own
-    /// type is what says what the payload is.
-    ///
-    /// <para><b>Reading the payload takes two public calls and nothing else.</b> <c>getTypeString()</c>
-    /// names the payload's runtime type, and <c>cast()</c> against a <c>BasicSqlTypeRtti</c> of that same
-    /// name hands the payload back. Naming its own type is the point: <c>cast</c> is Calcite's SQL cast
-    /// and it converts — measured, a variant holding a <c>DOUBLE</c> of 1.5 casts to <c>BIGINT</c> as 1 —
-    /// so it is only ever called here with the type the variant says it already is, which makes it a read
-    /// and not a conversion. The payload comes back in Calcite's storage form, a <c>DATE</c> as a count of
-    /// days like anywhere else, and <see cref="CalciteValues.FromScalar"/> decodes it by the same name.</para>
-    ///
-    /// <para><b>An array is walked, not cast.</b> <c>item(1)</c>, <c>item(2)</c>, … each answer a
-    /// <c>VariantValue</c> of their own and <c>null</c> past the end, so the elements convert recursively
-    /// and carry their own types. Casting an array would need the element type, which a variant does not
-    /// record — it keeps a <c>RuntimeSqlTypeName</c>, not a full <c>RuntimeTypeInformation</c>, so
-    /// <c>getTypeString()</c> on one answers <c>ARRAY</c> and nothing more.</para>
-    ///
-    /// <para><b>A map is met halfway.</b> There is no key enumeration, and the one thing that answers the
-    /// keys is a cast to <c>MAP&lt;VARCHAR, VARCHAR&gt;</c>, which returns the keys and drops every value.
-    /// The values come back one at a time through <c>item(key)</c>. That works where the keys are
-    /// character values, which is what a variant map is for; a key of any other type comes back null from
-    /// the cast, and rather than lose the entry this refuses.</para>
-    ///
-    /// <para><b>What cannot be read at all is refused, and named.</b> A <c>MULTISET</c> answers null to
-    /// every <c>item</c>, and a <c>ROW</c> answers only to its field names, which the variant does not
-    /// carry either. Neither has a public route to its contents in Calcite 1.42, so neither is guessed
-    /// at: <see cref="ToClr"/> throws and says which one it was. Handing back the <c>VariantValue</c>
-    /// would put a Java object in a caller's hands, and inventing a text form for it would be worse.</para>
+    /// <para>
+    /// Calcite's runtime holds a <c>VARIANT</c> as a <c>VariantValue</c>: <c>VariantNonNull</c> for a value,
+    /// <c>VariantSqlNull</c> for the SQL null of a declared type, <c>VariantNull</c> for the variant's own
+    /// null. As with <see cref="SqlTypeName.ANY"/>, the payload's own type decides how it is read.
+    /// <c>VariantClrTypeMapping</c> is the reading result columns use; this class is reached only when
+    /// <see cref="CalciteValues.TryConvertTo"/> meets a variant.
+    /// </para>
+    /// <para>
+    /// A scalar is read with <c>getTypeString()</c>, which names the payload's type, and <c>cast()</c> to a
+    /// <c>BasicSqlTypeRtti</c> of that same type, which returns the payload in Calcite's storage form for
+    /// <see cref="CalciteValues.FromScalar"/> to decode. <c>cast</c> is Calcite's SQL cast and converts (a
+    /// <c>DOUBLE</c> 1.5 cast to <c>BIGINT</c> is 1), so it is only called with the variant's own type.
+    /// </para>
+    /// <para>
+    /// An array is read with <c>item(1)</c>, <c>item(2)</c>, … until <c>item</c> answers null, because a
+    /// variant records only <c>ARRAY</c> and not its element type. A map's keys are read by casting to
+    /// <c>MAP&lt;VARCHAR, VARCHAR&gt;</c>, which returns the keys without their values, and each value by
+    /// <c>item(key)</c>; keys that are not character values do not survive that cast and are refused.
+    /// </para>
+    /// <para>
+    /// A <c>MULTISET</c> answers null to every <c>item</c> and a <c>ROW</c> only to field names the variant
+    /// does not carry, and Calcite offers no other public route to either, so <see cref="ToClr"/> refuses
+    /// both, naming the type.
+    /// </para>
     /// </remarks>
     internal static class CalciteVariants
     {
@@ -53,13 +45,9 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Returns whether a value is one of the two nulls a variant can be.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
-        /// <remarks>
-        /// <c>VariantSqlNull</c> is a SQL null that remembers the type it was null of;
-        /// <c>VariantNull</c> is the variant type's own null, the one a JSON <c>null</c> parses to. An
-        /// ADO.NET caller has one null and both are it.
-        /// </remarks>
+        /// <param name="value">The value to test.</param>
+        /// <returns><see langword="true"/> for a <c>VariantSqlNull</c> (a SQL null of a declared type) or a
+        /// <c>VariantNull</c> (the variant's own null, which a JSON <c>null</c> parses to).</returns>
         public static bool IsNull(object? value)
         {
             return value is VariantNull || value is VariantSqlNull;
@@ -70,7 +58,8 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="value">The variant.</param>
         /// <returns>The .NET value, or <see langword="null"/> where the variant is null.</returns>
-        /// <exception cref="InvalidCastException">Where the payload has no public route to its contents.</exception>
+        /// <exception cref="InvalidCastException">The payload is a type whose contents Calcite gives no public
+        /// way to read, or a map whose keys are not character values.</exception>
         public static object? ToClr(VariantValue value)
         {
             ArgumentNullException.ThrowIfNull(value);
@@ -96,16 +85,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Returns the runtime type a name stands for, where it is one whose payload can be read.
+        /// Returns the runtime type a name stands for, where it is a scalar whose payload can be read.
         /// </summary>
-        /// <param name="name"></param>
+        /// <param name="name">The name <c>getTypeString()</c> returned.</param>
         /// <returns>The type, or <see langword="null"/> where the name is not a readable scalar.</returns>
         /// <remarks>
-        /// Written out rather than resolved through the enum's <c>valueOf</c>, which is what this project
-        /// does with a Java enum in any case, and which here also states the set: a name that is not on
-        /// it is refused rather than cast blindly. The names are <see cref="SqlTypeName"/>'s own for every
-        /// type <see cref="CalciteValues.FromScalar"/> decodes, which is why passing this name to it
-        /// works.
+        /// The set is listed explicitly, so a name outside it is refused rather than cast. Matching on names
+        /// rather than ordinals keeps it independent of the enum's declaration order. For every type
+        /// <see cref="CalciteValues.FromScalar"/> decodes, these names are the same as
+        /// <see cref="SqlTypeName"/>'s.
         /// </remarks>
         static Name? Scalar(string name)
         {
@@ -144,7 +132,7 @@ namespace Apache.Calcite.Data.Internal
         {
             var items = new List<object?>();
 
-            // one-based, and null past the end, which is the only length a variant offers
+            // one-based, and null past the end; a variant offers no length
             for (var i = 1; value.item(java.lang.Integer.valueOf(i)) is VariantValue element; i++)
                 items.Add(ToClr(element));
 

@@ -17,66 +17,57 @@ namespace Apache.Calcite.Extensions.Schema
     /// </summary>
     /// <remarks>
     /// The counterpart of <see cref="QueryableTable"/>. Where an <see cref="IClrScannableTable"/> is called
-    /// and yields arrays, this states an element type of its own and hands back an expression the scan
-    /// composes into the plan — so a table can put its own reading inline, a provider call or a channel
-    /// read, rather than behind an interface call per scan.
+    /// and returns arrays, this declares its own element type and returns a
+    /// <see cref="System.Linq.Expressions.Expression"/> that the scan compiles into the plan, so the table's
+    /// reading code is inlined rather than called through an interface.
     ///
-    /// <para><b><see cref="GetExpression"/> is required and <see cref="GetAsyncExpression"/> is optional</b>,
-    /// exactly as for <see cref="IClrScannableTable"/> and for the nodes of this convention. A table writes
-    /// the halves it has; the default builds the awaiting expression by reading the pulled one across, which
-    /// costs a state machine and no thread. A table whose reading can only be awaited writes
-    /// <see cref="GetAsyncExpression"/> and builds <see cref="GetExpression"/> as a call to a drain of its
-    /// own.</para>
+    /// <para><see cref="GetExpression"/> is required and <see cref="GetAsyncExpression"/> defaults to
+    /// reading the synchronous sequence asynchronously, without suspending. A table whose rows can only be
+    /// produced asynchronously implements <see cref="GetAsyncExpression"/> and writes
+    /// <see cref="GetExpression"/> as a call that drains it.</para>
     ///
-    /// <para><c>QueryableTable.asQueryable</c> has no counterpart and is not an omission: a linq4j
-    /// <c>Queryable</c> is Java's LINQ, translated by <c>LixToRelTranslator</c>, which is package-private
-    /// and takes a <c>Prepare</c>. Nothing here can reach it and nothing would call it.</para>
+    /// <para><c>QueryableTable.asQueryable</c> has no counterpart: nothing in this package translates a
+    /// linq4j <c>Queryable</c>.</para>
     /// </remarks>
     public interface IClrQueryableTable : Table
     {
 
         /// <summary>
-        /// Returns the type of one row.
+        /// Gets the type of one row.
         /// </summary>
         /// <remarks>
-        /// <c>QueryableTable.getElementType</c>, as a CLR <see cref="Type"/>. It decides the row format the
-        /// scan uses, through <c>ClrCursorTableScan.DeduceElementType</c>.
+        /// The counterpart of <c>QueryableTable.getElementType</c>. It determines the row format the scan
+        /// uses, as the element type does for a <see cref="QueryableTable"/>.
         /// </remarks>
         Type ElementType { get; }
 
         /// <summary>
-        /// Returns the expression by which the plan reaches this table's rows.
+        /// Returns an expression that produces this table's rows synchronously.
         /// </summary>
-        /// <param name="schema">The schema the table was resolved in, which may be null for a table that
-        /// was not resolved through a catalog reader.</param>
-        /// <param name="tableName">The name it was resolved by.</param>
-        /// <returns>An expression whose type is <c>IEnumerable&lt;<see cref="ElementType"/>&gt;</c>.</returns>
+        /// <param name="schema">The schema the table was resolved in, or <see langword="null"/> if it was not
+        /// resolved through a schema.</param>
+        /// <param name="tableName">The name the table was resolved by.</param>
+        /// <returns>An expression of type <c>IEnumerable&lt;<see cref="ElementType"/>&gt;</c>. It must not be
+        /// <see langword="null"/>.</returns>
         /// <remarks>
-        /// <c>QueryableTable.getExpression(SchemaPlus, String, Class)</c>, less the class: that parameter
-        /// exists so a caller can ask for a <c>Queryable</c> or an <c>Enumerable</c>, and there is one
-        /// answer here.
-        ///
-        /// <para>The values in a row are Java's, as they are for every table Calcite reads.</para>
+        /// The counterpart of <c>QueryableTable.getExpression(SchemaPlus, String, Class)</c>, without the
+        /// class parameter. The expression is compiled into the plan and evaluated when the plan is opened.
+        /// The values in each row must be the Java values Calcite's type factory uses for the columns.
         /// </remarks>
         Expression GetExpression(SchemaPlus? schema, string tableName);
 
         /// <summary>
-        /// Returns the expression by which a plan that awaits its rows reaches this table's.
+        /// Returns an expression that produces this table's rows asynchronously.
         /// </summary>
-        /// <param name="schema">The schema the table was resolved in, which may be null for a table that
-        /// was not resolved through a catalog reader.</param>
-        /// <param name="tableName">The name it was resolved by.</param>
-        /// <returns>An expression whose type is
-        /// <c>IAsyncEnumerable&lt;<see cref="ElementType"/>&gt;</c>.</returns>
+        /// <param name="schema">The schema the table was resolved in, or <see langword="null"/> if it was not
+        /// resolved through a schema.</param>
+        /// <param name="tableName">The name the table was resolved by.</param>
+        /// <returns>An expression of type <c>IAsyncEnumerable&lt;<see cref="ElementType"/>&gt;</c>. It must
+        /// not be <see langword="null"/>.</returns>
         /// <remarks>
-        /// A <see cref="Expression"/> rather than a linq4j one, because it is composed into a plan of this
-        /// convention and everything in one of those is a CLR tree. It is the one place a table author
-        /// writes an expression rather than a method.
-        ///
-        /// <para>By default <see cref="GetExpression"/> with a read across built over it. That default does
-        /// put a small piece of plan building inside the SPI, which is the scan's job everywhere else, and
-        /// it is here so that the two halves of this interface behave the way the two halves of
-        /// <see cref="IClrScannableTable"/> do. A table that overrides it never runs this.</para>
+        /// By default wraps <see cref="GetExpression"/> in a call that reads the synchronous sequence as an
+        /// asynchronous one without suspending. The plan passes the open's cancellation token to
+        /// <c>GetAsyncEnumerator</c>.
         /// </remarks>
         Expression GetAsyncExpression(SchemaPlus? schema, string tableName)
         {
@@ -88,8 +79,8 @@ namespace Apache.Calcite.Extensions.Schema
         }
 
         /// <summary>
-        /// <see cref="ClrSequences.ToAsyncEnumerable{TSource}"/>, which the default
-        /// <see cref="GetAsyncExpression"/> builds its call to.
+        /// <see cref="ClrSequences.ToAsyncEnumerable{TSource}"/>, called by the default
+        /// <see cref="GetAsyncExpression"/>.
         /// </summary>
         private static readonly MethodInfo ToAsyncEnumerable = typeof(ClrSequences).GetMethod(nameof(ClrSequences.ToAsyncEnumerable))
             ?? throw new InvalidOperationException($"'{nameof(ClrSequences.ToAsyncEnumerable)}' is missing.");

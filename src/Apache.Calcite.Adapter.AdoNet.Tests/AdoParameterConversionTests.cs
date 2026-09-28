@@ -10,22 +10,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// The conversions <c>AdoEnumerable.ToProviderValue</c> performs, reached through the enricher rather
-    /// than through a query.
+    /// Tests the unsigned conversions <c>AdoEnumerable.ToProviderValue</c> performs, called through the
+    /// enricher rather than through a query.
     /// </summary>
     /// <remarks>
-    /// <para>
     /// <see cref="GenericProviderCorrelationTests.CorrelatingOnAColumnConvertsItsValueForTheProvider"/>
-    /// covers the branches a real backend can produce, which is the better test where one can: it binds
-    /// against a live server and a wrong conversion is a wrong answer rather than a wrong object.
-    /// </para>
-    /// <para>
-    /// Three of them it cannot reach. <c>UShort</c>, <c>UInteger</c> and <c>ULong</c> come from a column a
-    /// provider describes as unsigned, and neither SQL Server nor SQLite has one wider than a
-    /// <c>tinyint</c> — so those branches had no test at all, and the widest of them was converting
-    /// through text until this class was written. The enricher is public and takes the context it reads
-    /// from, so a value can be handed to it directly.
-    /// </para>
+    /// covers the conversions a real backend produces. <c>UShort</c>, <c>UInteger</c> and <c>ULong</c> come
+    /// only from a column a provider describes as unsigned and wider than a byte, which neither SQL Server
+    /// nor SQLite has, so they are tested here by handing a value to the enricher directly.
     /// </remarks>
     public class AdoParameterConversionTests : IDisposable
     {
@@ -52,9 +44,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Returns what a provider would be handed for <paramref name="value"/>.
         /// </summary>
         /// <remarks>
-        /// The index is <see cref="AdoCorrelationDataContext.Offset"/>, which the context answers from its
-        /// own array without consulting the one it wraps — so there is no outer statement to arrange, and
-        /// the value goes in exactly where a correlation variable or a dynamic parameter would.
+        /// The index is <see cref="AdoCorrelationDataContext.Offset"/>, which the context resolves from its own
+        /// array without consulting the context it wraps, so no outer statement is needed.
         /// </remarks>
         object? Bound(object value)
         {
@@ -72,16 +63,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The whole of a <c>ulong</c>, whose top half is outside a <see cref="long"/> and so has to be a
-        /// <see cref="decimal"/>. A joou <c>ULong</c> holds the bits of a signed long read unsigned, so the
-        /// value is that reinterpretation; it was read out of the type's text and parsed back before, which
-        /// is the same instinct the <c>BigDecimal</c> branch was wrong for.
+        /// A <c>ULong</c> binds as a <see cref="decimal"/>, since the upper half of the <c>ulong</c> range is
+        /// outside <see cref="long"/>. A joou <c>ULong</c> holds the bits of a signed long read as unsigned.
         /// </summary>
         [Theory]
         [InlineData("0")]
         [InlineData("1")]
-        [InlineData("9223372036854775807")]  // long.MaxValue, the last value whose bits are not negative
-        [InlineData("9223372036854775808")]  // and the first that is
+        [InlineData("9223372036854775807")]  // long.MaxValue, the largest whose bits are non-negative as a long
+        [InlineData("9223372036854775808")]  // the smallest whose bits are negative as a long
         [InlineData("18446744073709551615")] // ulong.MaxValue
         public void AULongIsBoundAsItsUnsignedValue(string literal)
         {
@@ -105,8 +94,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The branch a real backend does reach, here for the contrast: a <c>tinyint</c> is the one
-        /// unsigned type SQL Server describes, and its range fits the CLR type exactly.
+        /// The unsigned conversion a real backend does produce: SQL Server's <c>tinyint</c> is unsigned, and its
+        /// range fits <see cref="byte"/> exactly.
         /// </summary>
         [Theory]
         [InlineData("0")]

@@ -7,20 +7,12 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Reading a <c>VARIANT</c>, which is the one Calcite type that carries its own type with the value.
+    /// Covers reading a <c>VARIANT</c>, whose values each carry their own type.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Nothing reached one before these. A variant is <c>ANY</c> with the type written down rather than
-    /// absent: Calcite holds it as a <c>VariantValue</c>, which is a Java object and so cannot be handed to
-    /// a caller, and the payload's own type is what says what the payload is. That makes it the one place
-    /// where what a column reads as is decided per row.
-    /// </para>
-    /// <para>
-    /// A variant is built here with <c>CAST(x AS VARIANT)</c>. <c>PARSE_JSON</c> would be the other way in
-    /// and is not registered in any of the function libraries this connection can select — measured against
-    /// <c>standard</c>, <c>bigquery</c> and <c>spark</c>.
-    /// </para>
+    /// Calcite holds a variant as a <c>VariantValue</c>, a Java object that is not handed to a caller; the
+    /// payload's type decides what .NET value it reads as, so the .NET type is decided per row. Variants are
+    /// built here with <c>CAST(x AS VARIANT)</c>.
     /// </remarks>
     public class CalciteVariantTests
     {
@@ -82,9 +74,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The temporal types are what this exists for: Calcite stores a <c>DATE</c> as a count of days and
-        /// a <c>TIMESTAMP</c> as a count of milliseconds, so an integer is one or the other only because the
-        /// payload's type says so.
+        /// Calcite stores a <c>DATE</c> as a count of days and a <c>TIMESTAMP</c> as a count of milliseconds,
+        /// so only the payload's type says the integer is a date or a moment.
         /// </summary>
         [Fact]
         public void A_date_payload_should_read_as_a_date_and_not_a_count_of_days()
@@ -113,9 +104,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// An interval names itself by its scale — <c>INTERVAL_LONG</c> and <c>INTERVAL_SHORT</c> — rather
-        /// than by a <c>SqlTypeName</c>, so it is the one payload family the name table cannot reach and it
-        /// is cast on its own. Each reads as the declared type of its family does.
+        /// An interval payload reports <c>INTERVAL_LONG</c> or <c>INTERVAL_SHORT</c> rather than a
+        /// <c>SqlTypeName</c>, so it is decoded separately; each reads as a declared interval of its family
+        /// does, a count of months or a <see cref="TimeSpan"/>.
         /// </summary>
         [Fact]
         public void A_year_month_interval_payload_should_read_as_a_count_of_months()
@@ -134,9 +125,8 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// A variant has more than one null and an ADO.NET caller has one. <c>VariantNull</c> is the variant
-        /// type's own null, <c>VariantSqlNull</c> is the SQL null of a declared type, and a null variant
-        /// column is a Java null like any other; all three are <see cref="DBNull"/>.
+        /// <c>VariantNull</c> is the variant type's own null, <c>VariantSqlNull</c> is the SQL null of a
+        /// declared type, and a null variant column is a Java null; all three read as <see cref="DBNull"/>.
         /// </summary>
         [Theory]
         [InlineData("VARIANTNULL()")]
@@ -153,7 +143,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // A collection payload, which is walked rather than cast.
+        // A collection payload, which is read element by element.
         // ------------------------------------------------------------------------------------
 
         [Fact]
@@ -169,8 +159,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The elements are read one at a time and each carries its own type, so a null among them makes the
-        /// array nullable exactly as a declared <c>ARRAY</c> does.
+        /// The element type is taken from the elements, and a null among them makes it nullable, as a
+        /// declared nullable <c>ARRAY</c> element does.
         /// </summary>
         [Fact]
         public void An_array_payload_holding_a_null_should_read_as_an_array_of_the_nullable_element()
@@ -195,8 +185,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A variant column whose value is a variant reads the payload, so an array of variants is an array
-        /// of whatever each one turned out to hold.
+        /// An array of variants reads each element's payload, as an array of <see cref="object"/>.
         /// </summary>
         [Fact]
         public void An_array_of_variants_should_read_each_payload()
@@ -209,9 +198,9 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// Measured against 1.43: a <c>MULTISET</c> and a <c>ROW</c> in a variant answer null to a cast to
-        /// their own runtime type, to a cast to <c>ARRAY</c>, and to <c>item(1)</c>. There is nothing to
-        /// read, so handing back the <c>VariantValue</c> or inventing a text form is what is refused.
+        /// Calcite offers no way to read the contents of a <c>MULTISET</c> or <c>ROW</c> payload (<c>item</c>
+        /// answers null for a multiset and takes only field names for a row), so reading one throws, naming
+        /// the payload type, rather than returning the <c>VariantValue</c> or a text form.
         /// </summary>
         [Theory]
         [InlineData("MULTISET[1, 2]", "MULTISET")]
@@ -226,9 +215,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A map's keys are reachable only by casting the whole map to <c>MAP&lt;VARCHAR, VARCHAR&gt;</c>,
-        /// which answers the keys and drops the values. Keys that are not character values come back null
-        /// from that cast, and the entry is refused rather than lost.
+        /// A map payload's keys are reachable only by casting the map to <c>MAP&lt;VARCHAR, VARCHAR&gt;</c>.
+        /// Keys that are not character values come back null from that cast, so the map is refused rather
+        /// than read with entries missing.
         /// </summary>
         [Fact]
         public void A_map_payload_whose_keys_are_not_characters_should_be_refused()
@@ -241,7 +230,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // The column reports what a column whose type says nothing reports.
+        // What the column reports, and how strict its accessors are.
         // ------------------------------------------------------------------------------------
 
         [Fact]
@@ -255,9 +244,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A variant does not make an accessor lenient. The payload is an <c>INTEGER</c>, so it reads
-        /// through <see cref="CalciteDataReader.GetInt32"/> and <c>GetInt64</c> refuses it exactly as it
-        /// refuses an <c>INTEGER</c> column.
+        /// An <c>INTEGER</c> payload reads through <see cref="CalciteDataReader.GetInt32"/>, and
+        /// <c>GetInt64</c> refuses it as it refuses an <c>INTEGER</c> column.
         /// </summary>
         [Fact]
         public void A_typed_getter_over_a_variant_should_be_as_strict_as_over_the_payloads_own_type()

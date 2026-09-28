@@ -20,17 +20,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// The aggregate implementors are Calcite's and work in linq4j, so each lambda they build is translated
-    /// where it is produced and then handed back to <c>AggregateLambdaFactory</c>, which is also Calcite's and
-    /// takes Calcite's functional interfaces. Nothing about how an aggregate accumulates is decided here.
+    /// Mirrors <c>EnumerableAggregate</c>; what it shares with a sorted aggregate is on
+    /// <see cref="ClrCursorAggregateBase"/>, as Calcite splits it. The accumulation is written by Calcite's
+    /// aggregate implementors in linq4j; each block they produce is translated where it is produced, and the
+    /// resulting lambdas are handed to Calcite's <c>AggregateLambdaFactory</c>.
     ///
-    /// <para>What this class holds is what <c>EnumerableAggregate</c> holds; everything shared with a windowed
-    /// aggregate is on <see cref="ClrCursorAggregateBase"/>, exactly as Calcite splits the two.</para>
-    ///
-    /// <para>Every operator this composes drains at the open, which is linq4j's own timing: <c>groupBy_</c>
-    /// and <c>distinct</c> drain where they are called and <c>aggregate</c> folds where it is called, and
-    /// evaluating the tree is that call. The awaiting body awaits the same drains inside its open, so both
-    /// hand back a cursor over finished state.</para>
+    /// <para>The input is drained, and the groups accumulated, when the node's cursor is opened, as linq4j's
+    /// <c>groupBy</c>, <c>distinct</c> and <c>aggregate</c> do. The awaiting body awaits the same work inside its
+    /// open.</para>
     /// </remarks>
     public class ClrCursorAggregate : ClrCursorAggregateBase, ClrCursorRel
     {
@@ -38,13 +35,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="groupSet"></param>
-        /// <param name="groupSets"></param>
-        /// <param name="aggCalls"></param>
-        /// <exception cref="InvalidRelException"></exception>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="groupSet">The fields to group by.</param>
+        /// <param name="groupSets">The grouping sets, or null for the group set alone.</param>
+        /// <param name="aggCalls">The aggregate calls.</param>
+        /// <exception cref="InvalidRelException">
+        /// A call is <c>DISTINCT</c> or <c>WITHIN DISTINCT</c>, which this node does not implement.
+        /// </exception>
         public ClrCursorAggregate(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, ImmutableBitSet groupSet, java.util.List groupSets, java.util.List aggCalls) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), input, groupSet, groupSets, aggCalls)
         {
@@ -57,9 +56,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 if (call.distinctKeys != null)
                     throw new InvalidRelException("within-distinct aggregation not supported");
 
-                // whether anything can implement the function is the rule's question now, not this one's.
-                // Asked here it could only be asked of RexImpTable.INSTANCE, which is not the table the node
-                // will be implemented against -- ClrCursorAggregateRule asks the cluster's
+                // whether the function has an implementor is checked by ClrCursorAggregateRule against the
+                // cluster's implementor table, which is the one the node is implemented against
             }
         }
 
@@ -81,15 +79,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var sourceType = inputPhysType.RowType;
             var rowType = physType.RowType;
 
-            // the accumulator, the group key and the output row are all written by Calcite's aggregate
-            // implementors, into blocks of Calcite's, so each of those takes a physical type of Calcite's.
-            // Only the sorter's key selector below is a delegate, and only that one is ours.
+            // the accumulator, the group key and the output row are written by Calcite's aggregate implementors
+            // into linq4j blocks, so they take Calcite's physical types
             var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
             var keyPhysType = inputCalcite.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
-            // the same key twice over: Calcite's, because its aggregate implementors read the key through
-            // AggResultContextImpl, and ours, because the selector and the comparer are delegates
+            // the key in both conventions: Calcite's for AggResultContextImpl, through which the implementors read
+            // it, and ours for the key selector and comparer, which are expression trees
             var keyClr = ClrPhysTypeImpl.Of(typeFactory, keyPhysType.getRowType(), keyPhysType.getFormat(), false);
 
             var groupCount = getGroupCount();
@@ -145,8 +142,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                         continue;
                     }
 
-                    // a key of a grouping set carries an indicator per field, set where the field is not one
-                    // this set groups by; the value is then null however the row read
+                    // a grouping-set key carries an indicator per field, set where the current set does not group
+                    // by that field; the output value is then null
                     results.add(
                         J.Expressions.condition(
                             keyPhysType.fieldReference(key_, groupCount + j),
@@ -165,9 +162,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (getGroupType() != Group.SIMPLE)
             {
-                // one key selector per grouping set, each keying on the fields that set groups by and marking
-                // the rest; every row is folded into one group per selector, which is what makes a ROLLUP or a
-                // CUBE one pass over the input
+                // one key selector per grouping set, keying on the fields that set groups by and marking the
+                // rest; each row is folded into one group per selector, so ROLLUP and CUBE read the input once
                 var sets = getGroupSets();
                 var selectors = new Expression[sets.size()];
                 Type? keyType = null;
@@ -219,9 +215,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                             Expression.Call(lambdaFactory, SingleGroupResultSelector, Function1Of(resultSelector, accType, rowType)))));
             }
 
-            // grouping by every field of the input with nothing to accumulate is a DISTINCT, and Calcite says
-            // so rather than grouping: the rows are the input's, so the accumulator machinery is skipped and
-            // the physical type is reached by conversion
+            // grouping by every input field with no aggregate calls is a DISTINCT, which Calcite implements as
+            // one: the input rows, converted to the output format, deduplicated
             if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
             {
                 var source = inputPhysType.ConvertTo(result.Expression, physType.Format);
@@ -264,15 +259,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var sourceType = inputPhysType.RowType;
             var rowType = physType.RowType;
 
-            // the accumulator, the group key and the output row are all written by Calcite's aggregate
-            // implementors, into blocks of Calcite's, so each of those takes a physical type of Calcite's.
-            // Only the sorter's key selector below is a delegate, and only that one is ours.
+            // the accumulator, the group key and the output row are written by Calcite's aggregate implementors
+            // into linq4j blocks, so they take Calcite's physical types
             var inputCalcite = PhysTypeImpl.of(typeFactory, inputPhysType.RelRowType, inputPhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
             var keyPhysType = inputCalcite.project(groupSet.asList(), getGroupType() != Group.SIMPLE, JavaRowFormat.LIST);
-            // the same key twice over: Calcite's, because its aggregate implementors read the key through
-            // AggResultContextImpl, and ours, because the selector and the comparer are delegates
+            // the key in both conventions: Calcite's for AggResultContextImpl, through which the implementors read
+            // it, and ours for the key selector and comparer, which are expression trees
             var keyClr = ClrPhysTypeImpl.Of(typeFactory, keyPhysType.getRowType(), keyPhysType.getFormat(), false);
 
             var groupCount = getGroupCount();
@@ -328,8 +322,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                         continue;
                     }
 
-                    // a key of a grouping set carries an indicator per field, set where the field is not one
-                    // this set groups by; the value is then null however the row read
+                    // a grouping-set key carries an indicator per field, set where the current set does not group
+                    // by that field; the output value is then null
                     results.add(
                         J.Expressions.condition(
                             keyPhysType.fieldReference(key_, groupCount + j),
@@ -348,9 +342,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (getGroupType() != Group.SIMPLE)
             {
-                // one key selector per grouping set, each keying on the fields that set groups by and marking
-                // the rest; every row is folded into one group per selector, which is what makes a ROLLUP or a
-                // CUBE one pass over the input
+                // one key selector per grouping set, keying on the fields that set groups by and marking the
+                // rest; each row is folded into one group per selector, so ROLLUP and CUBE read the input once
                 var sets = getGroupSets();
                 var selectors = new Expression[sets.size()];
                 Type? keyType = null;
@@ -390,10 +383,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     implementor.Translator.TranslateBody(resultBlock.toBlock(), rowType),
                     accParameter);
 
-                // one operator where the synchronous body nests two. There the fold returns the row and
-                // Singleton wraps it; here the fold has to be awaited and an expression tree cannot await,
-                // so the composition is an operator rather than a tree. It still folds at the open, once,
-                // as the pair does. See ClrCursorDefaults.SingletonAggregateAsync.
+                // one operator where the synchronous body nests Aggregate inside Singleton: the fold has to be
+                // awaited, which an expression tree cannot do. It still folds once, at the open
                 return implementor.ResultAsync(physType,
                     ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.SingletonAggregateAsync.MakeGenericMethod(sourceType, rowType),
                         result.Expression,
@@ -402,15 +393,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                         Expression.Call(lambdaFactory, SingleGroupResultSelector, Function1Of(resultSelector, accType, rowType))));
             }
 
-            // grouping by every field of the input with nothing to accumulate is a DISTINCT, and Calcite says
-            // so rather than grouping: the rows are the input's, so the accumulator machinery is skipped and
-            // the physical type is reached by conversion
+            // grouping by every input field with no aggregate calls is a DISTINCT, which Calcite implements as
+            // one: the input rows, converted to the output format, deduplicated
             if (getAggCallList().isEmpty() && groupSet.equals(ImmutableBitSet.range(getInput().getRowType().getFieldCount())))
             {
                 var source = inputPhysType.ConvertToAsync(implementor, result.Expression, physType.Format);
 
-                // the row type is one level further in than the synchronous body reads it: an awaiting
-                // open is a ValueTask of the cursor, and the cursor carries the row
+                // an awaiting open is a ValueTask of the cursor, so the row type is one generic level deeper
                 return implementor.ResultAsync(physType,
                     ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.DistinctAsync.MakeGenericMethod(source.Type.GetGenericArguments()[0].GetGenericArguments()[0]),
                         source,

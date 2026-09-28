@@ -10,8 +10,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="TableScanFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// Table scans are created directly by the schema layer; this factory always throws.
+    /// A <see cref="TableScanFactory"/> that throws. An <see cref="AdoTableScan"/> is created by
+    /// <see cref="AdoTable.toRel"/>.
     /// </summary>
     public class AdoTableScanFactory : TableScanFactory
     {

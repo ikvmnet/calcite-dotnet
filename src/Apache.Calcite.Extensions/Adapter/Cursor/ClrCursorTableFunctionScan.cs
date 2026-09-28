@@ -22,16 +22,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// Two different things wear this node. A user-defined table function is a call that yields a sequence,
-    /// and translating the call is the whole of it — there is no loop and nothing to compose, so what a Rex
-    /// translator gives back is taken as it is. A window table function — TUMBLE, HOP, SESSION — is instead a
-    /// generator of Calcite's that <i>takes</i> the input sequence.
+    /// Mirrors <c>EnumerableTableFunctionScan</c>, which handles two kinds of call and dispatches between
+    /// them on <c>isImplementorDefined</c>. A window table function (<c>TUMBLE</c>, <c>HOP</c>,
+    /// <c>SESSION</c>) is implemented by Calcite's generator, which takes the input as a linq4j
+    /// <c>Enumerable</c>. A user-defined table function is a call, translated by Calcite's row expression
+    /// translator, that returns a linq4j <c>Enumerable</c>, as the schema SPI defines it.
     ///
-    /// <para>Both are here, one method each, as Calcite has one each and dispatches between them on
-    /// <c>isImplementorDefined</c>.</para>
-    ///
-    /// <para>Both ends are linq4j, because a table function returns Calcite's own <c>Enumerable</c>: a schema
-    /// defines it that way, exactly as it defines a table's <c>getExpression(Queryable.class)</c>.</para>
+    /// <para>Calcite's generators cannot await, so the awaiting implementation of a window table function
+    /// opens its input by blocking, and reading its rows blocks wherever the input would await.</para>
     /// </remarks>
     public class ClrCursorTableFunctionScan : TableFunctionScan, ClrCursorRel
     {
@@ -39,13 +37,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traits"></param>
-        /// <param name="inputs"></param>
-        /// <param name="elementType"></param>
-        /// <param name="rowType"></param>
-        /// <param name="call"></param>
-        /// <param name="columnMappings"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traits">The node's traits.</param>
+        /// <param name="inputs">The inputs, a list of <see cref="org.apache.calcite.rel.RelNode"/>; a window
+        /// table function has one.</param>
+        /// <param name="elementType">The element type of the collection the function returns, or
+        /// <see langword="null"/>.</param>
+        /// <param name="rowType">The output row type.</param>
+        /// <param name="call">The function call.</param>
+        /// <param name="columnMappings">How output columns derive from input columns, or
+        /// <see langword="null"/>.</param>
         public ClrCursorTableFunctionScan(
             RelOptCluster cluster, RelTraitSet traits, java.util.List inputs, java.lang.reflect.Type elementType,
             RelDataType rowType, RexNode call, java.util.Set columnMappings) :
@@ -73,33 +74,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         /// <inheritdoc />
         /// <remarks>
-        /// The window's rows are read by a generator of Calcite's, which takes a linq4j <c>Enumerable</c>
-        /// and pulls it, so this body's only difference from <see cref="Implement"/> is that it reads its
-        /// input's awaiting open across by blocking, and the cursor that opens blocks a thread per row
-        /// after it. Generated Java cannot await and there is no version of this that suspends. Everything
-        /// above the node stays asynchronous, because the implementor reads what this hands up back
-        /// across.
-        ///
-        /// <para>A table function the schema defines has no input at all — the call yields the sequence —
-        /// so that half is the same body in both modes.</para>
+        /// A window table function's input is opened by blocking, because Calcite's generator reads it as a
+        /// linq4j <c>Enumerable</c>; nodes above this one still await. A user-defined table function has no
+        /// input to await, so its synchronous open is used.
         /// </remarks>
         public ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             if (IsImplementorDefined((RexCall)getCall()))
                 return TvfImplementorBasedImplementAsync(implementor, pref);
 
-            // a table function the schema defines yields the sequence itself, and what it yields is linq4j's,
-            // so there is nothing here to await and one body serves both. The crossing is said out loud
-            // rather than inferred from what came back.
             return implementor.Awaited(DefaultTableFunctionImplement(implementor));
         }
 
         /// <summary>
-        /// Returns whether the call is one <c>RexImpTable</c> implements — TUMBLE, HOP or SESSION — rather
-        /// than one the schema defines.
+        /// Returns whether the call is a window table function that <c>RexImpTable</c> implements, rather than
+        /// a user-defined table function. Mirrors <c>EnumerableTableFunctionScan.isImplementorDefined</c>.
         /// </summary>
-        /// <param name="call"></param>
-        /// <returns></returns>
+        /// <param name="call">The table function call.</param>
+        /// <returns><see langword="true"/> if the operator is a <c>SqlWindowTableFunction</c> with an implementor in <c>RexImpTable</c>.</returns>
         internal static bool IsImplementorDefined(RexCall call)
         {
             return call.getOperator() is org.apache.calcite.sql.SqlWindowTableFunction window
@@ -109,32 +101,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Implements a window table function, whose rows are its input's with the window bounds appended.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The counterpart of <c>tvfImplementorBasedImplement</c>. Everything that builds the window is
-        /// Calcite's and works in linq4j — <c>RexToLixTranslator.translateTableFunction</c>, which is public,
-        /// down to the <c>TableFunctionCallImplementor</c> for the operator — and all of it takes a linq4j
-        /// expression yielding an <c>Enumerable</c> and gives one back. So the sequence crosses into Java for
-        /// the length of that call and comes back, which is the rule this convention holds everywhere: a node
-        /// holds linq4j where a generator of Calcite's takes one.
+        /// Mirrors <c>EnumerableTableFunctionScan.tvfImplementorBasedImplement</c>. The window is built by
+        /// <c>RexToLixTranslator.translateTableFunction</c>, which takes the input as a linq4j expression
+        /// yielding an <c>Enumerable</c> and returns another.
         ///
-        /// <para>The two <c>_input</c>s are not a mistake. Calcite's implementor builds the watermark column
-        /// against a parameter it makes itself, and <c>EnumUtils.tumblingWindowSelector</c> makes the lambda's
-        /// parameter separately; both are named <c>_input</c> and Janino resolves the name, so the lambda's
-        /// shadows the local. That is what <c>LixToClrTranslator</c>'s scope by name is for, and this is the
-        /// node that needs it.</para>
+        /// <para>Calcite's generated code declares <c>_input</c> twice: once for the input, and again as the
+        /// parameter of the lambda from <c>EnumUtils.tumblingWindowSelector</c>, which shadows it. The
+        /// translator resolves parameters by name within a lambda to reproduce that.</para>
         /// </remarks>
+        /// <param name="implementor">The implementor, through which the input is visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to the input.</param>
+        /// <returns>The synchronous open of the window's rows.</returns>
         ClrCursorResult TvfImplementorBasedImplement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var child = (ClrCursorRel)getInputs().get(0);
             var result = implementor.VisitChild(this, 0, child, pref);
 
-            // the generator's Enumerable acquires its input inside its own enumerator(), which FromJava
-            // calls at this node's open, so the input is handed to it as a sequence over its open rather
-            // than opened here: the moment is the same, and a reset — a second enumerator() — opens it
-            // again, as the sequence the generator was written against would
+            // the input is passed as a sequence over its opener, so the generator's enumerator() opens it at
+            // this node's open, as in linq4j, and a second enumerator() opens it again
             return TvfImplementorBasedWindow(implementor, pref, result.PhysType, result.Format,
                 Expression.Call(null,
                     ClrCursorBuiltInMethod.AsEnumerable.MakeGenericMethod(result.PhysType.RowType),
@@ -142,25 +127,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a window table function whose input arrives awaited.
+        /// Implements a window table function over the input's awaiting open.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The one line that differs: the input's awaiting open is read across by blocking before it is
-        /// handed to Calcite's generator, and the cursor that opens blocks a thread per row where a row has
-        /// to be waited for, which is the only thing that can be done, a linq4j <c>Enumerable</c> having
-        /// nowhere to suspend.
+        /// A linq4j <c>Enumerable</c> cannot await, so the input's awaiting open is converted with
+        /// <see cref="ClrCursorRelImplementor.Pulled"/> and the window's synchronous open with
+        /// <see cref="ClrCursorRelImplementor.Awaited"/>.
         /// </remarks>
+        /// <param name="implementor">The implementor, through which the input is visited.</param>
+        /// <param name="pref">The row representation the parent prefers; passed on to the input.</param>
+        /// <returns>The awaiting open of the window's rows.</returns>
         ClrCursorAsyncResult TvfImplementorBasedImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref)
         {
             var child = (ClrCursorRel)getInputs().get(0);
             var result = implementor.VisitChildAsync(this, 0, child, pref);
 
-            // both crossings are written here, and neither is a surprise: the input's open is read across
-            // by blocking so that Calcite's generator can read it, and what the generator gives back is
-            // pulled too, so the open is read across again on the way out. The rest of the plan awaits.
             return implementor.Awaited(
                 TvfImplementorBasedWindow(implementor, pref, result.PhysType, result.Format,
                     Expression.Call(null,
@@ -169,19 +150,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Builds the window over an input already in hand as a pulled sequence.
+        /// Builds the window table function over the input's rows, for both implementations.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <param name="pref"></param>
+        /// <param name="implementor">The implementor.</param>
+        /// <param name="pref">The row representation the parent prefers.</param>
         /// <param name="inputPhysType">The input's physical type.</param>
-        /// <param name="inputFormat">How the input represents a row.</param>
+        /// <param name="inputFormat">The input's row format.</param>
         /// <param name="pulled">The input's rows as an <see cref="System.Collections.Generic.IEnumerable{T}"/>
-        /// of its physical row type, opening the input when it is enumerated.</param>
-        /// <returns></returns>
-        /// <remarks>
-        /// Everything from here down is Calcite's and is linq4j, so both bodies share it. It is not a
-        /// dispatch: which sequence <paramref name="pulled"/> was made from is settled by the caller.
-        /// </remarks>
+        /// of its physical row type, which opens the input when enumerated.</param>
+        /// <returns>The synchronous open of the window's rows, in a physical type chosen from <paramref name="pref"/> and the input's format.</returns>
         ClrCursorResult TvfImplementorBasedWindow(ClrCursorRelImplementor implementor, ClrCursorPrefer pref, ClrPhysType inputPhysType, JavaRowFormat inputFormat, Expression pulled)
         {
             var typeFactory = implementor.TypeFactory;
@@ -219,15 +196,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Implements a table function the schema defines, which is a call yielding a sequence.
+        /// Implements a user-defined table function by translating the call. Mirrors
+        /// <c>EnumerableTableFunctionScan.defaultTableFunctionImplement</c>.
         /// </summary>
-        /// <param name="implementor"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, whose translator the generated block is translated with.</param>
+        /// <returns>The synchronous open of a cursor over the <c>Enumerable</c> the translated call returns.</returns>
         ClrCursorResult DefaultTableFunctionImplement(ClrCursorRelImplementor implementor)
         {
             var typeFactory = implementor.TypeFactory;
 
-            // a user-specified element type that is not an array is not supported, which is Calcite's limit
+            // the row format follows Calcite's choice; an element type that is not an array is read as CUSTOM
             var elementType = getElementType();
             JavaRowFormat format;
             if (elementType == null)
@@ -257,9 +235,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns whether the function yields a <see cref="QueryableTable"/>.
+        /// Returns whether the call is to a <see cref="TableFunctionImpl"/> whose method returns a
+        /// <see cref="QueryableTable"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns><see langword="true"/> if the function's method returns a <see cref="QueryableTable"/>; <see langword="false"/> for any other call.</returns>
         bool IsQueryable()
         {
             if (getCall() is not RexCall call)

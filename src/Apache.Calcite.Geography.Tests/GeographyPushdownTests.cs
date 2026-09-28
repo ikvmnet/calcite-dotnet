@@ -17,13 +17,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What an adapter has to match on to push a <c>CLR_ST_GEOG_</c> operator down to a store that can do the
-    /// geodesy itself.
+    /// Pins what an adapter matches on to push a <c>CLR_ST_GEOG_</c> operator down to a store with its own
+    /// geodesic functions.
     /// </summary>
     /// <remarks>
-    /// Pushing down is the point of the package: a geodesic store answers <c>CLR_ST_GEOG_DWITHIN</c> in its own
-    /// SQL, and the S2 evaluator here is what answers when nothing better can. No adapter exists yet, so
-    /// these pin the two facts one would be written against rather than any adapter's behaviour.
+    /// The operators resolve here through <see cref="GeographySchema"/>, as a query over an adapter's schema
+    /// would reach them.
     /// </remarks>
     public class GeographyPushdownTests
     {
@@ -43,15 +42,15 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every call in the plan, which is what an adapter's rule sees.
+        /// Returns every <c>RexCall</c> in the plan, nested calls included.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// Walked by hand rather than with <c>RelShuttleImpl</c>, which dispatches on the node's type and so
-        /// does not reach a node it has no overload for. <c>RelNode.accept(RexShuttle)</c> rewrites the
-        /// expressions a node holds, and the shuttle collects them on the way through.
+        /// The tree is walked by hand rather than with <c>RelShuttleImpl</c>, which dispatches on the node's
+        /// type and does not reach a node it has no overload for. <c>RelNode.accept(RexShuttle)</c> visits the
+        /// expressions each node holds.
         /// </remarks>
+        /// <param name="rel">The root of the plan.</param>
+        /// <returns>The calls held by every node of the plan, nested calls included.</returns>
         static List<RexCall> Calls(RelNode rel)
         {
             var found = new List<RexCall>();
@@ -72,7 +71,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The call survives into the plan, named, with the arguments an adapter would render.
+        /// The call reaches the logical plan by name, with its operands, for an adapter to render.
         /// </summary>
         [Fact]
         public void ShouldLeaveTheCallInThePlanForAnAdapterToFind()
@@ -85,27 +84,21 @@ namespace Apache.Calcite.Geography.Tests
             dwithin!.getOperands().size().Should().Be(3);
             dwithin.getOperator().Should().BeAssignableTo<SqlUserDefinedFunction>();
 
-            // the first operand is the column, which is what an adapter checks before deciding it can render
-            // the call against the table it owns
+            // The first operand is the column, which an adapter checks before rendering the call against its
+            // own table.
             dwithin.getOperands().get(0).Should().BeAssignableTo<RexInputRef>();
         }
 
         /// <summary>
-        /// The operator in the plan is not the instance the operator table holds, so an adapter matches by
-        /// name rather than by reference.
+        /// The operator in a plan resolved through a schema is neither the operator table's instance nor equal
+        /// to it; <see cref="GeographyOperatorTable.Matches"/> and <see cref="GeographyOperatorTable.Rebind"/>
+        /// relate the two.
         /// </summary>
         /// <remarks>
-        /// <para><c>CalciteCatalogReader.toOp</c> builds a fresh <c>SqlUserDefinedFunction</c> on every
-        /// lookup and caches nothing, so reference equality never holds for a schema-registered
-        /// operator.</para>
-        ///
-        /// <para><b>Nor does <c>equals</c>, and that changed.</b> <c>SqlOperator.equals</c> begins
-        /// <c>obj.getClass().equals(this.getClass())</c>, and this table's operators are a
-        /// <c>GeographyFunction</c> — a <c>SqlUserDefinedFunction</c> carrying the strictness and symmetry
-        /// Calcite's own simplifications read — while what a schema hands back is the plain class. It used to
-        /// hold, for want of that subclass. <see cref="GeographyOperatorTable.Matches"/> is the test that
-        /// works on both routes, and <see cref="GeographyOperatorTable.Rebind"/> is how a plan gets the
-        /// declaration back.</para>
+        /// <c>CalciteCatalogReader.toOp</c> builds a new plain <c>SqlUserDefinedFunction</c> on every lookup.
+        /// <c>SqlOperator.equals</c> first compares classes, and the table's operators are
+        /// <c>GeographyFunction</c>, a subclass carrying the strictness and symmetry Calcite's simplifications
+        /// read, so <c>equals</c> is false as well.
         /// </remarks>
         [Fact]
         public void ShouldNotGiveThePlanTheOperatorTablesOwnInstance()

@@ -9,15 +9,15 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Turns a connection string into the <see cref="Properties"/> Calcite's own connection is configured by.
+    /// Turns a connection string into the <see cref="Properties"/> that configure Calcite's
+    /// <c>CalciteConnectionConfigImpl</c>.
     /// </summary>
     internal static class CalciteEngineProperties
     {
 
         /// <summary>
-        /// Maps each <see cref="CalciteConnectionStringBuilder"/> key constant to the
-        /// corresponding <see cref="CalciteConnectionProperty"/>, which is the authoritative
-        /// source of the camelCase property name Calcite expects.
+        /// Maps each <see cref="CalciteConnectionStringBuilder"/> key to its <see cref="CalciteConnectionProperty"/>,
+        /// whose <c>camelName()</c> is the property name Calcite reads.
         /// </summary>
         static readonly Dictionary<string, CalciteConnectionProperty> KeyToProperty = new(StringComparer.OrdinalIgnoreCase)
         {
@@ -47,11 +47,16 @@ namespace Apache.Calcite.Data.Internal
         };
 
         /// <summary>
-        /// Builds a Java Properties object from connection string options, mapping keys to their camel-cased property
-        /// names and excluding the keys that are the provider's rather than the engine's.
+        /// Builds Calcite connection properties from connection string options.
         /// </summary>
-        /// <param name="options">The connection string builder containing the options to convert.</param>
-        /// <returns>A Properties object populated with the connection string options.</returns>
+        /// <param name="options">The connection string options.</param>
+        /// <returns>The properties.</returns>
+        /// <remarks>
+        /// A known key is renamed to Calcite's camelCase property name; an unknown key is passed through as
+        /// written, so any Calcite property can be set. <c>Model</c>, <c>Pooling</c>,
+        /// <c>Connection Idle Lifetime</c>, <c>Connection Pruning Interval</c> and <c>TypeSystem</c> are the
+        /// provider's own and are left out.
+        /// </remarks>
         public static Properties Build(CalciteConnectionStringBuilder options)
         {
             var props = new Properties();
@@ -70,8 +75,8 @@ namespace Apache.Calcite.Data.Internal
                 if (string.Equals(key, CalciteConnectionStringBuilder.ConnectionPruningIntervalKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 
-                // a provider option, not an engine one: it names a .NET type, resolved by ClrPlugin, and
-                // nothing in calcite-core reads the engine property but the constructor line this ports
+                // a provider option, not an engine one: it names a .NET type, which ClrPlugin resolves when
+                // the session builds its type factory
                 if (string.Equals(key, CalciteConnectionStringBuilder.TypeSystemKey, StringComparison.OrdinalIgnoreCase))
                     continue;
 

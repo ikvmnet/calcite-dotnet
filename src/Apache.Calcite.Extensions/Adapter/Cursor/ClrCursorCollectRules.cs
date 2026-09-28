@@ -18,7 +18,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorCollectRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorCollectRule Create()
         {
             return (ClrCursorCollectRule)Config.INSTANCE
@@ -30,7 +30,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorCollectRule(Config config) :
             base(config)
         {
@@ -59,7 +59,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorUncollectRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorUncollectRule Create()
         {
             return (ClrCursorUncollectRule)Config.INSTANCE
@@ -71,7 +71,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorUncollectRule(Config config) :
             base(config)
         {
@@ -96,8 +96,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorLimitSort"/>.
     /// </summary>
     /// <remarks>
-    /// A sort and a limit together read only as many rows as are wanted, where a sort followed by a limit
-    /// orders everything first.
+    /// Mirrors <c>EnumerableLimitSortRule</c>. The combined node retains only the first offset plus fetch rows
+    /// while reading its input, where a sort followed by a limit orders every row first.
     /// </remarks>
     public class ClrCursorLimitSortRule : RelRule
     {
@@ -105,7 +105,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorLimitSortRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorLimitSortRule Create()
         {
             var config = EnumerableLimitSortRule.Config.DEFAULT.withDescription("ClrCursorLimitSortRule");
@@ -116,7 +116,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorLimitSortRule(RelRule.Config config) :
             base(config)
         {

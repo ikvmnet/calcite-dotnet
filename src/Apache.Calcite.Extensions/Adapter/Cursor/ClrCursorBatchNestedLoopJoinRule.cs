@@ -12,10 +12,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorBatchNestedLoopJoin"/>.
     /// </summary>
     /// <remarks>
-    /// The right input becomes a filter over a disjunction of the batch's conditions, one correlation
-    /// variable per batch position, so that one pass of the right input serves a whole batch of left rows.
+    /// Mirrors <c>EnumerableBatchNestedLoopJoinRule</c>. The right input becomes a filter over a disjunction of
+    /// the join condition repeated once per batch position, each against its own correlation variable, so one
+    /// pass of the right input serves a whole batch of left rows. Matches inner, left, semi and anti joins.
     ///
-    /// <para>Calcite does not put this rule in <c>ENUMERABLE_RULES</c>; a caller turns it on.</para>
+    /// <para>Like Calcite's, this rule is not among the default rules; a caller adds it.</para>
     /// </remarks>
     public class ClrCursorBatchNestedLoopJoinRule : RelRule
     {
@@ -23,7 +24,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorBatchNestedLoopJoinRule"/>, with Calcite's default batch size.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorBatchNestedLoopJoinRule Create()
         {
             return Create(org.apache.calcite.adapter.enumerable.EnumerableBatchNestedLoopJoinRule.Config.DEFAULT.batchSize());
@@ -33,7 +34,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Creates a <see cref="ClrCursorBatchNestedLoopJoinRule"/>.
         /// </summary>
         /// <param name="batchSize">How many left rows one pass of the right input serves.</param>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorBatchNestedLoopJoinRule Create(int batchSize)
         {
             var config = org.apache.calcite.adapter.enumerable.EnumerableBatchNestedLoopJoinRule.Config.DEFAULT
@@ -48,8 +49,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
-        /// <param name="batchSize"></param>
+        /// <param name="config">The rule configuration.</param>
+        /// <param name="batchSize">How many left rows one pass of the right input serves.</param>
         public ClrCursorBatchNestedLoopJoinRule(RelRule.Config config, int batchSize) :
             base(config)
         {
@@ -89,14 +90,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var corrVar0 = (RexNode)corrVarList.get(0);
             var requiredColumns = ImmutableBitSet.builder();
 
-            // the condition against the first correlation variable: a reference to the right input keeps its
-            // place, and one to the left becomes a field of that variable
+            // the condition against the first correlation variable: a reference to the right input is shifted
+            // to the right input's own field numbering, and one to the left becomes a field of that variable
             var condition = (RexNode)join.getCondition().accept(new FirstCondition(rexBuilder, leftFieldCount, corrVar0, requiredColumns));
 
             var conditionList = new java.util.ArrayList();
             conditionList.add(condition);
 
-            // and the same condition against each of the other batch positions
+            // the same condition against each other batch position
             for (int i = 1; i < batchSize; i++)
                 conditionList.add((RexNode)condition.accept(new OtherCondition(corrVar0, (RexNode)corrVarList.get(i))));
 
@@ -114,7 +115,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Rewrites a reference to the left input as a field of the first correlation variable.
+        /// Rewrites a reference to the left input as a field of the first correlation variable, recording it
+        /// as required, and renumbers a reference to the right input against the right input alone.
         /// </summary>
         sealed class FirstCondition(RexBuilder rexBuilder, int leftFieldCount, RexNode corrVar0, ImmutableBitSet.Builder requiredColumns) : RexShuttle
         {
@@ -134,7 +136,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Rewrites the first correlation variable as another of the batch.
+        /// Replaces the first correlation variable with another one of the batch.
         /// </summary>
         sealed class OtherCondition(RexNode corrVar0, RexNode corrVar) : RexShuttle
         {

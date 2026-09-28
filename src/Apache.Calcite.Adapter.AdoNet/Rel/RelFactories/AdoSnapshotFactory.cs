@@ -9,8 +9,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="SnapshotFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// Temporal snapshot operators are not supported by the ADO adapter; this factory always throws.
+    /// A <see cref="SnapshotFactory"/> that throws: the adapter does not push down a temporal snapshot.
     /// </summary>
     public class AdoSnapshotFactory : SnapshotFactory
     {

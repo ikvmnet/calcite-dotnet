@@ -19,13 +19,17 @@ namespace Apache.Calcite.Tests
 {
 
     /// <summary>
-    /// Runs the example in the project README, so that it cannot go stale without a test going red.
+    /// Runs the code example in the <c>Apache.Calcite.Extensions</c> README.
     /// </summary>
+    /// <remarks>
+    /// The code between the <c>README example</c> markers appears in the README with the same tokens and
+    /// comments, and the planning code before them with the same tokens; keep them in step.
+    /// </remarks>
     public class ReadmeExampleTests
     {
 
         /// <summary>
-        /// The table the example queries.
+        /// The table the example queries: two rows of <c>ID</c> and <c>NAME</c>.
         /// </summary>
         class PeopleTable : AbstractTable, ScannableTable
         {
@@ -52,8 +56,9 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// The context the compiled plan is bound to.
+        /// The data context the compiled plan is opened against.
         /// </summary>
+        /// <param name="schema">The root schema the plan was planned against.</param>
         class ExampleDataContext(SchemaPlus schema) : DataContext
         {
 
@@ -73,8 +78,9 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// The example from the README, run as written: one factory, opened both ways.
+        /// Runs the README example, then opens the same factory both ways again and checks the rows.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async System.Threading.Tasks.Task ShouldRunTheExampleFromTheReadme()
         {
@@ -108,7 +114,7 @@ namespace Apache.Calcite.Tests
                 physical.getCluster().getRexBuilder(), new java.util.HashMap());
             var factory = implementor.ImplementRoot((Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRel)physical, ClrCursorPrefer.Array);
 
-            // opening runs the plan's acquisition -- a sort drains, a leaf executes -- and reading reads rows
+            // opening does the plan's up-front work (a sort drains its input, a table runs its query); reading returns rows
             await using var cursor = await factory.OpenAsync(dataContext, cancellationToken);
             while (await cursor.ReadAsync(cancellationToken))
                 Console.WriteLine(cursor.Current);

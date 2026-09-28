@@ -11,379 +11,361 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// Physical type of a row of the <see cref="Cursor.ClrCursorConvention"/> calling convention.
+    /// Physical type of a row of the <see cref="Cursor.ClrCursorConvention"/> calling convention: how a row
+    /// with a given relational type is represented at run time, and how to build expressions over it.
     /// </summary>
     /// <remarks>
-    /// <see cref="PhysType"/>, member for member, answering in <see cref="Expression"/> where Calcite answers
-    /// in linq4j. It is not a <see cref="PhysType"/> and does not derive from one: <c>PhysType</c> is
-    /// <c>EnumerableConvention</c>'s row abstraction, its members are declared to return linq4j, and a node of
-    /// this convention has no use for that answer. A node is in one convention or the other, and so is its
-    /// physical type.
-    ///
-    /// <para>A <see cref="ClrPhysType"/> is the same triple a <c>PhysTypeImpl</c> is — a type factory, a
-    /// <see cref="RelDataType"/>, and a <see cref="JavaRowFormat"/> that has already been through
-    /// <c>JavaRowFormat.optimize</c>. Nothing of Calcite's is held: the two Rex entry points that are
-    /// parameterised by a <c>PhysType</c> build one from those three where they are called, which is what
-    /// that code already does.</para>
-    ///
-    /// <para>The format is still Calcite's enum, and <see cref="JavaRowFormatExtensions"/> answers for it the two
-    /// members that would otherwise return linq4j. A row format of this convention's own is a separate
-    /// pass.</para>
-    ///
+    /// Mirrors <see cref="PhysType"/> member for member, returning <see cref="System.Linq.Expressions"/>
+    /// expressions where Calcite returns linq4j ones. It does not implement <see cref="PhysType"/>. Like a
+    /// <c>PhysTypeImpl</c>, it is defined by a type factory, a <see cref="RelDataType"/> and a
+    /// <see cref="JavaRowFormat"/>; code that needs a Calcite <c>PhysType</c> builds one from those three.
     /// </remarks>
     public interface ClrPhysType
     {
 
         /// <summary>
-        /// Returns the CLR type that represents a row.
+        /// Gets the CLR type of a row, boxed.
         /// </summary>
         /// <remarks>
-        /// <c>PhysType.getRowType</c>, <b>boxed</b>, which is where this diverges from Calcite. The physical
-        /// type of a one column row of <c>INTEGER NOT NULL</c> is <c>java.lang.Integer</c>, not
-        /// <see cref="int"/>: a CLR sequence states its element type and nothing autoboxes at the boundary,
-        /// so the choice is made once here rather than at each call site.
-        ///
-        /// <para>Calcite can leave it to its callers, because there is no <c>Enumerable&lt;int&gt;</c> in
-        /// Java — the element is a reference whatever the physical type says, and javac inserts the
-        /// conversion. So <c>joinSelector</c> and <c>generateComparator</c> each write
-        /// <c>Primitive.box(physType.getRowType())</c> where they need it. Here
-        /// <see cref="ClrPhysTypeImpl"/> boxes in its constructor and this is that;
-        /// <c>ClrCursorRelImplementor.Result</c> refuses a cursor that disagrees.</para>
+        /// Mirrors <c>PhysType.getJavaRowType</c>, but boxed: a one-column <c>INTEGER NOT NULL</c> row is
+        /// <c>java.lang.Integer</c>, not <see cref="int"/>. A cursor's element type is this type, and
+        /// <see cref="Cursor.ClrCursorRelImplementor.Result"/> refuses a cursor of any other.
         /// </remarks>
         Type RowType { get; }
 
         /// <summary>
-        /// Gets the Java type a row of this physical type is, unboxed.
+        /// Gets the Java type of a row as the type factory gives it, not boxed.
         /// </summary>
         /// <remarks>
-        /// <c>PhysType.getJavaRowType</c>. <see cref="RowType"/> is this boxed, because a CLR sequence states
-        /// its element type; this is the type factory's own answer, which is what a caller asking what a row
-        /// <em>is</em> — <c>Meta.CursorFactory.deduce</c>, say — wants.
+        /// Mirrors <c>PhysType.getJavaRowType</c>.
         /// </remarks>
         java.lang.reflect.Type JavaRowType { get; }
 
         /// <summary>
-        /// Returns the CLR type used to store the field with the given ordinal.
+        /// Returns the CLR type in which the row stores a field.
         /// </summary>
-        /// <param name="field"></param>
-        /// <returns></returns>
+        /// <param name="field">The field ordinal.</param>
+        /// <returns>The storage type; for a <see cref="JavaRowFormat.ARRAY"/> row this is <see cref="object"/>
+        /// even for a field that is not nullable.</returns>
         /// <remarks>
-        /// <c>PhysType.getFieldType</c>. For a row of <see cref="JavaRowFormat.ARRAY"/> the answer is
-        /// <see cref="object"/> even where the field is not nullable, because that is what the array holds.
+        /// Mirrors <c>PhysType.getJavaFieldType</c>.
         /// </remarks>
         Type FieldType(int field);
 
         /// <summary>
-        /// Returns the type factory.
+        /// Gets the type factory.
         /// </summary>
-        /// <remarks>
-        /// <c>PhysType.getTypeFactory</c>.
-        /// </remarks>
         JavaTypeFactory TypeFactory { get; }
 
         /// <summary>
-        /// Returns the physical type of a field.
+        /// Returns the physical type of a field, as a one-field row if the field is not a struct.
         /// </summary>
-        /// <param name="ordinal"></param>
-        /// <returns></returns>
+        /// <param name="ordinal">The field ordinal.</param>
+        /// <returns>The field's physical type, in this type's format.</returns>
         /// <remarks>
-        /// <c>PhysType.field</c>.
+        /// Mirrors <c>PhysType.field</c>.
         /// </remarks>
         ClrPhysType Field(int ordinal);
 
         /// <summary>
-        /// Returns the physical type of a given field's component type.
+        /// Returns the physical type of a collection field's component type, as a one-field row if the
+        /// component is not a struct.
         /// </summary>
-        /// <param name="field"></param>
-        /// <returns></returns>
+        /// <param name="field">The field ordinal.</param>
+        /// <returns>The component's physical type, in this type's format.</returns>
         /// <remarks>
-        /// <c>PhysType.component</c>.
+        /// Mirrors <c>PhysType.component</c>.
         /// </remarks>
         ClrPhysType Component(int field);
 
         /// <summary>
-        /// Returns the SQL row type.
+        /// Gets the relational row type.
         /// </summary>
         /// <remarks>
-        /// <c>PhysType.getRowType</c>.
+        /// Mirrors <c>PhysType.getRowType</c>.
         /// </remarks>
         RelDataType RelRowType { get; }
 
         /// <summary>
-        /// Returns the CLR class of the field with the given ordinal.
+        /// Returns the CLR class of a field's values, as distinct from <see cref="FieldType"/>, the type the
+        /// row stores it in.
         /// </summary>
-        /// <param name="field"></param>
-        /// <returns></returns>
+        /// <param name="field">The field ordinal.</param>
+        /// <returns>The field's class; <c>Object[]</c> for a type the type factory gives no class.</returns>
         /// <remarks>
-        /// <c>PhysType.fieldClass</c>. The field's own type, as against <see cref="FieldType"/>, which is how
-        /// the row stores it.
+        /// Mirrors <c>PhysType.fieldClass</c>.
         /// </remarks>
         Type FieldClass(int field);
 
         /// <summary>
-        /// Returns whether a given field allows null values.
+        /// Returns whether a field is nullable.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The field ordinal.</param>
+        /// <returns><see langword="true"/> if the field's type is nullable.</returns>
         /// <remarks>
-        /// <c>PhysType.fieldNullable</c>.
+        /// Mirrors <c>PhysType.fieldNullable</c>.
         /// </remarks>
         bool FieldNullable(int index);
 
         /// <summary>
-        /// Returns an expression reading a given field of an expression.
+        /// Returns an expression reading a field of a row, as the field's class.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="field"></param>
-        /// <returns></returns>
+        /// <param name="expression">An expression whose value is a row of this type.</param>
+        /// <param name="field">The field ordinal.</param>
+        /// <returns>The field read.</returns>
         /// <remarks>
-        /// <c>PhysType.fieldReference</c>.
+        /// Mirrors <c>PhysType.fieldReference</c>.
         /// </remarks>
         Expression FieldReference(Expression expression, int field);
 
         /// <summary>
-        /// Returns an expression reading a given field of an expression, as the given storage type.
+        /// Returns an expression reading a field of a row, as a given storage type.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="field"></param>
-        /// <param name="storageType">The type the value is wanted as, or null for whatever the row holds.</param>
-        /// <returns></returns>
+        /// <param name="expression">An expression whose value is a row of this type.</param>
+        /// <param name="field">The field ordinal.</param>
+        /// <param name="storageType">The type wanted, or <see langword="null"/> for the field's class. A date,
+        /// time or timestamp field can be read as its internal <see cref="int"/> or <see cref="long"/>.</param>
+        /// <returns>The field read.</returns>
         /// <remarks>
-        /// <c>PhysType.fieldReference</c>, the overload that optimises for the target storage type.
+        /// Mirrors <c>PhysType.fieldReference</c>, the overload that takes a storage type.
         /// </remarks>
         Expression FieldReference(Expression expression, int field, Type? storageType);
 
         /// <summary>
-        /// Returns a lambda reading a list of fields into a comparable list.
+        /// Returns a lambda that extracts a key from a row: nothing, one field's value, or a comparable list of
+        /// several fields.
         /// </summary>
-        /// <param name="fields"></param>
-        /// <returns></returns>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <returns>The key selector.</returns>
         /// <remarks>
-        /// <c>PhysType.generateAccessor</c>. The result is a <c>FlatLists</c> list, which is comparable and
-        /// hashes by value, because it is what keys a lookup.
+        /// Mirrors <c>PhysType.generateAccessor</c>. With no fields the key is an empty comparable list; with
+        /// several it is a <c>FlatLists</c> list, which compares and hashes by value.
         /// </remarks>
         LambdaExpression GenerateAccessor(java.util.List fields);
 
         /// <summary>
-        /// Returns a lambda reading a list of fields, yielding null where any of them is null.
+        /// Returns a lambda that extracts a key from a row, as <see cref="GenerateAccessor"/> does, but yields
+        /// null for a key of two or more fields if any of them is null.
         /// </summary>
-        /// <param name="fields"></param>
-        /// <returns></returns>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <returns>The key selector.</returns>
         /// <remarks>
-        /// <c>PhysType.generateAccessorWithoutNulls</c>. A key of two or more fields is null as a whole where
-        /// any field of it is null, so a row with a null in its key matches nothing rather than matching
-        /// another row with a null in the same place.
+        /// Mirrors <c>PhysType.generateAccessorWithoutNulls</c>. A null key matches nothing, so a row with a
+        /// null in its key does not join to another with a null in the same place.
         /// </remarks>
         LambdaExpression GenerateAccessorWithoutNulls(java.util.List fields);
 
         /// <summary>
-        /// Returns a lambda reading a list of fields, yielding null only where a field that is not null-safe is
-        /// null.
+        /// Returns a lambda that extracts a key from a row as a list, even for one field, yielding null if a
+        /// field flagged for null exclusion is null or, for a struct field, holds a null at any depth.
         /// </summary>
-        /// <param name="fields"></param>
-        /// <param name="nullExclusionFlags"></param>
-        /// <returns></returns>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <param name="nullExclusionFlags">One boolean per field: <see langword="true"/> where a null makes
+        /// the key null (<c>=</c>), <see langword="false"/> where nulls compare equal
+        /// (<c>IS NOT DISTINCT FROM</c>).</param>
+        /// <returns>The key selector.</returns>
+        /// <exception cref="java.lang.AssertionError">The two lists differ in length.</exception>
         /// <remarks>
-        /// <c>PhysType.generateNullAwareAccessor</c>.
+        /// Mirrors <c>PhysType.generateNullAwareAccessor</c>.
         /// </remarks>
         LambdaExpression GenerateNullAwareAccessor(java.util.List fields, java.util.List nullExclusionFlags);
 
         /// <summary>
-        /// Returns a lambda selecting the given fields, in this type's own row format.
+        /// Returns a lambda selecting fields of a row into a row of this type's format.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="fields"></param>
-        /// <returns></returns>
+        /// <param name="parameter">The lambda's parameter, of this type's <see cref="RowType"/>.</param>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <returns>The selector.</returns>
         /// <remarks>
-        /// <c>PhysType.generateSelector</c>.
+        /// Mirrors <c>PhysType.generateSelector</c>.
         /// </remarks>
         LambdaExpression GenerateSelector(ParameterExpression parameter, java.util.List fields);
 
         /// <summary>
-        /// Returns a lambda selecting the given fields, in the given row format.
+        /// Returns a lambda selecting fields of a row into a row of the given format.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="fields"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
+        /// <param name="parameter">The lambda's parameter, of this type's <see cref="RowType"/>.</param>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <param name="targetFormat">The output format; replaced by <see cref="JavaRowFormat.LIST"/> for no
+        /// fields and <see cref="JavaRowFormat.SCALAR"/> for one.</param>
+        /// <returns>The selector; the identity if this type's format is <see cref="JavaRowFormat.SCALAR"/>.</returns>
         /// <remarks>
-        /// <c>PhysType.generateSelector</c>.
+        /// Mirrors <c>PhysType.generateSelector</c>.
         /// </remarks>
         LambdaExpression GenerateSelector(ParameterExpression parameter, java.util.List fields, JavaRowFormat targetFormat);
 
         /// <summary>
-        /// Returns a lambda selecting the given fields with an indicator per field, in the given row format.
+        /// Returns a lambda selecting fields of a row for a grouping set, followed by one indicator per field.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="fields"></param>
-        /// <param name="usedFields">A subset of <paramref name="fields"/>; a field outside it is left at its
-        /// default and its indicator set, which is what makes <c>GROUPING(field)</c> answer 1.</param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
+        /// <param name="parameter">The lambda's parameter, of this type's <see cref="RowType"/>.</param>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <param name="usedFields">The subset of <paramref name="fields"/> the grouping set groups by. Any
+        /// other field is output as its type's default value with its indicator <see langword="true"/>, which is
+        /// what makes <c>GROUPING(field)</c> return 1.</param>
+        /// <param name="targetFormat">The output format.</param>
+        /// <returns>The selector.</returns>
         /// <remarks>
-        /// <c>PhysType.generateSelector</c>, the grouping set overload.
+        /// Mirrors <c>PhysType.generateSelector</c>, the overload for grouping sets.
         /// </remarks>
         LambdaExpression GenerateSelector(ParameterExpression parameter, java.util.List fields, java.util.List usedFields, JavaRowFormat targetFormat);
 
         /// <summary>
-        /// Returns the row type and the field expressions a selector for the given fields would be built from.
+        /// Returns the output row type and field expressions from which a selector for the given fields would
+        /// be built.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="fields"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
+        /// <param name="parameter">The row parameter, of this type's <see cref="RowType"/>.</param>
+        /// <param name="fields">The field ordinals, a list of integers.</param>
+        /// <param name="targetFormat">The output format, adjusted as in
+        /// <see cref="GenerateSelector(ParameterExpression, java.util.List, JavaRowFormat)"/>.</param>
+        /// <returns>The output row type and one expression per field.</returns>
         /// <remarks>
-        /// <c>PhysType.selector</c>, which Calcite documents as used only by <c>EnumerableWindow</c>, and which
-        /// is used only by <see cref="Cursor.ClrCursorWindow"/> here for the same reason: a window builds the
-        /// partition key a field at a time rather than taking the lambda whole.
+        /// Mirrors <c>PhysType.selector</c>, which Calcite uses only in <c>EnumerableWindow</c>; this is used
+        /// by <see cref="Cursor.ClrCursorWindow"/>.
         /// </remarks>
         (Type RowType, IReadOnlyList<Expression> Expressions) Selector(ParameterExpression parameter, java.util.List fields, JavaRowFormat targetFormat);
 
         /// <summary>
-        /// Returns the physical type of the given fields of this one, in the given row format.
+        /// Returns the physical type of a projection of this type's fields.
         /// </summary>
-        /// <param name="integers"></param>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="integers">The field ordinals, a list of integers.</param>
+        /// <param name="format">The output format, optimized for the projected row type.</param>
+        /// <returns>The projected physical type.</returns>
         /// <remarks>
-        /// <c>PhysType.project</c>. The output format is optimised where there are no fields or one.
+        /// Mirrors <c>PhysType.project</c>.
         /// </remarks>
         ClrPhysType Project(java.util.List integers, JavaRowFormat format);
 
         /// <summary>
-        /// Returns the physical type of the given fields of this one, optionally with indicator fields, in the
-        /// given row format.
+        /// Returns the physical type of a projection of this type's fields, optionally followed by a
+        /// non-nullable <c>BOOLEAN</c> indicator field per projected field.
         /// </summary>
-        /// <param name="integers"></param>
-        /// <param name="indicator"></param>
-        /// <param name="format"></param>
-        /// <returns></returns>
+        /// <param name="integers">The field ordinals, a list of integers.</param>
+        /// <param name="indicator">Whether to add indicator fields, each named <c>i$</c> and the field's name.</param>
+        /// <param name="format">The output format, optimized for the projected row type.</param>
+        /// <returns>The projected physical type.</returns>
         /// <remarks>
-        /// <c>PhysType.project</c>.
+        /// Mirrors <c>PhysType.project</c>.
         /// </remarks>
         ClrPhysType Project(java.util.List integers, bool indicator, JavaRowFormat format);
 
         /// <summary>
-        /// Returns a lambda yielding a collation key, and the comparator ordering two of those keys.
+        /// Returns a key selector and a comparator that together sort rows by a list of field collations.
         /// </summary>
-        /// <param name="collations"></param>
-        /// <returns></returns>
+        /// <param name="collations">The field collations, a list of <see cref="RelFieldCollation"/>.</param>
+        /// <returns>For one collation, a selector of that field and a null-aware comparator of its values;
+        /// otherwise the identity selector and a comparator of whole rows.</returns>
         /// <remarks>
-        /// <c>PhysType.generateCollationKey</c>. The comparator is sometimes null, which is Calcite's way of
-        /// saying the key orders itself.
+        /// Mirrors <c>PhysType.generateCollationKey</c>.
         /// </remarks>
         (LambdaExpression Selector, Expression? Comparator) GenerateCollationKey(java.util.List collations);
 
         /// <summary>
-        /// Returns the comparator ordering two whole rows of this type.
+        /// Returns an expression creating a <c>java.util.Comparator</c> of whole rows by a collation.
         /// </summary>
-        /// <param name="collation"></param>
-        /// <returns></returns>
+        /// <param name="collation">The collation.</param>
+        /// <returns>The comparator, which takes boxed rows.</returns>
         /// <remarks>
-        /// <c>PhysType.generateComparator</c>. Unlike the comparator of
-        /// <see cref="GenerateCollationKey"/>, this one acts on the whole element.
+        /// Mirrors <c>PhysType.generateComparator</c>.
         /// </remarks>
         Expression GenerateComparator(RelCollation collation);
 
         /// <summary>
-        /// Returns the comparator a merge join orders its inputs by.
+        /// Returns an expression creating the comparator a merge join orders its keys by.
         /// </summary>
-        /// <param name="collation"></param>
-        /// <returns></returns>
+        /// <param name="collation">The key collation, which must be ascending with nulls last on every field.</param>
+        /// <returns>The comparator, which takes boxed rows.</returns>
+        /// <exception cref="java.lang.AssertionError">A field collation is not ascending with nulls last.</exception>
         /// <remarks>
-        /// <c>PhysType.generateMergeJoinComparator</c>, which differs from
-        /// <see cref="GenerateComparator"/> in refusing to call two nulls equal.
+        /// Mirrors <c>PhysType.generateMergeJoinComparator</c>. Unlike <see cref="GenerateComparator"/>, it
+        /// does not treat two nulls as equal.
         /// </remarks>
         Expression GenerateMergeJoinComparator(RelCollation collation);
 
         /// <summary>
-        /// Returns the expression yielding a comparer for rows of this type, or null where a row compares
-        /// itself.
+        /// Returns an expression creating the equality comparer for rows of this type, or
+        /// <see langword="null"/> if rows compare correctly by their own equality.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The comparer expression, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <c>PhysType.comparer</c>. A row of <see cref="JavaRowFormat.ARRAY"/> is an array, whose own equality
-        /// is by reference, so a set operation over one is wrong without this.
+        /// Mirrors <c>PhysType.comparer</c>. An array row needs a comparer because arrays compare by reference,
+        /// and a row holding a struct at any depth needs a deep comparer.
         /// </remarks>
         Expression? Comparer();
 
         /// <summary>
-        /// Returns an expression building a row of this type from one expression per field.
+        /// Returns an expression creating a row of this type from one expression per field.
         /// </summary>
-        /// <param name="expressions"></param>
-        /// <returns></returns>
+        /// <param name="expressions">The field values, in field order.</param>
+        /// <returns>The row.</returns>
         /// <remarks>
-        /// <c>PhysType.record</c>.
+        /// Mirrors <c>PhysType.record</c>.
         /// </remarks>
         Expression Record(IReadOnlyList<Expression> expressions);
 
         /// <summary>
-        /// Returns the row format.
+        /// Gets the row format.
         /// </summary>
         /// <remarks>
-        /// <c>PhysType.getFormat</c>, and already optimised.
+        /// Mirrors <c>PhysType.getFormat</c>.
         /// </remarks>
         JavaRowFormat Format { get; }
 
         /// <summary>
-        /// Returns one expression per named field, each at the field's own type.
+        /// Returns one expression per listed field, each converted to the field's class.
         /// </summary>
-        /// <param name="parameter"></param>
-        /// <param name="argList"></param>
-        /// <returns></returns>
+        /// <param name="parameter">An expression whose value is a row of this type.</param>
+        /// <param name="argList">The field ordinals, a list of integers.</param>
+        /// <returns>The field reads.</returns>
         /// <remarks>
-        /// <c>PhysType.accessors</c>.
+        /// Mirrors <c>PhysType.accessors</c>.
         /// </remarks>
         IReadOnlyList<Expression> Accessors(Expression parameter, java.util.List argList);
 
         /// <summary>
-        /// Returns a copy of this type that allows nulls where <paramref name="nullable"/> is set.
+        /// Returns this type with a nullable row type and a boxed row class, or this type unchanged if
+        /// <paramref name="nullable"/> is <see langword="false"/>.
         /// </summary>
-        /// <param name="nullable"></param>
-        /// <returns></returns>
+        /// <param name="nullable">Whether to make the type nullable.</param>
+        /// <returns>The physical type.</returns>
         /// <remarks>
-        /// <c>PhysType.makeNullable</c>.
+        /// Mirrors <c>PhysType.makeNullable</c>.
         /// </remarks>
         ClrPhysType MakeNullable(bool nullable);
 
         /// <summary>
-        /// Converts an opened cursor of this physical type to one whose rows use the given physical type.
+        /// Converts a synchronous open of this type's rows to one yielding rows in another physical type's
+        /// format.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="targetPhysType"></param>
-        /// <returns></returns>
+        /// <param name="expression">The synchronous open.</param>
+        /// <param name="targetPhysType">The physical type whose format the rows are converted to.</param>
+        /// <returns>The converted open.</returns>
         /// <remarks>
-        /// <c>PhysType.convertTo</c>, which Calcite deprecates for the same reason it gives: only the row
-        /// format of the expression is affected, so the second parameter is misleading and asks a caller for a
-        /// whole physical type it does not need. Kept because Calcite keeps it.
+        /// Mirrors <c>PhysType.convertTo(Expression, PhysType)</c>, which Calcite also deprecates: only the
+        /// target's format is used.
         /// </remarks>
         [Obsolete("Use the JavaRowFormat overload; only the row format of the expression is affected.")]
         Expression ConvertTo(Expression expression, ClrPhysType targetPhysType);
 
         /// <summary>
-        /// Converts an opened cursor of this physical type to one whose rows use the given row format.
+        /// Converts a synchronous open of this type's rows to one yielding rows in the given format.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
+        /// <param name="expression">The synchronous open.</param>
+        /// <param name="targetFormat">The target format, used as given rather than optimized.</param>
+        /// <returns>The converted open, or <paramref name="expression"/> if the format is unchanged.</returns>
         /// <remarks>
-        /// <c>PhysType.convertTo</c>, over a cursor where Calcite's is over an <c>Enumerable</c>.
+        /// Mirrors <c>PhysType.convertTo</c>, over a cursor rather than an <c>Enumerable</c>.
         /// </remarks>
         Expression ConvertTo(Expression expression, JavaRowFormat targetFormat);
 
         /// <summary>
-        /// Converts an awaiting open of this physical type to one whose rows use the given row format.
+        /// Converts an awaiting open of this type's rows to one yielding rows in the given format.
         /// </summary>
-        /// <param name="implementor">The implementor, whose token parameter the awaiting operator is
-        /// passed.</param>
-        /// <param name="expression"></param>
-        /// <param name="targetFormat"></param>
-        /// <returns></returns>
+        /// <param name="implementor">The implementor, which supplies the cancellation token parameter.</param>
+        /// <param name="expression">The awaiting open.</param>
+        /// <param name="targetFormat">The target format, used as given rather than optimized.</param>
+        /// <returns>The converted open, or <paramref name="expression"/> if the format is unchanged.</returns>
         /// <remarks>
-        /// <see cref="ConvertTo(Expression, JavaRowFormat)"/> for the awaiting fork, and a divergence Calcite
-        /// has no counterpart for, because it has no awaiting fork. It takes the implementor because that
-        /// fork's token is a parameter of the tree rather than a default, and
-        /// <see cref="Cursor.ClrCursorBuiltInMethod.CallAsync"/> is what passes it.
+        /// The awaiting counterpart of <see cref="ConvertTo(Expression, JavaRowFormat)"/>; Calcite has none.
         /// </remarks>
         Expression ConvertToAsync(Cursor.ClrCursorRelImplementor implementor, Expression expression, JavaRowFormat targetFormat);
 

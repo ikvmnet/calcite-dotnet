@@ -24,28 +24,17 @@ namespace Apache.Calcite.Extensions.Prepare
     /// The <see cref="DataContext"/> a statement executes against.
     /// </summary>
     /// <remarks>
-    /// Every entry of the map this builds is a fact of the executing statement in the form Calcite's
-    /// generated code reads it: the connection's time zone name as a <c>java.util.TimeZone</c>, its locale
-    /// name as a <c>java.util.Locale</c>, the command timeout in seconds as a <c>java.lang.Long</c> of
-    /// milliseconds, the bound parameters as Java values. This is the adapter between a statement and
-    /// Calcite's runtime, and there is one of it.
+    /// Holds the statement's runtime values in the form Calcite's generated code reads them: the query start
+    /// time as the timestamp variables, the connection's time zone as a <c>java.util.TimeZone</c>, its locale
+    /// as a <c>java.util.Locale</c>, the timeout as a <c>java.lang.Long</c> of milliseconds, the bound
+    /// parameter values, and the values stashed during planning.
     ///
-    /// <para><b>Cancellation is one of those facts.</b> On this side a statement is cancelled by a
-    /// <see cref="CancellationToken"/>; Calcite's side reads <c>DataContext.Variable.CANCEL_FLAG</c>, an
-    /// <see cref="AtomicBoolean"/> that a table polls -- <c>ListTransientTable</c>, and the CSV, file and
-    /// Kafka adapters' tables, no operator of <c>EnumerableDefaults</c> polling it for them. So the token
-    /// comes in and the flag goes in the map, exactly as the time zone and the locale do.</para>
-    ///
-    /// <para>It has to be a registration rather than a flag that reads the token, because
-    /// <c>AtomicBoolean.get()</c> is <c>final</c> -- measured against the assembly, not remembered -- so
-    /// there is no subclass of it that answers from a token. That registration is why this is
-    /// <see cref="IDisposable"/>: left behind, it would hold the flag alive on the caller's token for as
-    /// long as that token lives.</para>
-    ///
-    /// <para>The flag is wired whichever way the rows are read. It is Calcite's channel and knows nothing
-    /// about the convention above it, so a Calcite sub-plan under a pulled plan is cancelled by it too --
-    /// what a pulled plan does not get is cancellation of the operators above that sub-plan, which carry
-    /// no token.</para>
+    /// <para>Calcite code observes cancellation through <c>DataContext.Variable.CANCEL_FLAG</c>, an
+    /// <see cref="AtomicBoolean"/> that some tables poll (<c>EnumerableDefaults</c> operators do not). The
+    /// statement's <see cref="CancellationToken"/> sets the flag through a registration, because
+    /// <c>AtomicBoolean.get()</c> is final and cannot be made to read the token. Disposing releases the
+    /// registration. The flag is set however the rows are read, so it cancels Calcite sub-plans under a
+    /// synchronously read plan too.</para>
     /// </remarks>
     internal sealed class StatementDataContext : DataContext, IDisposable
     {
@@ -66,12 +55,12 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <param name="typeFactory">The type factory the statement was planned with.</param>
         /// <param name="config">The connection configuration, which supplies the time zone and locale.</param>
         /// <param name="defaultSchemaPath">The default schema path, which the SQL advisor resolves against.</param>
-        /// <param name="cancellationToken">The statement's cancellation, which becomes the flag Calcite's
-        /// side polls.</param>
+        /// <param name="cancellationToken">The statement's cancellation token, which sets the cancel
+        /// flag.</param>
         /// <param name="queryTimeoutMillis">The query timeout in milliseconds, or zero for none.</param>
         /// <param name="parameters">Bound positional query parameters, addressed as <c>?0</c>, <c>?1</c>, ….</param>
-        /// <param name="internalParameters">The values planning stashed, which the compiled plan reads back
-        /// by name.</param>
+        /// <param name="internalParameters">The values stashed during planning, which the compiled plan reads
+        /// by name, or <see langword="null"/>.</param>
         public StatementDataContext(
             CalciteSchema? rootSchema,
             JavaTypeFactory typeFactory,
@@ -93,8 +82,8 @@ namespace Apache.Calcite.Extensions.Prepare
             _config = config ?? throw new ArgumentNullException(nameof(config));
             _defaultSchemaPath = defaultSchemaPath ?? [];
 
-            // the time the query started, which the SQL standard requires CURRENT_TIMESTAMP and friends to
-            // report unchanged for its whole duration; the hook is how a test moves the clock
+            // the query start time, which CURRENT_TIMESTAMP and the other timestamp variables report for the
+            // whole statement; Hook.CURRENT_TIME lets a test set it
             var timeHolder = Holder.of(java.lang.Long.valueOf(java.lang.System.currentTimeMillis()));
             Hook.CURRENT_TIME.run(timeHolder);
             var time = ((java.lang.Long)timeHolder.get()).longValue();
@@ -130,7 +119,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 { DataContext.Variable.TIMEOUT.camelName, java.lang.Long.valueOf(queryTimeoutMillis) },
             };
 
-            // Calcite addresses positional dynamic parameters as "?0", "?1", … and puts them in the same map
+            // Calcite reads positional dynamic parameters from the same map as "?0", "?1", ...
             for (var i = 0; i < parameters.Count; i++)
                 _map["?" + i] = parameters[i] ?? DummyValue;
 
@@ -145,8 +134,7 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Stands in the map for a value that is present and null, so that an absent name and a null one are
-        /// told apart.
+        /// Stored in the map for a value that is present and null, to distinguish it from an absent name.
         /// </summary>
         static object DummyValue => org.apache.calcite.avatica.AvaticaSite.DUMMY_VALUE;
 
@@ -160,9 +148,9 @@ namespace Apache.Calcite.Extensions.Prepare
         /// Returns the query provider a plan runs a <c>Queryable</c> through.
         /// </summary>
         /// <remarks>
-        /// <c>DataContextImpl</c> answers the connection, which is itself a <c>QueryProvider</c>.
-        /// There is no connection here, and <c>Linq4j.DEFAULT_PROVIDER</c> is the same delegation to
-        /// <c>queryable.enumerator()</c> without one.
+        /// Calcite's <c>DataContextImpl</c> returns its connection, which is a <c>QueryProvider</c>; with no
+        /// connection, <c>Linq4j.DEFAULT_PROVIDER</c> delegates to <c>queryable.enumerator()</c> in the same
+        /// way.
         /// </remarks>
         public org.apache.calcite.linq4j.QueryProvider getQueryProvider() => org.apache.calcite.linq4j.Linq4j.DEFAULT_PROVIDER;
 
@@ -184,7 +172,7 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Builds the SQL advisor the <c>sqlAdvisor</c> variable answers.
+        /// Builds the SQL advisor returned for the <c>sqlAdvisor</c> variable.
         /// </summary>
         SqlAdvisor GetSqlAdvisor()
         {
@@ -200,7 +188,7 @@ namespace Apache.Calcite.Extensions.Prepare
                 _typeFactory,
                 SqlValidator.Config.DEFAULT);
 
-            // this duplicates ClrPrepareImpl.Prepare2_, as Calcite's own comment says of its copy
+            // duplicates the parser configuration in ClrPrepareImpl.Prepare2_, as Calcite's copy does
             var parserConfig = SqlParser.config()
                 .withQuotedCasing(_config.quotedCasing())
                 .withUnquotedCasing(_config.unquotedCasing())
@@ -212,7 +200,7 @@ namespace Apache.Calcite.Extensions.Prepare
         }
 
         /// <summary>
-        /// Releases the registration that ties the statement's token to the cancel flag.
+        /// Releases the registration that sets the cancel flag from the statement's token.
         /// </summary>
         public void Dispose()
         {

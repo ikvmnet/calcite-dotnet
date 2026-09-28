@@ -12,13 +12,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Rule that converts a <see cref="LogicalTableFunctionScan"/> to a
     /// <see cref="ClrCursorTableFunctionScan"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableTableFunctionScanRule</c>.
+    /// </remarks>
     public class ClrCursorTableFunctionScanRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorTableFunctionScanRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorTableFunctionScanRule Create()
         {
             return (ClrCursorTableFunctionScanRule)Config.INSTANCE
@@ -30,7 +33,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorTableFunctionScanRule(Config config) :
             base(config)
         {

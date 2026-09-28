@@ -9,15 +9,19 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// A table of mappings, and the rule by which a lookup picks one. Serves as a resolver on its own.
+    /// An ordered table of mappings that serves as a resolver.
     /// </summary>
     /// <remarks>
-    /// The rule is the interesting part and it is one method. Where both keys are named, an entry answers
-    /// if it accepts both — so a conversion that is legal only when asked for is written once and is
-    /// nobody's default. Where one key is missing, the entry answers only if it claims to be the default in
-    /// that direction, and the first such entry wins, so order in the table is the priority. Which .NET
-    /// type a column reads back as and which .NET types are merely accepted for it are therefore the same
-    /// table rather than two that can drift.
+    /// <para>
+    /// A lookup is answered by the first entry, in the order entries were added, that accepts it and whose
+    /// factory does not decline. Where the lookup names both a CLR type and a Calcite type, any entry that
+    /// accepts both answers. Where it names only one, an entry answers only if its <see cref="ClrTypeMatch"/>
+    /// makes it the default in that direction.
+    /// </para>
+    /// <para>
+    /// Add every entry before the collection is first used as a resolver: <c>Add</c> is not safe to call
+    /// concurrently with a lookup.
+    /// </para>
     /// </remarks>
     public sealed class ClrTypeMappingCollection : IClrTypeResolver
     {
@@ -70,9 +74,7 @@ namespace Apache.Calcite.Data.Common
                     : Scale < 0 ? typeFactory.createSqlType(SqlTypeName, Precision)
                     : typeFactory.createSqlType(SqlTypeName, Precision, Scale);
 
-                // nullable, so that the representation is the box either way: getJavaClass answers int.class
-                // for a NOT NULL INTEGER and Integer.class for a nullable one, and a value that has left the
-                // plan is a reference regardless
+                // nullable: a bare CLR type carries no NOT NULL constraint
                 return typeFactory.createTypeWithNullability(type, true);
             }
 
@@ -81,46 +83,34 @@ namespace Apache.Calcite.Data.Common
         readonly List<Entry> _entries = [];
 
         /// <summary>
-        /// Entry positions by the SQL type name an entry names, for the entries that name one outright.
+        /// Entry positions by the SQL type name of entries that match on the type name rather than a predicate.
         /// </summary>
         /// <remarks>
-        /// <b>Positions and not entries, because order is priority.</b> The first entry written for a Calcite
-        /// type is what that type reads back as, so a lookup has to consider candidates in the order they
-        /// were added even though it reaches them through two collections. Every bucket is ascending and
-        /// <see cref="_predicated"/> is ascending, so merging them is one walk with two cursors.
-        ///
-        /// <para>An entry whose Calcite type is decided by a predicate cannot be bucketed: it accepts types
-        /// it never names. Those go in <see cref="_predicated"/> and are considered against every lookup,
-        /// which is what a catch-all is for and is why there are few of them.</para>
+        /// Positions rather than entries, because the order entries were added is their priority: each list
+        /// is ascending, as is <see cref="_predicated"/>, so <see cref="Candidates"/> merges the two in order.
         /// </remarks>
         readonly Dictionary<string, List<int>> _byTypeName = [];
 
         /// <summary>
-        /// <see cref="_byTypeName"/> frozen, built on the first lookup and dropped by the next
-        /// <see cref="Add"/>.
+        /// A frozen copy of <see cref="_byTypeName"/>, built on the first lookup and discarded by
+        /// <c>Add</c>.
         /// </summary>
-        /// <remarks>
-        /// <b>Built once and read per cache miss, which is what a frozen dictionary is for.</b> The
-        /// built-in table is filled in a static constructor and never touched again, so every lookup after
-        /// that reads a dictionary nobody is writing; freezing it trades a one-off build for a faster read
-        /// of exactly that shape. A caller adding an entry afterwards drops it rather than rebuilding
-        /// eagerly, so configuring a table stays cheap and the cost lands on the first lookup after.
-        /// </remarks>
         FrozenDictionary<string, List<int>>? _frozen;
 
         /// <summary>
-        /// Entry positions for the entries whose Calcite type is decided by a predicate.
+        /// Entry positions of the entries that accept a Calcite type by predicate, which are candidates for
+        /// every lookup.
         /// </summary>
         readonly List<int> _predicated = [];
 
         /// <summary>
-        /// Entry positions for the entries that can answer a lookup carrying no Calcite type, which is a
-        /// value being written on the strength of its CLR type alone.
+        /// Entry positions of the <see cref="ClrTypeMatch.ClrDefault"/> entries, which are the candidates for a
+        /// lookup naming no Calcite type.
         /// </summary>
         readonly List<int> _clrDefaults = [];
 
         /// <summary>
-        /// Returns the positions a lookup for a Calcite type must consider, in the order they were added.
+        /// Returns the positions a lookup for a Calcite type considers, in the order they were added.
         /// </summary>
         IEnumerable<int> Candidates(RelDataType relType)
         {
@@ -155,17 +145,22 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Adds a mapping.
+        /// Adds an entry whose mapping converts with two delegates.
         /// </summary>
         /// <param name="clrType">The CLR type the mapping presents the Calcite type as.</param>
-        /// <param name="sqlTypeName">The Calcite type the mapping is for.</param>
-        /// <param name="toCalcite">Converts a CLR value to the representation Calcite holds it in.</param>
-        /// <param name="fromCalcite">Converts that representation back to <paramref name="clrType"/>.</param>
-        /// <param name="match">When the entry is willing to answer. Defaults to <see cref="ClrTypeMatch.Default"/>.</param>
-        /// <param name="precision">Precision of the Calcite type where the lookup does not carry one.</param>
-        /// <param name="scale">Scale of the Calcite type where the lookup does not carry one.</param>
-        /// <param name="clrTypePredicate">Accepts a CLR type in place of comparing to <paramref name="clrType"/>.</param>
-        /// <param name="relTypePredicate">Accepts a Calcite type in place of comparing its type name.</param>
+        /// <param name="sqlTypeName">The type name of the Calcite type the mapping is for.</param>
+        /// <param name="toCalcite">Converts a non-null CLR value to the class Calcite holds the type in.</param>
+        /// <param name="fromCalcite">Converts a non-null value of that class to <paramref name="clrType"/>.</param>
+        /// <param name="match">Which lookups naming only one type the entry answers. Defaults to
+        /// <see cref="ClrTypeMatch.Default"/>.</param>
+        /// <param name="precision">The precision of the Calcite type built for a lookup that names only a CLR
+        /// type, or -1 for none.</param>
+        /// <param name="scale">The scale of that Calcite type, or -1 for none; used only with a precision.</param>
+        /// <param name="clrTypePredicate">Decides which CLR types the entry accepts, in place of comparing with
+        /// <paramref name="clrType"/>.</param>
+        /// <param name="relTypePredicate">Decides which Calcite types the entry accepts, in place of comparing
+        /// the type name with <paramref name="sqlTypeName"/>.</param>
+        /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
         public void Add(
             Type clrType,
             SqlTypeName sqlTypeName,
@@ -186,16 +181,22 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Adds a mapping built by a factory of its own.
+        /// Adds an entry whose mapping is built by a factory.
         /// </summary>
-        /// <param name="clrType"></param>
-        /// <param name="sqlTypeName"></param>
-        /// <param name="factory"></param>
-        /// <param name="match"></param>
-        /// <param name="precision"></param>
-        /// <param name="scale"></param>
-        /// <param name="clrTypePredicate"></param>
-        /// <param name="relTypePredicate"></param>
+        /// <param name="clrType">The CLR type the mapping presents the Calcite type as. For a lookup naming
+        /// only a Calcite type, this is the CLR type passed to <paramref name="factory"/>.</param>
+        /// <param name="sqlTypeName">The type name of the Calcite type the mapping is for.</param>
+        /// <param name="factory">Builds the mapping, or declines by returning <see langword="null"/>.</param>
+        /// <param name="match">Which lookups naming only one type the entry answers. Defaults to
+        /// <see cref="ClrTypeMatch.Default"/>.</param>
+        /// <param name="precision">The precision of the Calcite type built for a lookup that names only a CLR
+        /// type, or -1 for none.</param>
+        /// <param name="scale">The scale of that Calcite type, or -1 for none; used only with a precision.</param>
+        /// <param name="clrTypePredicate">Decides which CLR types the entry accepts, in place of comparing with
+        /// <paramref name="clrType"/>.</param>
+        /// <param name="relTypePredicate">Decides which Calcite types the entry accepts, in place of comparing
+        /// the type name with <paramref name="sqlTypeName"/>.</param>
+        /// <exception cref="ArgumentNullException">A required argument is <see langword="null"/>.</exception>
         public void Add(
             Type clrType,
             SqlTypeName sqlTypeName,
@@ -224,7 +225,7 @@ namespace Apache.Calcite.Data.Common
                 RelTypePredicate = relTypePredicate,
             });
 
-            // an entry that decides by predicate accepts types it never names, so it cannot be bucketed
+            // an entry that accepts by predicate can match any type name, so it cannot be bucketed by one
             if (relTypePredicate is not null)
                 _predicated.Add(position);
             else
@@ -238,7 +239,6 @@ namespace Apache.Calcite.Data.Common
             if (match.HasFlag(ClrTypeMatch.ClrDefault))
                 _clrDefaults.Add(position);
 
-            // the frozen copy is of a table that has just changed
             _frozen = null;
         }
 
@@ -250,7 +250,7 @@ namespace Apache.Calcite.Data.Common
             if (clrType is null && relType is null)
                 throw new ArgumentException("A lookup carries at least one of a CLR type and a Calcite type.");
 
-            // only the CLR type: the entry answers if it is what that type is written as
+            // only the CLR type: only an entry that is that type's default answers
             if (relType is null)
             {
                 foreach (var position in _clrDefaults)
@@ -267,18 +267,16 @@ namespace Apache.Calcite.Data.Common
             {
                 var entry = _entries[position];
 
-                // both named: the entry answers whenever it accepts both, whatever its defaults are
+                // both named: any entry accepting both answers, unless its factory declines
                 if (clrType is not null)
                 {
-                    // a factory that declines leaves the lookup to the entries after it, which is how an
-                    // entry written for a shape refuses one instance of that shape
                     if (entry.AcceptsClrType(clrType) && entry.AcceptsRelType(relType) && entry.Factory(context, relType, clrType) is { } named)
                         return named;
 
                     continue;
                 }
 
-                // only the Calcite type: the entry answers if it is what that type reads back as
+                // only the Calcite type: only an entry that is that type's default answers
                 if (entry.Match.HasFlag(ClrTypeMatch.RelDefault) && entry.AcceptsRelType(relType) && entry.Factory(context, relType, entry.ClrType) is { } fallback)
                     return fallback;
             }
@@ -288,10 +286,8 @@ namespace Apache.Calcite.Data.Common
 
         /// <inheritdoc />
         /// <remarks>
-        /// Table order, so the type's default comes first and the conversions that are legal only when
-        /// asked for follow. An entry whose CLR type is decided by a predicate rather than named contributes
-        /// nothing here: it accepts types it cannot list, and inventing <see cref="object"/> for it would
-        /// report the catch-all as though it were a choice.
+        /// The types are in the order their entries were added, without duplicates. An entry that accepts CLR
+        /// types by predicate is left out, because the types it accepts cannot be listed.
         /// </remarks>
         public IEnumerable<Type> GetClrTypes(RelDataType relType, ClrTypeContext context)
         {

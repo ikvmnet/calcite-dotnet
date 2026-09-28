@@ -16,21 +16,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the adapter against a real SQL Server, which is the only thing that exercises the information
-    /// schema path and the SQL Server type mapping.
+    /// Tests the adapter against SQL Server through SqlClient, which exercises the information schema
+    /// metadata path and the SQL Server type mapping.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Every query against SQL Server failed with <c>InvalidCastException: Unable to cast object of type
-    /// 'System.Byte' to type 'System.Int32'</c> and nothing here said so, because the suite had only ever
-    /// been pointed at SQLite, whose metadata comes from <c>PRAGMA table_xinfo</c> rather than from
-    /// <c>INFORMATION_SCHEMA</c>. A provider's own description of itself is not something one provider can
-    /// stand in for.
-    /// </para>
-    /// <para>
-    /// LocalDB is Windows only, and a Windows machine need not have it either, so these skip where there is
-    /// no server to talk to.
-    /// </para>
+    /// SQLite's metadata comes from <c>PRAGMA table_xinfo</c> rather than <c>INFORMATION_SCHEMA</c>, so the
+    /// SQLite suites do not cover this path. The tests skip where no LocalDB instance is reachable.
     /// </remarks>
     public class SqlServerQueryTests : IDisposable
     {
@@ -77,11 +68,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its rows as strings, so a comparison does not depend on which numeric
-        /// type a provider chose.
+        /// Runs a query and returns each row's values as strings joined by a pipe, so a comparison does not
+        /// depend on which numeric type a provider chose.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite against the fixture's SQL Server
+        /// database.</param>
+        /// <returns>One string per row, its values joined by a pipe with <c>NULL</c> for a null.</returns>
         List<string> Rows(string sql)
         {
             using var statement = _connection.createStatement();
@@ -103,10 +95,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns the single value it produces.
+        /// Runs a query that must return one row and returns that row as <see cref="Rows"/> formats it.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">A statement expected to produce exactly one row.</param>
+        /// <returns>The single row, its values joined by a pipe.</returns>
         string Scalar(string sql)
         {
             var rows = Rows(sql);
@@ -115,10 +107,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns a table by name.
+        /// Returns a table by name, failing the test if there is none.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The table's name, matched exactly.</param>
+        /// <returns>The Calcite table the schema holds under that name.</returns>
         org.apache.calcite.schema.Table Table(string tableName)
         {
             return (org.apache.calcite.schema.Table?)_schema.tables().get(tableName)
@@ -128,7 +120,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns every table name the schema exposes.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The names of all the schema's tables, used to explain a failed lookup.</returns>
         List<string> TableNames()
         {
             var names = _schema.tables().getNames(org.apache.calcite.schema.lookup.LikePattern.any());
@@ -141,10 +133,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Returns the fields of a table's row type, by name.
+        /// Returns the fields of a table's row type, keyed case-insensitively by name.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The name of a table in the mounted schema, exactly as the schema exposes
+        /// it.</param>
+        /// <returns>Each column's Calcite type, keyed by column name without regard to case.</returns>
         Dictionary<string, RelDataType> Fields(string tableName)
         {
             var fields = Table(tableName).getRowType(_types).getFieldList();
@@ -159,9 +152,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns the Calcite type name of a named column of a table.
         /// </summary>
-        /// <param name="tableName"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="tableName">The table's name as the schema exposes it.</param>
+        /// <param name="columnName">The column's name, in any case.</param>
+        /// <returns>The name of the column's <see cref="SqlTypeName"/>, such as <c>INTEGER</c>.</returns>
         string TypeOf(string tableName, string columnName)
         {
             if (Fields(tableName).TryGetValue(columnName, out var type) == false)
@@ -173,8 +166,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region The report
 
         /// <summary>
-        /// The query from the report, verbatim in shape: three columns, one of them the <c>INT</c> whose
-        /// <c>tinyint</c> precision in the information schema was read as an <c>int</c> and threw.
+        /// A scan of a table with an <c>INT</c> column, whose numeric precision the information schema reports
+        /// as a <c>tinyint</c>.
         /// </summary>
         [Fact]
         public void ScanningATableWithAnIntegerColumnReturnsItsRows()
@@ -185,8 +178,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Projecting the two <c>VARCHAR</c> columns failed the same way, because the row type is derived
-        /// from every column of the table whatever the query asks for.
+        /// Projecting only the <c>VARCHAR</c> columns still depends on the <c>INT</c> column's metadata,
+        /// because the row type is derived from every column of the table.
         /// </summary>
         [Fact]
         public void ProjectingOnlyTheCharacterColumnsAlsoWorks()
@@ -231,8 +224,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Types
 
         /// <summary>
-        /// Every column of the fixture's wide table has to reach a Calcite type: a name the mapping does not
-        /// know throws, and takes the whole table with it.
+        /// Every column of the fixture's wide table maps to a Calcite type; an unmapped type name would make
+        /// the whole table unreadable.
         /// </summary>
         [Fact]
         public void EveryColumnTypeIsMapped()
@@ -242,7 +235,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         [Theory]
         [InlineData("C_BIT", nameof(SqlTypeName.BOOLEAN))]
-        // the server's tinyint is unsigned 0..255 and Calcite's TINYINT is signed, so UTINYINT is what holds it
+        // the server's tinyint is unsigned 0..255 and Calcite's TINYINT is signed, so it maps to UTINYINT
         [InlineData("C_TINYINT", nameof(SqlTypeName.UTINYINT))]
         [InlineData("C_SMALLINT", nameof(SqlTypeName.SMALLINT))]
         [InlineData("C_BIGINT", nameof(SqlTypeName.BIGINT))]
@@ -272,8 +265,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Reading the wide table is a separate claim from typing it: the reader picks its accessor from the
-        /// Calcite type, and a mapping that types a column plausibly can still refuse to read one.
+        /// Every column of the wide table can also be read: the reader picks its accessor from the Calcite
+        /// type, so a column can be typed and still fail to read.
         /// </summary>
         [Fact]
         public void EveryColumnTypeCanBeRead()
@@ -305,11 +298,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A <c>uniqueidentifier</c> is a <c>UUID</c>, and a row holds one as the
-        /// <c>org.apache.calcite.util.UuidValue</c> Calcite's runtime holds a UUID in. The class is the
-        /// assertion rather than the text: a string of the same characters stringifies identically — so
-        /// does the bare <c>java.util.UUID</c> the wrapper holds — and is a different value to everything
-        /// that compares, joins or groups.
+        /// A <c>uniqueidentifier</c> is read as the <c>org.apache.calcite.util.UuidValue</c> Calcite's runtime
+        /// holds a UUID in. The class is asserted as well as the text, because a string or a bare
+        /// <c>java.util.UUID</c> prints the same but compares differently.
         /// </summary>
         [Fact]
         public void AUniqueIdentifierComesBackAsAUuid()
@@ -325,12 +316,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The statement from the report, which is the same column cast to the type it already has.
+        /// A <c>uniqueidentifier</c> column cast to <c>UUID</c>, the type it already has, as a view might state.
         /// </summary>
         /// <remarks>
-        /// It is a no-op now, and the statement is read off <c>Hook.QUERY_PLAN</c> to say so: a column
-        /// already typed <c>UUID</c> leaves nothing for the cast to do, so none reaches the wire. Stating a
-        /// type the column already has is what a view does, and what the report's schema did.
+        /// The cast does nothing, so the generated statement, read from <c>Hook.QUERY_PLAN</c>, contains no
+        /// <c>CAST</c>.
         /// </remarks>
         [Fact]
         public void AUniqueIdentifierCastToUuidIsRead()
@@ -374,9 +364,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Query
 
         /// <summary>
-        /// A filter on the unsigned column, which the planner pushes down as a comparison against a literal
-        /// typed <c>UTINYINT</c>: the value 200 has to survive planning without wrapping to -56, and the
-        /// dialect has to unparse the literal as something the server parses.
+        /// A filter on the unsigned column, pushed down as a comparison against a <c>UTINYINT</c> literal: 200
+        /// must not wrap to -56, and the literal must be written in a form the server parses.
         /// </summary>
         [Fact]
         public void AFilterOnATinyIntComparesUnsigned()
@@ -421,16 +410,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Unbounded strings
 
         /// <summary>
-        /// The cast from the report, against the column that makes the server say so out loud. A Calcite
-        /// <c>VARCHAR</c> with no precision is unbounded and Calcite writes it as the bare keyword, which
-        /// T-SQL reads as thirty characters in a cast; a <c>uniqueidentifier</c> is thirty-six, so the
-        /// server answers "Insufficient result space to convert uniqueidentifier value to char" rather than
-        /// truncating. The same rendering over a long string truncates instead and says nothing.
+        /// An unbounded <c>VARCHAR</c> cast keeps a whole <c>uniqueidentifier</c>. T-SQL reads a bare
+        /// <c>VARCHAR</c> in a cast as thirty characters, too few for a GUID's thirty-six, so the dialect writes
+        /// <c>VARCHAR(MAX)</c>.
         /// </summary>
         /// <remarks>
-        /// Upper case, where <see cref="AUniqueIdentifierComesBackAsItsText"/> reading the same column is
-        /// lower — that is the server's own conversion rather than the reader's <c>Guid.ToString</c>, and so
-        /// is the evidence the cast was pushed down rather than computed here.
+        /// The result is upper case, where <see cref="AUniqueIdentifierComesBackAsAUuid"/> reads the same column
+        /// in lower case: this is the server's conversion, which shows the cast was pushed down.
         /// </remarks>
         [Fact]
         public void AnUnboundedCastKeepsTheWholeValue()
@@ -441,19 +427,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And in a predicate, which is the shape a caller has no way to influence: Entity Framework writes
-        /// an unbounded cast around the parameter, and comparing that against a column of a stated length
-        /// makes Calcite's coercion widen the column back to unbounded, so stating a length in a view does
-        /// not save you. The statement that reaches the server is the one the report quotes,
-        /// <c>WHERE CAST([C_GUID] AS VARCHAR) = CAST(@P0 AS VARCHAR)</c> — read back from
-        /// <c>sys.dm_exec_sql_text</c>.
+        /// The same in a predicate against a parameter, the shape Entity Framework produces by casting the
+        /// parameter to an unbounded <c>VARCHAR</c>. Comparing that against a column of stated length makes
+        /// Calcite's coercion widen the column to unbounded too.
         /// </summary>
         /// <remarks>
-        /// A cast on both sides is what makes this a cast on the wire at all:
-        /// <c>SqlImplementor.stripCastFromString</c> drops a character cast from a comparison where only one
-        /// side carries one, so the same query against a literal is sent as a bare <c>[C_GUID] = '…'</c> and
-        /// says nothing about the rendering. A parameter is how the other cast is come by without one being
-        /// written for its own sake.
+        /// Both sides carry a cast so that one reaches the server: <c>SqlImplementor.stripCastFromString</c>
+        /// drops a character cast from a comparison where only one side has one.
         /// </remarks>
         [Fact]
         public void AnUnboundedCastAroundAParameterMatches()
@@ -472,16 +452,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Parameters
 
         /// <summary>
-        /// A <c>UUID</c> bound as a parameter reaches the provider as a <see cref="Guid"/>. Calcite holds
-        /// one as a <c>java.util.UUID</c>, and handing that to SqlClient unconverted is
-        /// <c>No mapping exists from object type java.util.UUID to a known managed provider native
-        /// type</c> — measured, on every shape a comparison against a GUID column takes.
+        /// A <c>java.util.UUID</c> bound as a parameter reaches the provider as a <see cref="Guid"/>; SqlClient
+        /// has no mapping for the Java type.
         /// </summary>
-        /// <remarks>
-        /// The gap was one-directional and that is why it lasted: reading the same column always worked,
-        /// <see cref="AUniqueIdentifierComesBackAsItsText"/> holding that, and a literal comparison carries
-        /// no parameter at all. Only a bound value goes through the conversion this pins.
-        /// </remarks>
         [Fact]
         public void AUuidParameterIsBoundAsAGuid()
         {
@@ -496,16 +469,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 
         /// <summary>
         /// A <c>DECIMAL</c> parameter small enough that <c>BigDecimal.toString()</c> writes it in scientific
-        /// notation, which the text route this boundary used could not read back: <c>0.0000001</c> is
-        /// <c>1E-7</c>, and <c>decimal.Parse(string, IFormatProvider)</c> is <c>NumberStyles.Number</c>,
-        /// which does not allow an exponent. Measured, before the byte transfer: <c>FormatException: The
-        /// input string '1E-7' was not in a correct format</c>.
+        /// notation (<c>0.0000001</c> is <c>1E-7</c>) is bound correctly.
         /// </summary>
         /// <remarks>
-        /// <c>0.000001</c> writes itself plainly and parses; the threshold is an adjusted exponent below
-        /// -6, which is <c>BigDecimal.toString</c>'s own rule, and a negative scale writes an exponent at
-        /// any magnitude. Nothing about the value is out of range for a <see cref="decimal"/> — it is only
-        /// how the intermediate text is spelt, which is why no existing decimal test saw it.
+        /// <c>BigDecimal.toString</c> uses an exponent when the adjusted exponent is below -6 or the scale is
+        /// negative, and <c>decimal.Parse</c> with its default <c>NumberStyles.Number</c> rejects an exponent,
+        /// so the conversion must not go through text.
         /// </remarks>
         [Fact]
         public void ADecimalParameterBelowTheExponentThresholdIsBound()

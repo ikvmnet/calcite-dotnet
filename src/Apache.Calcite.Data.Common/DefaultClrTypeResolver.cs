@@ -7,50 +7,73 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// The mappings that hold without anyone registering anything.
+    /// The built-in mappings, which every chain starts with.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The order of the table is its priority, so the first entry written for a Calcite type is what that
-    /// type reads back as and the first written for a CLR type is what that type is written as.
+    /// Each Calcite type reads back as the first CLR type listed for it, and each CLR type is written as the
+    /// first Calcite type listed for it:
+    /// </para>
+    /// <list type="bullet">
+    /// <item><c>BOOLEAN</c>, <c>TINYINT</c>, <c>SMALLINT</c>, <c>INTEGER</c>, <c>BIGINT</c>, <c>REAL</c>,
+    /// <c>DOUBLE</c> and <c>DECIMAL</c> are <see cref="bool"/>, <see cref="sbyte"/>, <see cref="short"/>,
+    /// <see cref="int"/>, <see cref="long"/>, <see cref="float"/>, <see cref="double"/> and
+    /// <see cref="decimal"/>; <c>FLOAT</c> reads as <see cref="double"/>, since Calcite holds it as a Java
+    /// <c>double</c>.</item>
+    /// <item><c>UTINYINT</c>, <c>USMALLINT</c>, <c>UINTEGER</c> and <c>UBIGINT</c> are <see cref="byte"/>,
+    /// <see cref="ushort"/>, <see cref="uint"/> and <see cref="ulong"/>.</item>
+    /// <item><c>VARCHAR</c> and <c>CHAR</c> read as <see cref="string"/>, which is written as <c>VARCHAR</c>; a
+    /// <see cref="char"/> is written as <c>CHAR(1)</c>.</item>
+    /// <item><c>VARBINARY</c> and <c>BINARY</c> read as <c>byte[]</c>, which is written as <c>VARBINARY</c>.</item>
+    /// <item><c>TIMESTAMP</c> and <c>DATE</c> read as <see cref="DateTime"/>, which is written as
+    /// <c>TIMESTAMP</c>; <see cref="DateOnly"/> is written as <c>DATE</c>.</item>
+    /// <item><c>TIME</c> reads as <see cref="TimeSpan"/>, which is written as <c>TIME</c>;
+    /// <see cref="TimeOnly"/> is written as <c>TIME</c>.</item>
+    /// <item><c>TIMESTAMP WITH TIME ZONE</c>, <c>TIMESTAMP WITH LOCAL TIME ZONE</c>, <c>TIME WITH TIME
+    /// ZONE</c> and <c>TIME WITH LOCAL TIME ZONE</c> read as <see cref="DateTimeOffset"/>, which is written as
+    /// <c>TIMESTAMP WITH TIME ZONE</c>.</item>
+    /// <item><c>UUID</c> is <see cref="Guid"/>. No character type converts to or from a
+    /// <see cref="Guid"/>.</item>
+    /// <item>A <see cref="System.Numerics.BigInteger"/> is written as <c>DECIMAL</c>.</item>
+    /// <item><c>GEOMETRY</c> reads as well-known text in a <see cref="string"/>.</item>
+    /// <item>A year-month interval reads as an <see cref="int"/> count of months; a day-time interval as a
+    /// <see cref="TimeSpan"/>.</item>
+    /// <item><c>ARRAY</c> and <c>MULTISET</c> read as arrays, <c>MAP</c> as a dictionary and a row as an
+    /// <c>object[]</c>, each element mapped through the chain. A one-dimensional array other than
+    /// <c>byte[]</c>, or a generic dictionary, is written as an <c>ARRAY</c> or <c>MAP</c> of whatever its
+    /// element, key and value types are written as.</item>
+    /// <item><c>VARIANT</c>, <c>ANY</c> and <c>OTHER</c> read as <see cref="object"/>, mapped by the runtime
+    /// class of each value; <c>NULL</c> reads and writes as <see langword="null"/>.</item>
+    /// </list>
+    /// <para>
+    /// A <see cref="DateTime"/> can also be read from <c>TIMESTAMP WITH TIME ZONE</c>, a
+    /// <see cref="DateTimeOffset"/>, <see cref="DateOnly"/> or <see cref="TimeOnly"/> from <c>TIMESTAMP</c>,
+    /// when that CLR type is asked for by name.
     /// </para>
     /// <para>
-    /// <b>Every entry names the type it is for, and there is no catch-all.</b> A type this table does not
-    /// claim has no mapping, and the lookup answers none rather than reading the value on the strength of
-    /// its runtime class; the caller's own operation then says that nothing maps it. <c>ANY</c> is the one
-    /// type whose mapping <em>is</em> a runtime-class reading, because that is what <c>ANY</c> means, and it
-    /// is an entry for <c>ANY</c> rather than a rule about everything else, and <c>OTHER</c> has one of its
-    /// own for the same reason. A <c>RelDataType</c> a schema supplied that names no <c>SqlTypeName</c> at
-    /// all reaches the refusal — a caller that wants one read registers a resolver for it, which is what the
-    /// chain is for, or reads the value as Calcite holds it through <c>GetCalciteValue</c>.
-    /// </para>
-    /// <para>
-    /// Every entry is reachable and every one is a fact about Calcite rather than a preference. <c>FLOAT</c>
-    /// is eight bytes here as it is in SQL and shares <c>DOUBLE</c>'s representation, <c>REAL</c> being the
-    /// four-byte one — <c>JavaTypeFactoryImpl.getJavaClass</c> says so and marks it "sic". <c>TINYINT</c> is
-    /// signed and the unsigned types are joou wrappers rather than wider <c>java.lang</c> ones. A
-    /// <c>DATE</c> is a count of days and a <c>TIME</c> a count of milliseconds, both in an
-    /// <c>Integer</c>; a <c>TIMESTAMP</c> is a count of milliseconds in a <c>Long</c>.
+    /// A type not listed has no mapping, and a lookup for it answers <see langword="null"/> rather than
+    /// guessing from the value's runtime class. To read such a type, put a resolver for it in front of this
+    /// one.
     /// </para>
     /// </remarks>
     public sealed class DefaultClrTypeResolver : IClrTypeResolver
     {
 
         /// <summary>
-        /// Gets the singleton instance.
+        /// Gets the single instance.
         /// </summary>
         public static DefaultClrTypeResolver Instance { get; } = new DefaultClrTypeResolver();
 
         readonly ClrTypeMappingCollection _mappings = new();
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes the instance and fills its table.
         /// </summary>
         DefaultClrTypeResolver()
         {
             var m = _mappings;
 
-            // the natural pairs, each the default in both directions
+            // pairs that are the default in both directions
             m.Add(typeof(bool), SqlTypeName.BOOLEAN, CalciteValues.ToBoolean, CalciteValues.FromBoolean);
             m.Add(typeof(sbyte), SqlTypeName.TINYINT, CalciteValues.ToTinyInt, CalciteValues.FromTinyInt);
             m.Add(typeof(short), SqlTypeName.SMALLINT, CalciteValues.ToSmallInt, CalciteValues.FromSmallInt);
@@ -68,14 +91,11 @@ namespace Apache.Calcite.Data.Common
             m.Add(typeof(DateTime), SqlTypeName.TIMESTAMP, CalciteValues.ToTimestamp, CalciteValues.FromTimestamp);
             m.Add(typeof(TimeSpan), SqlTypeName.TIME, CalciteValues.ToTime, CalciteValues.FromTime);
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIMESTAMP_TZ, CalciteValues.ToTimestampTz, CalciteValues.FromTimestampTz);
-            // Calcite has had a UUID type since 1.43 and holds one in a UuidValue, so a Guid pairs with it
-            // and pairs with nothing else. There is deliberately no entry carrying a Guid to or from a
-            // character type: reading text as a Guid is a conversion and a typed getter is a cast, and
-            // before 1.43 the pairing existed only because there was no UUID to pair with. The ADO adapter
-            // typed a provider uniqueidentifier as CHAR(36) for the same reason and stopped.
+            // Calcite holds a UUID in a UuidValue. There is deliberately no entry between Guid and a
+            // character type: reading text as a Guid is a conversion, and a typed getter is a cast.
             m.Add(typeof(Guid), SqlTypeName.UUID, CalciteValues.ToUuid, CalciteValues.FromUuid);
 
-            // what a Calcite type reads back as where the CLR type it pairs with is spoken for above
+            // Calcite types that read back as a CLR type already written as something else above
             m.Add(typeof(string), SqlTypeName.CHAR, CalciteValues.ToChar, CalciteValues.FromChar, ClrTypeMatch.RelDefault);
             m.Add(typeof(byte[]), SqlTypeName.BINARY, CalciteValues.ToBinary, CalciteValues.FromBinary, ClrTypeMatch.RelDefault);
             m.Add(typeof(double), SqlTypeName.FLOAT, CalciteValues.ToDouble, CalciteValues.FromDouble, ClrTypeMatch.RelDefault);
@@ -84,15 +104,13 @@ namespace Apache.Calcite.Data.Common
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIME_TZ, CalciteValues.ToTimeTz, CalciteValues.FromTimeTz, ClrTypeMatch.RelDefault);
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIME_WITH_LOCAL_TIME_ZONE, CalciteValues.ToTimeTz, CalciteValues.FromTimeTz, ClrTypeMatch.RelDefault);
 
-            // a GEOMETRY is well-known text here, as it is over Calcite's own JDBC: there is no .NET geometry
-            // this package can hand out, and the JTS one is a Java object. RelDefault only, a bare string
-            // being a VARCHAR.
+            // GEOMETRY reads as well-known text: there is no .NET geometry type to hand out, and the JTS
+            // geometry Calcite holds is a Java object. A bare string is written as VARCHAR.
             m.Add(typeof(string), SqlTypeName.GEOMETRY, CalciteValues.ToGeometry, CalciteValues.FromGeometry, ClrTypeMatch.RelDefault);
 
-            // the intervals. A year-month one is a count of months whichever of the three it is, and .NET
-            // has no interval that counts months, so the count is the value; a day-time one is a fixed
-            // length of time and a TimeSpan is exactly that. Both are RelDefault only: an int is written as
-            // an INTEGER and a TimeSpan as a TIME, which the entries above already say.
+            // intervals. .NET has no type counting months, so a year-month interval reads as its count of
+            // months; a day-time interval is a fixed length of time, which is a TimeSpan. Neither is a
+            // CLR default: an int is written as INTEGER and a TimeSpan as TIME.
             foreach (var months in new[] { SqlTypeName.INTERVAL_YEAR, SqlTypeName.INTERVAL_YEAR_MONTH, SqlTypeName.INTERVAL_MONTH })
                 m.Add(typeof(int), months, CalciteValues.ToIntervalMonths, CalciteValues.FromIntervalMonths, ClrTypeMatch.RelDefault);
 
@@ -104,27 +122,24 @@ namespace Apache.Calcite.Data.Common
             })
                 m.Add(typeof(TimeSpan), time, CalciteValues.ToIntervalTime, CalciteValues.FromIntervalTime, ClrTypeMatch.RelDefault);
 
-            // what a CLR type is written as where the Calcite type it pairs with is spoken for above.
-            // a CHAR is a string in Calcite's runtime, so a char is a string of one. Written as a CHAR(1)
-            // and never what a CHAR(1) column answers with, a one-character column being a string like any
-            // other.
+            // CLR types written as a Calcite type that already reads back as something else above.
+            // A char is written as a one-character string in a CHAR(1); a CHAR(1) column still reads as a
+            // string.
             m.Add(typeof(char), SqlTypeName.CHAR, CalciteValues.ToCharacter, CalciteValues.FromCharacter, ClrTypeMatch.ClrDefault, precision: 1);
-            // Calcite has no unbounded integer type, and a DECIMAL of scale zero is what an integer of any
-            // width is
+            // Calcite has no unbounded integer type, so a BigInteger is written as a DECIMAL
             m.Add(typeof(System.Numerics.BigInteger), SqlTypeName.DECIMAL, CalciteValues.ToBigInteger, CalciteValues.FromBigInteger, ClrTypeMatch.ClrDefault);
             m.Add(typeof(DateOnly), SqlTypeName.DATE, CalciteValues.ToDate, CalciteValues.FromDateOnly, ClrTypeMatch.ClrDefault);
             m.Add(typeof(TimeOnly), SqlTypeName.TIME, CalciteValues.ToTime, CalciteValues.FromTimeOnly, ClrTypeMatch.ClrDefault);
 
-            // legal when asked for by name, and nobody's default
+            // allowed when asked for by name, and not a default in either direction
             m.Add(typeof(DateOnly), SqlTypeName.TIMESTAMP, CalciteValues.ToTimestamp, v => DateOnly.FromDateTime((DateTime)CalciteValues.FromTimestamp(v)), ClrTypeMatch.Named);
             m.Add(typeof(TimeOnly), SqlTypeName.TIMESTAMP, CalciteValues.ToTimestamp, v => TimeOnly.FromDateTime((DateTime)CalciteValues.FromTimestamp(v)), ClrTypeMatch.Named);
             m.Add(typeof(DateTime), SqlTypeName.TIMESTAMP_TZ, CalciteValues.ToTimestampTz, v => ((DateTimeOffset)CalciteValues.FromTimestampTz(v)).UtcDateTime, ClrTypeMatch.Named);
             m.Add(typeof(DateTimeOffset), SqlTypeName.TIMESTAMP, CalciteValues.ToTimestamp, v => new DateTimeOffset((DateTime)CalciteValues.FromTimestamp(v), TimeSpan.Zero), ClrTypeMatch.Named);
 
-            // the collections, which map by mapping what they hold and wrapping the result. Each asks the
-            // registry for its element's, key's, value's or field's mapping, so one entry per kind covers
-            // every depth and every element type, a caller's own included. They go in front of the two
-            // catch-alls below, which claim every Calcite type and would otherwise take these first.
+            // collections. Each asks the registry for its element's, key's, value's or field's mapping, so
+            // one entry per kind covers every nesting depth and every element type, including those a
+            // caller's resolver adds.
             m.Add(
                 typeof(System.Array),
                 SqlTypeName.ARRAY,
@@ -157,8 +172,8 @@ namespace Apache.Calcite.Data.Common
                 clrTypePredicate: static t => t is null || t == typeof(object[]),
                 relTypePredicate: static t => t.isStruct());
 
-            // a VARIANT carries its own type per value, so it is read by asking the value what it is and
-            // mapping it as that, through this same registry
+            // a VARIANT carries its type with each value, so each value is mapped by that type through the
+            // registry
             m.Add(
                 typeof(object),
                 SqlTypeName.VARIANT,
@@ -167,15 +182,12 @@ namespace Apache.Calcite.Data.Common
                 clrTypePredicate: static t => t is null || t == typeof(object),
                 relTypePredicate: static t => t.getSqlTypeName() == SqlTypeName.VARIANT);
 
-            // the type whose only value is null. Reading one is null whatever a provider handed over, and
-            // writing one is null whatever a caller wrote: java.lang.Void is what holds it and it has no
-            // instances
+            // NULL, whose only value is null: Calcite holds it in java.lang.Void, which has no instances, so
+            // both conversions answer null
             m.Add(typeof(object), SqlTypeName.NULL, static _ => null, static _ => null, ClrTypeMatch.RelDefault);
 
-            // ANY, which says nothing about what it holds, so the value's own class decides. An entry like
-            // any other, matching ANY and only ANY: it claimed every unclaimed type until 2026-09-15, which
-            // meant OTHER and a type a schema invented were read by guessing at the runtime class instead
-            // of saying that nothing mapped them.
+            // ANY says nothing about what it holds, so each value is mapped by its own class. This entry
+            // matches ANY only; it is not a catch-all for types the table does not name.
             m.Add(
                 typeof(object),
                 SqlTypeName.ANY,
@@ -183,11 +195,8 @@ namespace Apache.Calcite.Data.Common
                 ClrTypeMatch.RelDefault,
                 clrTypePredicate: static t => t is null || t == typeof(object));
 
-            // OTHER, which is what Calcite answers for a Java class it has no SQL name for, and so says as
-            // little about the value as ANY does. A schema that types a column or a function argument with
-            // createJavaType reaches it: measured, JavaType(java.lang.Object) names OTHER, while
-            // JavaType(java.lang.Integer) names INTEGER and JavaType(java.util.Map) names MAP, so only the
-            // classes with no name of their own arrive here. Read the same way, for the same reason.
+            // OTHER is the type name of a createJavaType type whose class has no SQL name of its own (for
+            // example java.lang.Object), so it says as little about the value as ANY and is read the same way
             m.Add(
                 typeof(object),
                 SqlTypeName.OTHER,
@@ -199,9 +208,8 @@ namespace Apache.Calcite.Data.Common
         /// <inheritdoc />
         public ClrTypeMapping? GetMapping(Type? clrType, RelDataType? relType, ClrTypeContext context)
         {
-            // a bare collection names no Calcite type, and the one it wants is built from its element's
-            // rather than looked up: the table can only build a type from a SqlTypeName and a precision,
-            // which cannot say INTEGER ARRAY
+            // a bare collection's Calcite type is built from its element's mapping: the table builds a type
+            // from a SqlTypeName and a precision, which cannot express INTEGER ARRAY
             if (relType is null && clrType is not null && Collection(clrType, context) is ClrTypeMapping collection)
                 return collection;
 
@@ -209,22 +217,16 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the mapping a bare .NET collection is written through, or <see langword="null"/> where
-        /// the type is not one.
+        /// Returns the mapping a bare one-dimensional array or generic dictionary is written through, or
+        /// <see langword="null"/> where the type is neither or its element, key or value type has no mapping.
         /// </summary>
         /// <param name="clrType">The CLR type a value is being written as.</param>
-        /// <param name="context"></param>
+        /// <param name="context">The context of the lookup.</param>
         /// <returns>The mapping, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// <b>The element decides, so this recurses too.</b> An <c>int[]</c> is an <c>INTEGER ARRAY</c>
-        /// because an <see cref="int"/> is an <c>INTEGER</c>, and an <c>int[][]</c> is an
-        /// <c>INTEGER ARRAY ARRAY</c> because an <c>int[]</c> is an <c>INTEGER ARRAY</c>. Asking the
-        /// registry for the element's mapping is what makes the second sentence follow from the first
-        /// without a second rule.
-        ///
-        /// <para><see cref="T:byte[]"/> is excluded deliberately: it is an array in .NET and a
-        /// <c>VARBINARY</c> in SQL, and the table above already pairs them. A <see cref="string"/> is not
-        /// excluded because it is not an array, though it does enumerate.</para>
+        /// The element type's mapping comes from the registry, so nesting follows: an <c>int[]</c> is an
+        /// <c>INTEGER ARRAY</c> and an <c>int[][]</c> an <c>INTEGER ARRAY ARRAY</c>. <c>byte[]</c> is excluded
+        /// because the table maps it to <c>VARBINARY</c>.
         /// </remarks>
         static ClrTypeMapping? Collection(Type clrType, ClrTypeContext context)
         {
@@ -237,8 +239,7 @@ namespace Apache.Calcite.Data.Common
                 if (mapping is null)
                     return null;
 
-                // nullable where the .NET element type admits a null, which is what Nullable<T> says and
-                // what a reference type says by being one
+                // the element is nullable where the .NET element type admits null
                 var nullable = Nullable.GetUnderlyingType(element) is not null || element.IsValueType == false;
 
                 return CollectionClrTypeMapping.Create(context,
@@ -254,8 +255,7 @@ namespace Apache.Calcite.Data.Common
             if (keyMapping is null || valueMapping is null)
                 return null;
 
-            // a dictionary's keys are never null, so the map's key type is not nullable and the mapping
-            // answers a dictionary rather than pairs, which is the shape that went in
+            // a dictionary's keys are never null, so the map's key type is not nullable
             return new MapClrTypeMapping(context,
                 typeFactory.createMapType(
                     typeFactory.createTypeWithNullability(keyMapping.RelType, false),
@@ -266,7 +266,7 @@ namespace Apache.Calcite.Data.Common
         /// Returns the key and value types of a .NET dictionary, or <see langword="null"/> where the type
         /// is not one.
         /// </summary>
-        /// <param name="clrType"></param>
+        /// <param name="clrType">The type to inspect.</param>
         /// <returns>The key and value types, or <see langword="null"/>.</returns>
         static (Type Key, Type Value)? Dictionary(Type clrType)
         {

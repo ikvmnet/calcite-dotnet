@@ -23,17 +23,17 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
     {
 
         /// <summary>
-        /// A method reached the way the AdoNet adapter reaches one, so the round trip back is measured
-        /// against a call that is known to work.
+        /// A CLR method with a primitive signature, for resolving from its Java reflection form back to the
+        /// CLR method.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The value to double.</param>
+        /// <returns>Twice <paramref name="value"/>.</returns>
         public static int Twice(int value) => value * 2;
 
         [Fact]
         public void ShouldResolveInstanceMethodOnInterface()
         {
-            // ExtendedEnumerable.where(Predicate1), which every filter in the port calls
+            // ExtendedEnumerable.where(Predicate1)
             var m = ClrTypes.Resolve(BuiltInMethod.WHERE.method);
 
             m.Name.Should().Be("where");
@@ -58,7 +58,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         [Fact]
         public void ShouldResolveBoxingMethod()
         {
-            // the translator emits this in place of a convert from int to Integer, which is not a CLR conversion
+            // boxing an int as an Integer is a call to valueOf, not a CLR conversion
             var m = ClrTypes.Resolve(((Class)typeof(Integer)).getDeclaredMethod("valueOf", [Integer.TYPE]));
 
             m.IsStatic.Should().BeTrue();
@@ -67,14 +67,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// The three methods of Calcite's whole table that have no CLR method of their name and signature.
+        /// The three methods in Calcite's <c>BuiltInMethod</c> table that have no CLR method of their name and
+        /// signature are not resolved.
         /// </summary>
         /// <remarks>
-        /// Each was reachable by a search that reconstructed what IKVM had done — java.lang.String is
-        /// System.String and its Java methods went to a static helper; java.lang.Comparable is left empty and
-        /// extends System.IComparable, whose method is spelled CompareTo. Both reconstructions happened to
-        /// land, and neither was an answer from IKVM. They go to a delegate over the method handle instead,
-        /// which is one.
+        /// IKVM implements <c>java.lang.String</c>'s and <c>java.lang.Object</c>'s Java methods outside the
+        /// remapped CLR type, and <c>java.lang.Comparable</c> is a ghost interface whose CLR counterpart spells
+        /// its method <c>CompareTo</c>. These are called through a delegate over the Java method instead.
         /// </remarks>
         [Fact]
         public void ShouldNotResolveWhatOnlyASearchWouldFind()
@@ -103,25 +102,21 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// Second .NET method, present only so a reference-typed signature is covered as well as a primitive one.
+        /// A CLR method with reference-typed parameters, for resolving alongside <see cref="Twice"/>.
         /// </summary>
-        /// <param name="connection"></param>
-        /// <param name="label"></param>
-        /// <returns></returns>
+        /// <param name="connection">Unused.</param>
+        /// <param name="label">The value returned.</param>
+        /// <returns><paramref name="label"/>.</returns>
         public static string Describe(DbConnection connection, string label) => label;
 
         /// <summary>
-        /// Reaches every method Calcite names in <c>BuiltInMethod</c>, by one route or the other.
+        /// Reaches every method in Calcite's <c>BuiltInMethod</c> table, either by resolving it to a CLR method or
+        /// by building a delegate over it, as a translated call does.
         /// </summary>
         /// <remarks>
-        /// The whole port rests on this direction of the interop working, and it either works for a signature
-        /// shape or it does not. Sweeping the table says which shapes are the exceptions instead of finding
-        /// them one at a time, node by node, much later.
-        ///
-        /// <para>Reaching one is either resolving it to a CLR method or building a delegate over it, which is
-        /// what a translated call does. The count of each is asserted rather than only the total: a method
-        /// moving from the first route to the second is a call becoming an invoke, and that should not happen
-        /// unnoticed.</para>
+        /// The number reached each way is asserted, so a method that moves from a direct call to a delegate
+        /// invocation fails the test. The resolved count is a census of the loaded Calcite's table and changes
+        /// when Calcite adds a method.
         /// </remarks>
         [Fact]
         public void ShouldReachEveryBuiltInMethod()
@@ -151,11 +146,8 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 
             Assert.True(failures.Count == 0, $"{called} called, {invoked.Count} invoked, {failures.Count} failed:{Environment.NewLine}{string.Join(Environment.NewLine, failures)}");
 
-            // a census of Calcite's table, so it moves with the version and with the snapshot: 594 under
-            // 1.42, 607 under the first 1.43 snapshots this was run against, 608 since IEJoin arrived
-            // (CALCITE-7755, in 20260916.115040), 609 since EQ_DECIMAL arrived (CALCITE-7826, in
-            // 20260927.175943). What matters is that each one that arrives resolves, which the failure list
-            // above says and this number only notices.
+            // the size of Calcite's table, which grows with Calcite; the failure list above is what checks
+            // that each method resolves
             called.Should().Be(609);
             invoked.Should().BeEquivalentTo([
                 "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",

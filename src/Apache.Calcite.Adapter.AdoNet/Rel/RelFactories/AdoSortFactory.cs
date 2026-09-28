@@ -12,9 +12,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="SortFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// Sort pushdown is not supported by the ADO adapter; both factory methods throw.
+    /// A <see cref="SortFactory"/> that throws from both members.
     /// </summary>
+    /// <remarks>
+    /// Sorts are still pushed down: <c>AdoSortRule</c> creates an <see cref="AdoSort"/> directly. Only building one
+    /// through <see cref="AdoRules.Builder"/> is unsupported.
+    /// </remarks>
     public class AdoSortFactory : SortFactory
     {
 

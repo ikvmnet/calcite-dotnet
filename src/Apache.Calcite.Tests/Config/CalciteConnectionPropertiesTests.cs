@@ -50,8 +50,8 @@ namespace Apache.Calcite.Extensions.Config.Tests
         /// written under the name Calcite reads it by.
         /// </summary>
         /// <remarks>
-        /// The name comes from <c>camelName()</c> rather than from a literal, because a transcribed one
-        /// asserts the spelling in the tree that was read and the jar is what runs.
+        /// The expected key comes from <c>camelName()</c> rather than a literal, so it is the name the loaded
+        /// Calcite uses.
         /// </remarks>
         [Fact]
         public void CanSetTopDownGeneralDecorrelationEnabled()

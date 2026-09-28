@@ -15,21 +15,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// What WITH RECURSIVE becomes: the seed once, then the iterative part over and over until a round yields
-    /// nothing. The iterative part reads what the spool beneath it left behind, so it is opened afresh each
-    /// round rather than held.
+    /// Mirrors <c>EnumerableRepeatUnion</c>, which implements <c>WITH RECURSIVE</c>: the seed is read once,
+    /// then the iterative input repeatedly until a round produces no rows or the iteration limit is reached.
     ///
-    /// <para>The seed is acquired at the open — linq4j's enumerator takes <c>seed.enumerator()</c> in a field
-    /// initializer — so it arrives as an opened cursor of the body's own kind. The iterative part is acquired
-    /// inside <c>moveNext</c>, once per round, so it arrives as opens — both opens, because the advance that
-    /// starts a round may be either — through <see cref="ClrCursorRelImplementor.Opener"/> and
-    /// <see cref="ClrCursorRelImplementor.OpenerAsync"/>, and each body visits it through both
-    /// hierarchies to build them, as <see cref="ClrCursorUnion"/> does for a concat.</para>
+    /// <para>The seed is acquired at open, as in linq4j, so it is an opened cursor of the body's own kind. The
+    /// iterative input is acquired afresh inside each round's advance, which may be of either kind, so each
+    /// body visits it through both hierarchies and passes both openers.</para>
     ///
-    /// <para>The transient table goes into the root schema before the query runs and comes out after, as
-    /// Calcite does it. That is not a Janino artefact: both the spool above it and the scan of the same table
-    /// find it by name in the schema the plan is bound with. Adding it is the first statement of the open's
-    /// block, so it is there before the seed is opened.</para>
+    /// <para>As in Calcite, the transient table is added to the root schema at open, before the seed is
+    /// opened, and removed by a clean-up action when the cursor is disposed; the spool and the scan that share
+    /// it find it there by name.</para>
     /// </remarks>
     public class ClrCursorRepeatUnion : RepeatUnion, ClrCursorRel
     {
@@ -37,13 +32,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="seed"></param>
-        /// <param name="iterative"></param>
-        /// <param name="all"></param>
-        /// <param name="iterationLimit"></param>
-        /// <param name="transientTable"></param>
+        /// <param name="cluster">The cluster the node belongs to.</param>
+        /// <param name="traitSet">The node's traits.</param>
+        /// <param name="seed">The non-recursive input, read once.</param>
+        /// <param name="iterative">The recursive input, read once per round.</param>
+        /// <param name="all">Whether duplicates are kept (<c>UNION ALL</c>).</param>
+        /// <param name="iterationLimit">The maximum number of rounds, or a negative value for no limit.</param>
+        /// <param name="transientTable">The table holding the previous round's rows, or <see langword="null"/>.</param>
         public ClrCursorRepeatUnion(RelOptCluster cluster, RelTraitSet traitSet, RelNode seed, RelNode iterative, bool all, int iterationLimit, RelOptTable transientTable) :
             base(cluster, traitSet, seed, iterative, all, iterationLimit, transientTable)
         {
@@ -62,15 +57,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var body = new System.Collections.Generic.List<Expression>();
             Expression cleanUp = Expression.Constant(null, typeof(System.Action));
 
-            // the scratch table has to be in the schema while the query runs, because everything that reads it
-            // resolves it there by name
+            // the transient table must be in the schema while the query runs, because the nodes that use it
+            // resolve it there by name
             var transientTable = getTransientTable();
             if (transientTable != null)
             {
                 var name = (string)transientTable.getQualifiedName().get(transientTable.getQualifiedName().size() - 1);
                 var rootSchema = Expression.Call(implementor.Root, DataContextGetRootSchema);
-                // a TransientTable, which is what Calcite unwraps and stashes, and refused rather than
-                // written into the plan as a null the schema would reject when the query runs
+                // Calcite unwraps a TransientTable too; failing here is clearer than adding a null to the
+                // schema at run time
                 var scratch = (org.apache.calcite.schema.TransientTable)transientTable.unwrap((java.lang.Class)typeof(org.apache.calcite.schema.TransientTable))
                     ?? throw new java.lang.IllegalStateException($"{transientTable} is not a TransientTable");
                 var table = Expression.Constant(scratch, typeof(org.apache.calcite.schema.TransientTable));
@@ -83,8 +78,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var seedResult = implementor.VisitChild(this, 0, (ClrCursorRel)getSeedRel(), pref);
             var iterationResult = implementor.VisitChild(this, 1, (ClrCursorRel)getIterativeRel(), pref);
 
-            // the other hierarchy's open of the iterative part: a round is started inside an advance, and
-            // the advance may be the awaiting one
+            // a round starts inside an advance, which may be an awaiting one
             var iterationResultAsync = implementor.VisitChildAsync(this, 1, (ClrCursorRel)getIterativeRel(), pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(seedResult.Format));
@@ -110,15 +104,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var body = new System.Collections.Generic.List<Expression>();
             Expression cleanUp = Expression.Constant(null, typeof(System.Action));
 
-            // the scratch table has to be in the schema while the query runs, because everything that reads it
-            // resolves it there by name
+            // the transient table must be in the schema while the query runs, because the nodes that use it
+            // resolve it there by name
             var transientTable = getTransientTable();
             if (transientTable != null)
             {
                 var name = (string)transientTable.getQualifiedName().get(transientTable.getQualifiedName().size() - 1);
                 var rootSchema = Expression.Call(implementor.Root, DataContextGetRootSchema);
-                // a TransientTable, which is what Calcite unwraps and stashes, and refused rather than
-                // written into the plan as a null the schema would reject when the query runs
+                // Calcite unwraps a TransientTable too; failing here is clearer than adding a null to the
+                // schema at run time
                 var scratch = (org.apache.calcite.schema.TransientTable)transientTable.unwrap((java.lang.Class)typeof(org.apache.calcite.schema.TransientTable))
                     ?? throw new java.lang.IllegalStateException($"{transientTable} is not a TransientTable");
                 var table = Expression.Constant(scratch, typeof(org.apache.calcite.schema.TransientTable));
@@ -131,8 +125,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var seedResult = implementor.VisitChildAsync(this, 0, (ClrCursorRel)getSeedRel(), pref);
             var iterationResult = implementor.VisitChildAsync(this, 1, (ClrCursorRel)getIterativeRel(), pref);
 
-            // the other hierarchy's open of the iterative part: a round is started inside an advance, and
-            // the advance may be the synchronous one
+            // a round starts inside an advance, which may be a synchronous one
             var iterationResultSync = implementor.VisitChild(this, 1, (ClrCursorRel)getIterativeRel(), pref);
 
             var physType = ClrPhysTypeImpl.Of(implementor.TypeFactory, getRowType(), pref.Prefer(seedResult.Format));

@@ -8,9 +8,9 @@ namespace Apache.Calcite.Data.Internal.Tests
 {
 
     /// <summary>
-    /// Covers the conversion in both directions with no type to go on, which is the <c>ANY</c> case: the
-    /// value's own runtime class is the whole of the information available, and a Java object is never an
-    /// answer.
+    /// Covers conversion in both directions with no Calcite type to go on, as for an <c>ANY</c> column:
+    /// the value's runtime class decides, and a Java object is converted wherever there is a CLR
+    /// counterpart.
     /// </summary>
     public class CalciteValuesTests
     {
@@ -80,8 +80,8 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// The measured element type: every element of the list is a <c>java.lang.Integer</c>, so the
-        /// array that carries them is of <c>int</c> rather than of <see cref="object"/>.
+        /// The element type is inferred from the values: every element is a <c>java.lang.Integer</c>, so the
+        /// array is of <c>int</c> rather than of <see cref="object"/>.
         /// </summary>
         [Fact]
         public void ToClr_should_read_a_list_as_an_array_of_the_shared_type()
@@ -148,8 +148,8 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// No dictionary the framework ships takes a null key, and Calcite reaches one, so the entries
-        /// come out as pairs rather than being lost.
+        /// No framework dictionary takes a null key and a Java map can hold one, so the entries come out as
+        /// pairs rather than being lost.
         /// </summary>
         [Fact]
         public void ToClr_should_read_a_map_holding_a_null_key_as_pairs()
@@ -164,7 +164,7 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// A row is its fields, so it keeps its shape however alike they are.
+        /// A row stays an <see cref="object"/> array even where its fields share a type.
         /// </summary>
         [Fact]
         public void ToClr_should_read_an_object_array_as_an_object_array()
@@ -175,8 +175,7 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// A class the framework has no counterpart for is the one thing that comes back as it went in;
-        /// everything Calcite's own runtime produces is named.
+        /// A class with no CLR counterpart comes back as it went in.
         /// </summary>
         [Fact]
         public void ToClr_should_hand_back_an_unmapped_class_untouched()
@@ -225,8 +224,8 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// A <c>LinkedHashMap</c>, because that is what Calcite's own <c>SqlFunctions.map</c> builds and
-        /// the order a map's entries come out in is the order they went in.
+        /// The map is a <c>LinkedHashMap</c>, as Calcite's <c>SqlFunctions.map</c> builds, so entries come
+        /// out in the order they went in.
         /// </summary>
         [Fact]
         public void ToJava_should_keep_a_dictionarys_order()
@@ -271,8 +270,7 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// Every value that goes out and comes back is the same value, which is the whole point of having
-        /// the two directions in one place.
+        /// A value converted to Java and back is equal to the original.
         /// </summary>
         [Fact]
         public void ToJava_and_ToClr_should_round_trip_a_dictionary()
@@ -303,9 +301,9 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// Naming an element type says which of the types the values already have is wanted, not that
-        /// they should be converted into it: a <c>long[]</c> over a list of <c>java.lang.Integer</c> is the
-        /// same refusal <c>GetInt64</c> makes over an <c>INTEGER</c>.
+        /// A named element type selects a reading the values already have rather than converting them:
+        /// a <c>long[]</c> over a list of <c>java.lang.Integer</c> is refused, as <c>GetInt64</c> refuses an
+        /// <c>INTEGER</c>.
         /// </summary>
         [Fact]
         public void TryConvertTo_should_refuse_an_element_type_the_values_do_not_have()
@@ -317,8 +315,7 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// A collection answers an array and nothing else. Building a concrete list or set here would be a
-        /// copy the caller did not ask for and a second answer to what a collection is.
+        /// A collection converts to an array and to no other collection shape.
         /// </summary>
         [Theory]
         [InlineData(typeof(List<int>))]
@@ -350,8 +347,8 @@ namespace Apache.Calcite.Data.Internal.Tests
         }
 
         /// <summary>
-        /// The non-generic shapes an ADO.NET consumer reaches for come for free from the measured types,
-        /// and this holds that they do.
+        /// The arrays and dictionaries <c>ToClr</c> builds also implement the non-generic <see cref="IList"/>
+        /// and <see cref="IDictionary"/>.
         /// </summary>
         [Fact]
         public void ToClr_should_answer_the_non_generic_collection_interfaces()

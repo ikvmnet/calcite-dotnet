@@ -19,7 +19,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorFilterRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
+        /// <remarks>
+        /// As <c>EnumerableFilterRule</c>, a filter containing a windowed aggregate or a sub-query is not
+        /// converted.
+        /// </remarks>
         public static ClrCursorFilterRule Create()
         {
             return (ClrCursorFilterRule)Config.INSTANCE
@@ -36,7 +40,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorFilterRule(Config config) :
             base(config)
         {

@@ -11,81 +11,56 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// A relational expression of the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <see cref="EnumerableRel"/>. Implement this to add a node to the convention:
-    /// <see cref="Implement"/> builds the plan, and the trait methods have the defaults Calcite gives them,
-    /// so a node overrides only what it does differently.
+    /// Mirrors <see cref="EnumerableRel"/>. Implement this interface to add a node to the convention. The
+    /// trait methods of <see cref="PhysicalNode"/> have the defaults Calcite gives them, so a node overrides
+    /// only those it needs.
     ///
-    /// <para><b>A node's expression is an <em>open</em>, not a sequence.</b> Where a node of
-    /// <c>EnumerableConvention</c> hands up an expression whose value is an <c>Enumerable</c> that runs at
-    /// <c>enumerator()</c>, a node here hands up an expression whose value is an opened cursor: evaluating it is the acquisition, so the
-    /// plan's tree of calls <em>is</em> the cascade linq4j runs at <c>enumerator()</c>. A sort drains its
-    /// input where its open is evaluated; a leaf executes its statement there. An operator that defers
-    /// an acquisition — a concat acquires each source at its turn — takes that source as a delegate,
-    /// built with <see cref="ClrCursorRelImplementor.Opener"/>, and the deferral reads at the site.</para>
+    /// <para>A node's implementation is an expression that, when evaluated, opens a cursor over the node's
+    /// rows: evaluating it acquires the inputs, as linq4j's <c>enumerator()</c> does. A sort drains its input
+    /// and a leaf executes its statement at that point. An operator that acquires an input later, such as a
+    /// concatenation reaching its next source, takes that input as an opener built with
+    /// <see cref="ClrCursorRelImplementor.Opener"/> or <see cref="ClrCursorRelImplementor.OpenerAsync"/>.</para>
     ///
-    /// <para><b>A node has two bodies, one per way of opening.</b> <see cref="Implement"/> composes the
-    /// opens that acquire synchronously, named through the unsuffixed members of
-    /// <c>ClrCursorBuiltInMethod</c>; <see cref="ImplementAsync"/> composes the opens that await their
-    /// acquisition, named through the <c>Async</c>-suffixed members of the same table and built with
-    /// <c>ClrCursorBuiltInMethod.CallAsync</c>, which appends the token the awaiting root takes. Both
-    /// bodies produce the <em>same cursor</em>: what differs is whether a drain or a statement is waited for
-    /// or awaited on the way to it. The cursor has <c>Read</c> and <c>ReadAsync</c> whichever way it was
-    /// opened, and <see cref="ClrCursorRelImplementor.ImplementRoot"/> calls both bodies and puts the
-    /// two opens on one <see cref="ClrCursorFactory"/>.</para>
+    /// <para>A node has two implementations. <see cref="Implement"/> builds an open that acquires its inputs
+    /// synchronously and reaches them through <see cref="ClrCursorRelImplementor.VisitChild"/>;
+    /// <see cref="ImplementAsync"/> builds one that awaits them and reaches them through
+    /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/>. Both produce the same kind of cursor, which can
+    /// be read with either <c>Read</c> or <c>ReadAsync</c>, and
+    /// <see cref="ClrCursorRelImplementor.ImplementRoot"/> calls both to build a <see cref="ClrCursorFactory"/>.
+    /// An input acquired during reading, rather than at open, is visited both ways from both implementations,
+    /// because whether the consumer is reading synchronously is known only at that advance; the cursor is given
+    /// both openers and calls the matching one.</para>
     ///
-    /// <para><b>The two bodies are two call hierarchies for what is acquired at open</b>, kept apart:
-    /// <see cref="Implement"/> reaches an input through
-    /// <see cref="ClrCursorRelImplementor.VisitChild"/> and <see cref="ImplementAsync"/> through
-    /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/>, so an eager input is always of the body's
-    /// own kind and nothing consults a mode. <b>A deferred input is the exception, and it is visited both
-    /// ways from both bodies.</b> A source acquired later, inside <c>Read</c> or <c>ReadAsync</c>, has to be
-    /// acquirable either way, because which member the consumer calls at that moment is not known when
-    /// the plan is built. So a node with a deferred source hands its cursor both openers, and the cursor
-    /// calls the one matching the advance it is in. That is not a mode: it is the consumer's per-advance
-    /// choice reaching an acquisition that happens per advance.</para>
-    ///
-    /// <para><b><see cref="Implement"/> is required and <see cref="ImplementAsync"/> is optional</b>, which
-    /// is .NET's own shape for the pair — <c>DbDataReader.Read</c> is abstract and <c>ReadAsync</c>
-    /// virtual over it — and the reason for it: two defaults calling each other would compile for a node that overrides neither and then recurse until the process dies.
-    /// The default is safe exactly when a body does not compose an eager input: it would otherwise run the
-    /// synchronous visit and compose a synchronously opened input into an awaiting operator, which
-    /// <c>Expression.Call</c> refuses. Every node whose body visits an eager child writes both.</para>
-    ///
-    /// <para><b>Each fork has its own result type.</b> <see cref="Implement"/> answers a
-    /// <see cref="ClrCursorResult"/>, whose expression is a <c>IClrCursor&lt;TRow&gt;</c>, and
-    /// <see cref="ImplementAsync"/> a <see cref="ClrCursorAsyncResult"/>, whose expression is a
-    /// <c>ValueTask&lt;IClrCursor&lt;TRow&gt;&gt;</c>; the factory for each refuses the other kind by
-    /// name. Crossing is <see cref="ClrCursorRelImplementor.Awaited"/>, which costs nothing, and
-    /// <see cref="ClrCursorRelImplementor.Pulled"/>, which blocks a thread for the length of the
-    /// acquisition and is written where that can be read.</para>
+    /// <para><see cref="Implement"/> is required. <see cref="ImplementAsync"/> defaults to wrapping it with
+    /// <see cref="ClrCursorRelImplementor.Awaited"/>, which is correct only for a node that visits no input at
+    /// open; a node that does must implement both.</para>
     /// </remarks>
     public interface ClrCursorRel : PhysicalNode
     {
 
         /// <summary>
-        /// Builds the plan for this node, as an open that acquires synchronously.
+        /// Builds the expression that opens this node's cursor, acquiring its inputs synchronously.
         /// </summary>
-        /// <param name="implementor">Reach the inputs through
-        /// <see cref="ClrCursorRelImplementor.VisitChild"/>, and build the return value with
+        /// <param name="implementor">The implementor. Visit inputs with
+        /// <see cref="ClrCursorRelImplementor.VisitChild"/> and build the return value with
         /// <see cref="ClrCursorRelImplementor.Result"/>.</param>
-        /// <param name="pref">How the parent would prefer this node's rows represented. A node may return
-        /// another format; the result says which it chose.</param>
-        /// <returns>The open, the physical type of the rows it yields, and their format.</returns>
+        /// <param name="pref">The row representation the parent prefers. A node may choose another; its
+        /// result's physical type says which.</param>
+        /// <returns>The open expression and the physical type of the rows it yields.</returns>
         ClrCursorResult Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref);
 
         /// <summary>
-        /// Builds the plan for this node, as an open that awaits its acquisition.
+        /// Builds the expression that opens this node's cursor, awaiting the acquisition of its inputs.
         /// </summary>
-        /// <param name="implementor">Reach the inputs through
-        /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/>, never its
-        /// <see cref="ClrCursorRelImplementor.VisitChild"/>: this body is the awaiting hierarchy, and
-        /// the other visit would hand it an input that was already acquired by blocking.</param>
-        /// <param name="pref">How the parent would prefer this node's rows represented.</param>
-        /// <returns>The open, the physical type of the rows it yields, and their format.</returns>
+        /// <param name="implementor">The implementor. Visit inputs with
+        /// <see cref="ClrCursorRelImplementor.VisitChildAsync"/>, not
+        /// <see cref="ClrCursorRelImplementor.VisitChild"/>, and build the return value with
+        /// <see cref="ClrCursorRelImplementor.ResultAsync"/>.</param>
+        /// <param name="pref">The row representation the parent prefers.</param>
+        /// <returns>The awaiting open expression and the physical type of the rows it yields.</returns>
         /// <remarks>
-        /// Optional, and by default <see cref="ClrCursorRelImplementor.Awaited"/> over
-        /// <see cref="Implement"/>. That default holds only for a body that never visits an eager child;
-        /// every node whose body does writes this one.
+        /// By default, <see cref="Implement"/> wrapped with <see cref="ClrCursorRelImplementor.Awaited"/>. That
+        /// is correct only for a node that visits no input at open; any other node must override this.
         /// </remarks>
         ClrCursorAsyncResult ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref) => implementor.Awaited(Implement(implementor, pref));
 

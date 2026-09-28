@@ -19,7 +19,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Creates a <see cref="ClrCursorAggregateRule"/>.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorAggregateRule Create()
         {
             return (ClrCursorAggregateRule)Config.INSTANCE
@@ -31,7 +31,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule configuration.</param>
         public ClrCursorAggregateRule(Config config) :
             base(config)
         {
@@ -39,14 +39,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Returns null, leaving the aggregate to another rule, where a call's function has no implementor in the
+        /// cluster's <c>RexImplementorTable</c> or where <see cref="ClrCursorAggregate"/> rejects a call.
+        /// </remarks>
         public override RelNode? convert(RelNode rel)
         {
             var aggregate = (Aggregate)rel;
             var traitSet = rel.getCluster().traitSet().replace(ClrCursorConvention.Instance);
 
-            // an aggregate whose function nothing can implement is refused here rather than left to fail
-            // while the chosen plan is being implemented. The table is the cluster's, so a caller that put
-            // its own implementors on the cluster is asked about them and not about Calcite's defaults
+            // refused here rather than failing in Implement, after the plan is chosen. The cluster's table is
+            // the one the node is implemented against, and includes implementors a caller registered on it
             var implementors = RexImplementorTables.of(rel.getCluster());
             for (var i = aggregate.getAggCallList().iterator(); i.hasNext();)
                 if (implementors.get(((AggregateCall)i.next()).getAggregation(), false) == null)
@@ -64,8 +67,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
             catch (InvalidRelException)
             {
-                // an aggregate this convention cannot implement is left for another rule, exactly as Calcite
-                // leaves one: refusing here rather than in Implement, which runs after a plan has been chosen
+                // left for another rule, as EnumerableAggregateRule does
                 return null;
             }
         }

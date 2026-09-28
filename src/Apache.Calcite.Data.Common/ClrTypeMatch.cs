@@ -4,32 +4,23 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// Which lookups an entry of a <see cref="ClrTypeMappingCollection"/> is willing to answer.
+    /// Which lookups an entry of a <see cref="ClrTypeMappingCollection"/> answers.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// A lookup carries two keys and either may be absent: a result column knows its Calcite type and not
-    /// which CLR type is wanted, a parameter carrying a bare value knows the reverse, and
-    /// <c>GetFieldValue&lt;T&gt;</c> knows both. An entry that is a legal answer when both are named is not
-    /// necessarily the answer when one is missing, and the two directions are independent — <c>Guid</c> is
-    /// what a caller writing one means and never what a <c>CHAR(36)</c> column reads back as, while
-    /// <c>DateTime</c> is what a <c>DATE</c> column reads back as and never what a bare
-    /// <see cref="DateTime"/> is written as, that being <c>TIMESTAMP</c>.
-    /// </para>
-    /// <para>
-    /// Two flags rather than a scale of strictness, because the two defaults genuinely are separate facts
-    /// rather than one relaxation of a single rule: a type can be what a Calcite type reads back as without
-    /// being what that CLR type is written as, and the other way round. Ranking them on one axis needs a
-    /// second rule to recover the case the ranking lost.
-    /// </para>
+    /// A lookup names a CLR type, a Calcite type, or both: a result column knows only its Calcite type, a
+    /// parameter holding a bare value knows only its CLR type, and <c>GetFieldValue&lt;T&gt;</c> knows both.
+    /// Every entry answers a lookup that names both types and that it accepts. The two flags say, independently,
+    /// whether it also answers when one key is missing. For example, <see cref="DateTime"/> is what a
+    /// <c>DATE</c> column reads back as, but a bare <see cref="DateTime"/> parameter is written as a
+    /// <c>TIMESTAMP</c>, so the <c>DATE</c> entry for it is <see cref="RelDefault"/> only.
     /// </remarks>
     [Flags]
     public enum ClrTypeMatch
     {
 
         /// <summary>
-        /// Answers only when both the CLR type and the Calcite type are named. A conversion that is legal
-        /// when asked for and is nobody's default.
+        /// Answers only when both the CLR type and the Calcite type are named: a conversion that is allowed
+        /// when asked for and is not a default in either direction.
         /// </summary>
         Named = 0,
 

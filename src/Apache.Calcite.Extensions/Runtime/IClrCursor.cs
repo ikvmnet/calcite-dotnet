@@ -6,16 +6,16 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// A forward-only cursor over the rows of a plan, advanced synchronously or with await over one position.
+    /// A forward-only cursor over the rows of a plan, advanced either synchronously or asynchronously.
     /// </summary>
     /// <remarks>
-    /// What a plan of the cursor convention hands back from either of its opens, and what a table of the
-    /// cursor SPI hands in. <see cref="Read"/> and <see cref="ReadAsync"/> step the same position, so a
-    /// consumer chooses on every advance how to read, and a row read with one and the next with the other
-    /// are consecutive rows of one result. The token an advance is given reaches the leaf that advance runs.
+    /// <see cref="Read"/> and <see cref="ReadAsync"/> advance the same position, so a consumer may choose on
+    /// every advance which to call; a row read with one and the next row read with the other are consecutive
+    /// rows of one result. The token given to <see cref="ReadAsync"/> applies to that advance only and is
+    /// passed down to the source the advance reads from.
     ///
-    /// <para><see cref="ClrCursor"/> is the base every cursor of this project derives from, and implements
-    /// this; a source that is a cursor already implements this directly.</para>
+    /// <para>A compiled plan returns one from either of its opens, and a cursor table supplies one as a
+    /// leaf. <see cref="ClrCursor"/> is an abstract base that implements it.</para>
     /// </remarks>
     public interface IClrCursor : IDisposable, IAsyncDisposable
     {
@@ -28,14 +28,16 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <summary>
         /// Advances to the next row.
         /// </summary>
-        /// <returns><see langword="true"/> if there is a row; <see langword="false"/> past the last.</returns>
+        /// <returns><see langword="true"/> if the cursor is on a row; <see langword="false"/> if it has passed
+        /// the last one.</returns>
         bool Read();
 
         /// <summary>
-        /// Advances to the next row, awaiting whatever the advance has to wait on.
+        /// Advances to the next row asynchronously.
         /// </summary>
-        /// <param name="cancellationToken">The token this advance runs under.</param>
-        /// <returns><see langword="true"/> if there is a row; <see langword="false"/> past the last.</returns>
+        /// <param name="cancellationToken">The token that cancels this advance.</param>
+        /// <returns><see langword="true"/> if the cursor is on a row; <see langword="false"/> if it has passed
+        /// the last one.</returns>
         ValueTask<bool> ReadAsync(CancellationToken cancellationToken);
 
     }

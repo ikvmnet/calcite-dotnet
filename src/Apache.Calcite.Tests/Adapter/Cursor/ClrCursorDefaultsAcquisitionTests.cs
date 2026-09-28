@@ -13,14 +13,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Holds the provider to linq4j's timing: opening the plan is the acquisition, and it runs at Execute.
+    /// Tests that the provider acquires sources when linq4j does: opening the plan acquires the leaf's
+    /// enumerator, and the open runs inside <c>ExecuteReader</c>.
     /// </summary>
     /// <remarks>
-    /// The awaiting side keeps the same timing. A sequence's <c>GetAsyncEnumerator</c> cannot await and
-    /// would have to leave an awaited drain to the first advance; an open that awaits can await the drain,
-    /// so a sort opened with
-    /// <c>ExecuteReaderAsync</c> has read its whole input by the time the reader is handed back, exactly
-    /// as one opened with <c>ExecuteReader</c> has.
+    /// A counting leaf reports how many enumerators were acquired and how many rows were produced, so each test
+    /// can check both at the point the reader is returned. The awaiting open has the same timing: a sort opened
+    /// with <c>ExecuteReaderAsync</c> has read its whole input by the time the reader is returned, as one
+    /// opened with <c>ExecuteReader</c> has.
     /// </remarks>
     public class ClrCursorDefaultsAcquisitionTests
     {
@@ -194,13 +194,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A recursive statement runs through the provider: the transient table goes into the connection's
-        /// root schema at Execute, the spool finds it there by name, each round is opened inside the
-        /// advance that starts it, and the table comes out again when the reader is closed.
+        /// A recursive statement runs through the provider, and the transient table it adds to the connection's
+        /// root schema is removed when the reader is closed.
         /// </summary>
         /// <remarks>
-        /// One command per reading, because a plan holding a transient table is not reread: the table keeps
-        /// whatever its last round left in it.
+        /// The command is read once, because a plan holding a transient table is not re-readable: the table
+        /// keeps whatever its last round left in it.
         /// </remarks>
         [Fact]
         public void ExecuteShouldRunARecursiveQuery()

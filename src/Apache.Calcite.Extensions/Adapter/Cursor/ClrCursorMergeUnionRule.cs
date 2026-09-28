@@ -13,18 +13,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorMergeUnion"/>.
     /// </summary>
     /// <remarks>
-    /// Not a converter rule: the sort has to be directly over the union for the operand to match, which is
-    /// why a query that puts a projection between the two never reaches it — <c>SELECT * FROM a UNION ALL
-    /// SELECT * FROM b ORDER BY 1</c> does, and the same query naming its columns does not. The sort is
-    /// pushed to each input and the union then merges them.
+    /// Mirrors <c>EnumerableMergeUnionRule</c> and uses its operand configuration, so the sort must be directly
+    /// over the union. The sort is copied onto each input, with any limit pushed down as well, and the union
+    /// then merges the sorted inputs. An offset or limit is kept above the union as a
+    /// <see cref="ClrCursorLimit"/>.
     /// </remarks>
     public class ClrCursorMergeUnionRule : RelRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorMergeUnionRule"/>.
+        /// Creates the rule from <c>EnumerableMergeUnionRule</c>'s default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorMergeUnionRule Create()
         {
             var config = org.apache.calcite.adapter.enumerable.EnumerableMergeUnionRule.Config.DEFAULT_CONFIG
@@ -36,7 +36,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration; its operands must match a <see cref="Sort"/> over a
+        /// <see cref="Union"/>.</param>
         public ClrCursorMergeUnionRule(RelRule.Config config) :
             base(config)
         {
@@ -67,9 +68,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             RexNode? inputFetch = null;
             if (sort.fetch != null)
             {
-                // pushing it down evaluates the bound once per input rather than once, so a bound that need
-                // not answer the same twice cannot be pushed at all -- not even the offset, which is summed
-                // into it
+                // pushing the limit down evaluates it once per input, so it is pushed only if it, and the
+                // offset added to it, are deterministic
                 var safeToReevaluate =
                     RexUtil.isDeterministic(sort.fetch) &&
                     (sort.offset == null || RexUtil.isDeterministic(sort.offset));
@@ -79,8 +79,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                     if (sort.offset == null)
                         inputFetch = sort.fetch;
                     else
-                        // an expression rather than only a pair of literals, which is what the arithmetic on
-                        // RexLiteral.bigDecimalValue could reach
+                        // each input must supply offset + fetch rows; makeOffsetFetchSum also handles
+                        // bounds that are not literals
                         inputFetch = RexUtil.makeOffsetFetchSum(sort.getCluster().getRexBuilder(), sort.offset, sort.fetch);
                 }
             }
@@ -93,8 +93,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             {
                 var input = (RelNode)union.getInputs().get(i);
 
-                // a field whose collation differs from the union's is cast, so that every input sorts the
-                // same way
+                // a sort key whose type collation differs from the union's is cast to the union's type, so
+                // that every input sorts the same way
                 var fieldsRequiringCastBuilder = ImmutableBitSet.builder();
                 for (int j = 0; j < collation.getFieldCollations().size(); j++)
                 {
@@ -136,8 +136,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             RelNode result = ClrCursorMergeUnion.Create(sort.getCollation(), inputs, union.all);
 
-            // the merge union's rows are already in order, so an offset or a limit is all that is left of the
-            // sort
+            // the merge union's rows are already in order, so only an offset or limit remains of the sort
             if (sort.offset != null || sort.fetch != null)
                 result = ClrCursorLimit.Create(result, sort.offset, sort.fetch);
 

@@ -14,28 +14,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers string concatenation against a real SQL Server through each of the three drivers that reach
-    /// it.
+    /// Tests string concatenation against SQL Server through SqlClient, ODBC and OLE DB.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// T-SQL has no <c>||</c>. <c>SqlStdOperatorTable.CONCAT</c> unparses as one and
-    /// <c>MssqlSqlDialect.unparseCall</c> does not intercept it, so every statement that concatenated
-    /// reached the server carrying an operator it will not parse and answered "Incorrect syntax near '|'" —
-    /// in a select list, in a predicate, in a sort key and in an aggregate argument alike, and over two
-    /// literals, which are not folded away. <see cref="Metadata.AdoSqlDialects"/> writes <c>+</c> instead.
+    /// T-SQL has no <c>||</c>; the SQL Server dialect writes <c>+</c>. <see cref="AdoSqlDialectsTests"/>
+    /// checks the rendering without a database. These check that the server accepts the statement and that
+    /// the result keeps the meaning of <c>||</c>, including null propagation, which <c>+</c> has and T-SQL's
+    /// <c>CONCAT</c> does not.
     /// </para>
     /// <para>
-    /// The rendering is pinned without a database in <see cref="AdoSqlDialectsTests"/>; what these add is
-    /// that the server accepts the statement and answers what the operator means. Those are separate
-    /// claims, and the second is the one that decides between <c>+</c> and <c>CONCAT</c>: both concatenate
-    /// and only <c>+</c> propagates null, so a rendering that passed a syntax check would still have been
-    /// wrong.
-    /// </para>
-    /// <para>
-    /// All three drivers reach one dialect, chosen from the product name, so a correction that only
-    /// SqlClient carried would be a correction in the wrong place. Running the same statements over each is
-    /// what says it is in the right one.
+    /// All three drivers select the same dialect from the product name, so each runs the same statements.
     /// </para>
     /// </remarks>
     public class SqlServerConcatenationTests
@@ -64,8 +53,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns the data source for a provider, skipping the test where it is not installed.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <returns></returns>
+        /// <param name="provider">The provider name: one of the <c>SqlClient</c>, <c>Odbc</c> or <c>OleDb</c>
+        /// constants.</param>
+        /// <returns>The fixture's data source for that provider, connected to the shared test database.</returns>
         static DbDataSource DataSourceFor(string provider)
         {
             switch (provider)
@@ -88,18 +78,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// What a query answered, and what was sent to the server to answer it.
+        /// What a query returned, and the statements sent to the server to answer it.
         /// </summary>
-        /// <param name="Rows"></param>
-        /// <param name="Statements"></param>
+        /// <param name="Rows">Each row's values joined by a pipe.</param>
+        /// <param name="Statements">The statements the adapter generated.</param>
         readonly record struct Answer(List<string> Rows, IReadOnlyList<string> Statements);
 
         /// <summary>
-        /// Runs a query against the fixture's database through a provider.
+        /// Runs a query against the fixture's database through a provider, recording the generated SQL.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="provider">The provider to reach SQL Server through, as <see cref="DataSourceFor"/>
+        /// takes it.</param>
+        /// <param name="sql">The statement to run through Calcite.</param>
+        /// <returns>The rows, each pipe-joined, and the SQL the adapter sent to the server.</returns>
         static Answer Run(string provider, string sql)
         {
             var dataSource = DataSourceFor(provider);
@@ -143,9 +134,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Runs a query and returns its rows.
         /// </summary>
-        /// <param name="provider"></param>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="provider">The provider to reach SQL Server through.</param>
+        /// <param name="sql">The statement to run through Calcite.</param>
+        /// <returns>One string per row, its values joined by a pipe with <c>NULL</c> for a null.</returns>
         static List<string> Rows(string provider, string sql)
         {
             return Run(provider, sql).Rows;
@@ -154,8 +145,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region The shapes the operator reaches the server in
 
         /// <summary>
-        /// A select list, which is the shape in the report.
+        /// Concatenation in a select list.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -179,10 +171,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A sort key, ordered so that a sort which did nothing would answer differently. The null row is
-        /// left out: where a null sorts is a separate question from what the operator is written as, and
-        /// Calcite already answers it.
+        /// Concatenation in a sort key, descending so that an ignored sort would give a different order. The
+        /// null row is excluded so that null ordering does not affect the result.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -217,9 +209,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Two literals, which are not folded away — so there is no shape of the expression that avoids the
-        /// operator.
+        /// Two literals, which are not folded away before the statement is generated.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -236,10 +228,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region What the operator means
 
         /// <summary>
-        /// The reason the rendering is <c>+</c> and not <c>CONCAT</c>. <c>||</c> yields null when either
-        /// operand is null and so does <c>+</c>, under the default <c>CONCAT_NULL_YIELDS_NULL</c>; T-SQL's
-        /// <c>CONCAT</c> reads a null operand as the empty string and would have answered <c>cc</c>.
+        /// <c>||</c> yields null when either operand is null, as <c>+</c> does under the default
+        /// <c>CONCAT_NULL_YIELDS_NULL</c>; T-SQL's <c>CONCAT</c> would read the null as the empty string and
+        /// return <c>cc</c>.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -252,9 +245,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And the same claim where it decides whether a row is returned at all, which is the failure a
-        /// syntax check would not have caught: under <c>CONCAT</c> the row matches.
+        /// The same null propagation in a predicate: under <c>CONCAT</c> the row would match.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -269,11 +262,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Precedence
 
         /// <summary>
-        /// <c>SqlSyntax.BINARY.unparse</c> is handed an operator whose precedence is not the one the call
-        /// carries — <c>||</c> is 60 and <c>+</c> is 40 — so a nested expression is where a substitution of
-        /// this shape goes wrong. These are the nestings a validated plan produces, and the server is the
-        /// authority on whether the parentheses came out right.
+        /// <c>||</c> has precedence 60 and <c>+</c> has 40, so substituting one for the other can misplace
+        /// parentheses in a nested expression. These are nestings a validated plan produces, run on the server
+        /// to check the grouping.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -297,9 +290,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Arithmetic reaches a string only through a cast, which writes its own parentheses — and the cast
-        /// is the one thing on either side of the operator whose rendering this project already corrects.
+        /// Arithmetic reaches a string only through a cast, which writes its own parentheses.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -314,6 +307,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// A comparison binds looser than either spelling, and a conjunction looser still.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]
@@ -330,10 +324,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region What went to the server
 
         /// <summary>
-        /// The rows are the claim that matters, and this is the claim that they were answered by the server
-        /// rather than by Calcite: the statement the adapter generated carries the operator T-SQL has, and
-        /// no longer the one it does not.
+        /// The concatenation is evaluated on the server: the generated statement carries <c>+</c> and no
+        /// <c>||</c>.
         /// </summary>
+        /// <param name="provider">The provider the query reaches SQL Server through.</param>
         [Theory]
         [InlineData(SqlClient)]
         [InlineData(Odbc)]

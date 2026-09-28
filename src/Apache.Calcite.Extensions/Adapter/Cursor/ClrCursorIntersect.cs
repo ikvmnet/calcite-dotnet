@@ -14,10 +14,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// convention.
     /// </summary>
     /// <remarks>
-    /// linq4j's <c>intersect</c> drains its <em>second</em> source first and acquires its first only
-    /// afterwards, so it is the first input — the fold so far — that is deferred, within the body's own
-    /// kind, through <see cref="ClrCursorRelImplementor.Opener"/> or
-    /// <see cref="ClrCursorRelImplementor.OpenerAsync"/>; the second arrives opened.
+    /// Mirrors <c>EnumerableIntersect</c>, folding the inputs pairwise. linq4j's <c>intersect</c> drains its
+    /// second source before it acquires its first, so at each step the first operand (the intersection so far)
+    /// is passed as an opener and the second as an open.
     /// </remarks>
     public class ClrCursorIntersect : Intersect, ClrCursorRel
     {
@@ -25,10 +24,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="inputs"></param>
-        /// <param name="all"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="inputs">The inputs.</param>
+        /// <param name="all">Whether duplicates are kept (<c>INTERSECT ALL</c>).</param>
         public ClrCursorIntersect(RelOptCluster cluster, RelTraitSet traitSet, java.util.List inputs, bool all) :
             base(cluster, traitSet, inputs, all)
         {

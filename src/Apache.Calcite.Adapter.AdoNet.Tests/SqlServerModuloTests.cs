@@ -12,27 +12,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers a modulo against a real SQL Server, where the grouping of the expression that reached it is
-    /// the thing in question.
+    /// Tests the grouping of a modulo pushed down to SQL Server.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>MssqlSqlDialect</c> writes <c>MOD(a, b)</c> as <c>a % b</c>, which is right, and hands
-    /// <c>SqlSyntax.BINARY</c> an operator of a different precedence from the call's — a function's 100
-    /// against <c>PERCENT_REMAINDER</c>'s 60 — while <c>SqlCall.unparse</c> has already chosen the
-    /// parentheses from the call's own. So a modulo standing as the right operand of an operator binding at
-    /// 60 lost its grouping: <c>n / MOD(a, b)</c> went down as <c>n / a % b</c>, which the server reads as
-    /// <c>(n / a) % b</c>.
+    /// <c>MssqlSqlDialect</c> writes <c>MOD(a, b)</c> as <c>a % b</c>, but <c>SqlCall.unparse</c> chooses the
+    /// parentheses from the call's own precedence (a function's 100) rather than <c>PERCENT_REMAINDER</c>'s
+    /// 60. Calcite therefore writes <c>n / MOD(a, b)</c> as <c>n / a % b</c>, which the server reads as
+    /// <c>(n / a) % b</c> and silently returns a wrong number. The adapter's dialect writes the parentheses.
     /// </para>
     /// <para>
-    /// Unlike the concatenation half of the same correction, this one is reachable from a validated plan —
-    /// the operands are numeric, so <c>*</c>, <c>/</c> and <c>%</c> all take one. It is also silent: the
-    /// statement parses and runs and answers a number, so nothing failed and the number was wrong.
-    /// </para>
-    /// <para>
-    /// SqlClient alone. That all three drivers reach one dialect is a claim
-    /// <see cref="SqlServerConcatenationTests"/> makes and holds, and repeating the matrix here would test
-    /// the drivers again rather than the rendering.
+    /// Only SqlClient is used; <see cref="SqlServerConcatenationTests"/> covers all three drivers reaching the
+    /// same dialect.
     /// </para>
     /// </remarks>
     public class SqlServerModuloTests
@@ -55,17 +46,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// What a query answered, and what was sent to the server to answer it.
+        /// What a query returned, and the statements sent to the server to answer it.
         /// </summary>
-        /// <param name="Rows"></param>
-        /// <param name="Statements"></param>
+        /// <param name="Rows">The first column of each row, as a string.</param>
+        /// <param name="Statements">The statements the adapter generated.</param>
         readonly record struct Answer(List<string> Rows, IReadOnlyList<string> Statements);
 
         /// <summary>
-        /// Runs a query against the fixture's database.
+        /// Runs a query against the fixture's database, recording the generated SQL.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run through Calcite against the fixture's SQL Server
+        /// database.</param>
+        /// <returns>The first column of every row, and the SQL statements the adapter sent to the
+        /// server.</returns>
         static Answer Run(string sql)
         {
             var properties = new java.util.Properties();
@@ -97,11 +90,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query over <c>DEPTS</c> ordered by its key, so that the answers line up with 10, 20 and 30
-        /// whatever order the server would otherwise have returned them in.
+        /// Evaluates an expression over <c>DEPTS</c> ordered by its key, so the results line up with
+        /// <c>DEPTNO</c> 10, 20 and 30.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <returns></returns>
+        /// <param name="expression">The select-list expression to evaluate for each department.</param>
+        /// <returns>One value per department in <c>DEPTNO</c> order, and the SQL the adapter sent.</returns>
         static Answer OverDepartments(string expression)
         {
             return Run($"SELECT {expression} FROM ADO.DEPTS ORDER BY DEPTNO");
@@ -110,9 +103,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region The grouping
 
         /// <summary>
-        /// A modulo as the right operand of a division, which is where the rendering lost the grouping.
-        /// Over 10, 20 and 30 the moduli are 3, 6 and 2, so the expression means 20, 10 and 30; grouped from
-        /// the left it is <c>(60 / DEPTNO) % 7</c>, which is 6, 3 and 2.
+        /// A modulo as the right operand of a division. Over 10, 20 and 30 the moduli are 3, 6 and 2, so the
+        /// expression means 20, 10 and 30; grouped from the left it would be <c>(60 / DEPTNO) % 7</c>, which
+        /// is 6, 3 and 2.
         /// </summary>
         [Fact]
         public void AModuloUnderADivisionIsGrouped()
@@ -123,8 +116,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The same under a multiplication: the expression means 18, 36 and 12, and grouped from the left
-        /// <c>(6 * DEPTNO) % 7</c> is 4, 1 and 5.
+        /// The same under a multiplication: the expression means 18, 36 and 12, while grouped from the left
+        /// <c>(6 * DEPTNO) % 7</c> would be 4, 1 and 5.
         /// </summary>
         [Fact]
         public void AModuloUnderAMultiplicationIsGrouped()
@@ -135,8 +128,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And under another modulo, which is the case that reads worst as SQL: the expression means 2, 2
-        /// and 0, and <c>(20 % DEPTNO) % 7</c> is 0, 0 and 6.
+        /// The same under another modulo: the expression means 2, 2 and 0, while <c>(20 % DEPTNO) % 7</c>
+        /// would be 0, 0 and 6.
         /// </summary>
         [Fact]
         public void AModuloUnderAModuloIsGrouped()
@@ -151,8 +144,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region What was already right
 
         /// <summary>
-        /// As a left operand the rendering already meant what the call meant, left associativity giving the
-        /// nesting for nothing. Kept here so that the correction is known to be to the one case.
+        /// As a left operand the rendering is correct without parentheses, by left associativity.
         /// </summary>
         [Fact]
         public void AModuloAsALeftOperandIsUnaffected()
@@ -163,7 +155,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// And under an operator that binds looser than <c>%</c> does.
+        /// Under an operator that binds looser than <c>%</c>, no parentheses are needed.
         /// </summary>
         [Fact]
         public void AModuloUnderASubtractionIsUnaffected()
@@ -174,8 +166,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The plain rendering, which is Calcite's and is kept: <c>%</c> is the operator T-SQL has, and
-        /// <c>MOD</c> is not a function it knows.
+        /// A plain modulo runs: it is written as <c>%</c>, since T-SQL has no <c>MOD</c> function.
         /// </summary>
         [Fact]
         public void APlainModuloStillRuns()
@@ -190,8 +181,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region What went to the server
 
         /// <summary>
-        /// The claim that the numbers above were answered by the server rather than by Calcite: the
-        /// statement carries the operator, and carries it parenthesised.
+        /// The modulo is evaluated on the server: the generated statement carries <c>%</c>, parenthesised.
         /// </summary>
         [Fact]
         public void TheGroupingIsPushedDown()

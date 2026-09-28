@@ -11,29 +11,16 @@ namespace Apache.Calcite.FullText.Schema
 {
 
     /// <summary>
-    /// One <c>CLR_FT_*</c> operator at one arity, in the form a schema declares it.
+    /// One <c>CLR_FT_*</c> operator at one arity, declared as a schema function.
     /// </summary>
     /// <remarks>
-    /// <para>A schema function is a shape rather than an operator: Calcite reads the parameter list and builds
-    /// a <c>SqlUserDefinedFunction</c> of its own around it, so what reaches a plan carries this one's name and
-    /// arity rather than being this one. That is why <c>FullTextOperatorTable.Matches</c> asks a call for its
-    /// name — an adapter exists to render one of these into a statement, and the name is the whole of what
-    /// rendering needs.</para>
+    /// <para>Calcite builds its own <c>SqlUserDefinedFunction</c> from this declaration's name and parameter
+    /// list, so a call in a plan carries that operator rather than <see cref="Operator"/>; recognise it with
+    /// <see cref="FullTextOperatorTable.Matches"/>.</para>
     ///
-    /// <para><b>No body, and <c>ImplementableFunction</c> implemented anyway.</b> Binding a CLR method here
-    /// would let a call that no rule pushed down plan regardless and then answer with something the store never
-    /// computed — a wrong answer rather than a failure. With no body the refusal happens before any row exists.
-    /// But declining the interface leaves Calcite to report it as <c>User defined function CLR_FT_SCORE must
-    /// implement ImplementableFunction</c>, which names an interface rather than a reason and reads as a defect
-    /// in the adapter. Implementing it and throwing gives the same refusal at the same moment — Calcite asks for
-    /// a body while generating code — with a sentence saying why.</para>
-    ///
-    /// <para><b>And unlike Cosmos's type tests, none of these will ever acquire a body.</b> There the question
-    /// "would an in-process body answer what the service answers?" had an answer, and a differential test
-    /// against a live account said yes for eight of them. Here it cannot: a full text match is decided by the
-    /// store's analyzer — tokenising, case folding, stemming, stopwords, per language — and an approximation
-    /// answers differently for the same query. So this is a property of the family rather than a decision per
-    /// function.</para>
+    /// <para>There is no implementation. <see cref="getImplementor"/> throws with a message explaining that
+    /// the call has to be evaluated by the store, which is the error a caller sees when a plan that still
+    /// holds the call is compiled.</para>
     /// </remarks>
     public sealed class FullTextSchemaFunction : ScalarFunction, ImplementableFunction
     {
@@ -46,8 +33,12 @@ namespace Apache.Calcite.FullText.Schema
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="op">The operator to declare.</param>
-        /// <param name="arity">How many operands this declaration takes.</param>
+        /// <param name="op">The operator to declare; one of the fields of <see cref="FullTextOperatorTable"/>.</param>
+        /// <param name="arity">How many operands this declaration takes. Every parameter is required.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="op"/> is <c>null</c>.</exception>
+        /// <exception cref="ArgumentException">
+        /// <paramref name="op"/> does not use a <see cref="FullTextOperandTypeChecker"/>.
+        /// </exception>
         public FullTextSchemaFunction(SqlFunction op, int arity)
         {
             ArgumentNullException.ThrowIfNull(op);
@@ -58,9 +49,8 @@ namespace Apache.Calcite.FullText.Schema
             var checker = op.getOperandTypeChecker() as FullTextOperandTypeChecker ??
                 throw new ArgumentException($"'{op.getName()}' is not a full text operator.", nameof(op));
 
-            // Every one required, and every one typed as the operator's own checker types that position. An
-            // optional parameter is padded with DEFAULT at the call site and no store renders one; a
-            // differently typed one would make the two routes disagree about what validates.
+            // Each parameter is required, since Calcite pads optional ones with DEFAULT, and typed as the
+            // operator's own checker types that position, so both routes validate the same calls.
             operands = new FullTextOperand[arity];
             parameters = new java.util.ArrayList(arity);
 
@@ -81,20 +71,23 @@ namespace Apache.Calcite.FullText.Schema
         /// </summary>
         public int Arity => arity;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the parameters, one <see cref="FullTextSchemaFunctionParameter"/> per operand.
+        /// </summary>
+        /// <returns>A list of <see cref="Arity"/> required parameters.</returns>
         public java.util.List getParameters()
         {
             return parameters;
         }
 
         /// <summary>
-        /// Returns what a call to this function is typed as.
+        /// Returns the type of a call to this function.
         /// </summary>
         /// <remarks>
-        /// Asked of the operator rather than restated here. Every one of these infers its return type from
-        /// nothing else — a nullable boolean or a nullable double — so the operands are a formality; asking
-        /// anyway is what keeps a plan built through a connection and a plan built through a chained operator
-        /// table the same plan.
+        /// Asks the operator's own return type inference, over the declared parameter types, so that a call
+        /// resolved through a schema is typed as one resolved through the operator table: a nullable
+        /// <c>BOOLEAN</c> for a predicate, a nullable <c>DOUBLE</c> for a score, and <c>ANY</c> for a term
+        /// constructor.
         /// </remarks>
         /// <param name="typeFactory">The type factory.</param>
         /// <returns>The return type.</returns>
@@ -109,27 +102,28 @@ namespace Apache.Calcite.FullText.Schema
         }
 
         /// <summary>
-        /// Refuses, and says why.
+        /// Always throws: a full text call has no in-process implementation.
         /// </summary>
         /// <remarks>
-        /// Calcite asks for this while generating code for a plan, so a call that survived to here is one no
-        /// rule pushed down. Throwing is the same outcome as not implementing the interface, at the same
-        /// moment; what it adds is the reason.
+        /// Calcite asks for the implementor while generating code, so this runs only for a call that no rule
+        /// pushed down to a store. <c>ImplementableFunction</c> is implemented, rather than left off, so that the
+        /// failure carries the message from <see cref="Refusal"/> instead of Calcite's report that the function
+        /// does not implement the interface.
         /// </remarks>
-        /// <returns>Never.</returns>
-        /// <exception cref="java.lang.UnsupportedOperationException">Always.</exception>
+        /// <returns>Never returns.</returns>
+        /// <exception cref="java.lang.UnsupportedOperationException">Always, with the message from <see cref="Refusal"/>.</exception>
         public CallImplementor getImplementor()
         {
             throw new java.lang.UnsupportedOperationException(Refusal(op.getName()));
         }
 
         /// <summary>
-        /// Says why a full text call cannot be evaluated where the plan put it.
+        /// Returns the message explaining why a full text call cannot be evaluated in process.
         /// </summary>
         /// <remarks>
-        /// The scoring functions get their own sentence because a caller reaching that one has usually done
-        /// something different: ordering by a score in a plan whose ordering could not be pushed down whole,
-        /// rather than writing a predicate the adapter declined.
+        /// <c>CLR_FT_SCORE</c> and <c>CLR_FT_RRF</c> get a message about relevance scores, naming the usual
+        /// causes (an ordering that could not be pushed down whole, or a projected score the store will not
+        /// return); every other name gets a message about the store's analyzer.
         /// </remarks>
         /// <param name="name">The function's name.</param>
         /// <returns>The message.</returns>

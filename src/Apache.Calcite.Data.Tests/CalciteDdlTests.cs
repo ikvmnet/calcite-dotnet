@@ -121,8 +121,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A write plans under the asynchronous program: the modify stays Calcite's and the converter
-        /// carries its count row, exactly as any node the convention lacks is carried.
+        /// The modify stays in Calcite's convention and a converter carries its count row into the cursor
+        /// convention, as for any node the cursor convention lacks.
         /// </summary>
         [Fact]
         public void Explain_insert_should_render_the_cursor_rooted_plan()
@@ -139,7 +139,7 @@ namespace Apache.Calcite.Data.Tests
             Assert.True(r.Read());
 
             var plan = r.GetValue(0)?.ToString() ?? "";
-            // a modify is Calcite's alone, crossing once, directly, into the cursor convention
+            // the modify is Calcite's, and crosses directly into the cursor convention
             Assert.Contains("EnumerableToClrCursorConverter", plan);
             Assert.Contains("TableModify", plan);
         }
@@ -414,32 +414,19 @@ namespace Apache.Calcite.Data.Tests
             Assert.False(reader.Read());
         }
 
+        /// <summary>
+        /// DELETE from a one-column table.
+        /// </summary>
         /// <remarks>
-        /// <para><b>Fails on calcite-core 1.43.0-SNAPSHOT, and the defect is upstream and one line.</b>
-        /// <c>EnumerableTableModify.deleteFromCollection</c> (CALCITE-7510, commit 5cdc09b8c) declares the
-        /// sink row as <c>Object</c> and then writes
-        /// <c>Expressions.convert_(sinkRow, tablePhysType.getJavaRowType())</c>. For a one-column table that
-        /// row type is a primitive — <c>deduceFormat</c> says ARRAY because the table's element type is
-        /// <c>Object[]</c>, and the optimising <c>PhysTypeImpl.of</c> turns ARRAY into SCALAR for one field —
-        /// so the generated source says <c>(int) sinkRow</c>.</para>
-        /// <para><c>(int) someObject</c> is legal Java: JLS 5.5 allows a narrowing reference conversion
-        /// followed by unboxing, and javac compiles it. <b>Janino does not implement it</b>, measured against
-        /// the Janino on this classpath: <c>(int) o</c> gives "Cannot cast "java.lang.Object" to "int"",
-        /// while <c>(java.lang.Integer) o</c> compiles. Calcite compiles with Janino, so it must not emit
-        /// the first form. The fix is to box the target type —
-        /// <c>Expressions.convert_(sinkRow, Primitive.box(tablePhysType.getJavaRowType()))</c> — which is a
-        /// no-op for the multi-column <c>Object[]</c> case and so changes nothing that works today.</para>
-        /// <para>Every test CALCITE-7510 added uses a two-column table, which is why this shape was never
-        /// seen. Both of these tables are one column. They pass on 1.42.0 — where four UPDATE tests fail
-        /// instead, because 1.42 is what CALCITE-7510 fixes.</para>
-        /// <para><b>This passes, and the paragraphs above are why it is worth keeping rather than why it
-        /// fails.</b> That was the whole story while Janino compiled the plan, and it no longer does: the
-        /// provider's prepare is <c>ClrPrepareImpl</c>, which translates Calcite's tree rather than
-        /// compiling it, so the cast Janino refuses costs nothing here. What remained after that was a defect
-        /// of ours rather than Calcite's — a one-column table gives the scan a SCALAR physical type while
-        /// the table still yields <c>Object[]</c> rows — and the scan now types its rows by the physical row
-        /// type, which cleared it. The upstream one-liner is still owed to Calcite, for anyone running these
-        /// through <c>EnumerableConvention</c>.</para>
+        /// <para>A one-column table is the shape that matters. Its physical row format is SCALAR, since the
+        /// optimising <c>PhysTypeImpl.of</c> turns ARRAY into SCALAR for one field, while the table still
+        /// yields <c>Object[]</c> rows; the scan has to type its rows by the physical row type.</para>
+        /// <para>The same shape does not compile under Calcite's own <c>EnumerableConvention</c>:
+        /// <c>EnumerableTableModify</c> declares its sink row as <c>Object</c> and converts it to the
+        /// table's Java row type, which here is a primitive, so the generated source contains
+        /// <c>(int) sinkRow</c>. Java allows that cast and Janino rejects it. <c>ClrPrepareImpl</c>
+        /// translates Calcite's expression tree rather than compiling it with Janino, so that restriction
+        /// does not apply here.</para>
         /// </remarks>
         [Fact]
         public void Delete_should_return_row_count()
@@ -508,47 +495,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Verifies that DELETE removes multiple rows and returns the correct affected-row count
-        /// for a single-column table.
-        ///
-        /// <para>
-        /// Note: Calcite's <c>EnumerableTableModify</c> uses <c>Collection.removeAll</c> backed by
-        /// Java <c>Object[].equals</c> (reference equality) to locate rows to remove.  For
-        /// single-column tables Calcite optimises the physical row format from ARRAY to SCALAR, so
-        /// each row is a plain scalar value whose <c>equals</c> is value-based — reference identity
-        /// is preserved through the scan, and <c>removeAll</c> succeeds.  Multi-column tables stay
-        /// in ARRAY format and the conversion branch in <c>EnumerableTableModify.implement</c>
-        /// creates brand-new <c>Object[]</c> instances, so <c>removeAll</c> finds no matches;
-        /// this is a known Calcite limitation (CALCITE-style bug in the enumerable DELETE path).
-        /// </para>
+        /// A DELETE matching several rows of a one-column table, for the reason given on
+        /// <see cref="Delete_should_return_row_count"/>.
         /// </summary>
-        /// <remarks>
-        /// <para><b>Fails on calcite-core 1.43.0-SNAPSHOT, and the defect is upstream and one line.</b>
-        /// <c>EnumerableTableModify.deleteFromCollection</c> (CALCITE-7510, commit 5cdc09b8c) declares the
-        /// sink row as <c>Object</c> and then writes
-        /// <c>Expressions.convert_(sinkRow, tablePhysType.getJavaRowType())</c>. For a one-column table that
-        /// row type is a primitive — <c>deduceFormat</c> says ARRAY because the table's element type is
-        /// <c>Object[]</c>, and the optimising <c>PhysTypeImpl.of</c> turns ARRAY into SCALAR for one field —
-        /// so the generated source says <c>(int) sinkRow</c>.</para>
-        /// <para><c>(int) someObject</c> is legal Java: JLS 5.5 allows a narrowing reference conversion
-        /// followed by unboxing, and javac compiles it. <b>Janino does not implement it</b>, measured against
-        /// the Janino on this classpath: <c>(int) o</c> gives "Cannot cast "java.lang.Object" to "int"",
-        /// while <c>(java.lang.Integer) o</c> compiles. Calcite compiles with Janino, so it must not emit
-        /// the first form. The fix is to box the target type —
-        /// <c>Expressions.convert_(sinkRow, Primitive.box(tablePhysType.getJavaRowType()))</c> — which is a
-        /// no-op for the multi-column <c>Object[]</c> case and so changes nothing that works today.</para>
-        /// <para>Every test CALCITE-7510 added uses a two-column table, which is why this shape was never
-        /// seen. Both of these tables are one column. They pass on 1.42.0 — where four UPDATE tests fail
-        /// instead, because 1.42 is what CALCITE-7510 fixes.</para>
-        /// <para><b>This passes, and the paragraphs above are why it is worth keeping rather than why it
-        /// fails.</b> That was the whole story while Janino compiled the plan, and it no longer does: the
-        /// provider's prepare is <c>ClrPrepareImpl</c>, which translates Calcite's tree rather than
-        /// compiling it, so the cast Janino refuses costs nothing here. What remained after that was a defect
-        /// of ours rather than Calcite's — a one-column table gives the scan a SCALAR physical type while
-        /// the table still yields <c>Object[]</c> rows — and the scan now types its rows by the physical row
-        /// type, which cleared it. The upstream one-liner is still owed to Calcite, for anyone running these
-        /// through <c>EnumerableConvention</c>.</para>
-        /// </remarks>
         [Fact]
         public void MultiRow_delete_should_return_correct_row_count_for_single_column_table()
         {
@@ -556,8 +505,7 @@ namespace Apache.Calcite.Data.Tests
             c.Open();
             using var cmd = c.CreateCommand();
 
-            // Single-column table: Calcite uses SCALAR row format, so Object.equals is value-based
-            // and Collection.removeAll correctly locates and removes the matching rows.
+            // one column, so the physical row format is SCALAR
             cmd.CommandText = "CREATE TABLE IF NOT EXISTS \"multi_delete_sc_tbl\" (\"id\" INTEGER NOT NULL)";
             cmd.ExecuteNonQuery();
 

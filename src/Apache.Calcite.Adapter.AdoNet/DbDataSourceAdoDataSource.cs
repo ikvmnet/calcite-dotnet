@@ -9,12 +9,11 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// An <see cref="AdoDataSource"/> backed by a <see cref="DbDataSource"/> and an explicitly
-    /// supplied metadata provider.
+    /// An <see cref="AdoDataSource"/> that opens connections from a <see cref="DbDataSource"/>.
     /// </summary>
     /// <remarks>
-    /// Use this class when your application already manages a <see cref="DbDataSource"/> and you
-    /// want to expose it to the Calcite ADO.NET adapter without wrapping a provider factory.
+    /// Both <see cref="OpenConnection"/> and <see cref="OpenConnectionAsync"/> go to the <see cref="DbDataSource"/>.
+    /// The caller keeps ownership of the <see cref="DbDataSource"/>; this class does not dispose it.
     /// </remarks>
     public class DbDataSourceAdoDataSource : AdoDataSource
     {

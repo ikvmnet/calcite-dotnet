@@ -7,12 +7,12 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Coverage tests that exercise the standard ADO.NET data types end-to-end through the
-    /// Calcite engine, both as query output (typed reader getters) and as command parameters.
+    /// Exercises the standard ADO.NET data types end to end through Calcite, both as query output (typed
+    /// reader getters) and as command parameters.
     /// </summary>
     /// <remarks>
-    /// Calcite's type system does not have a 1:1 mapping with every <see cref="DbType"/>; this
-    /// suite documents the supported subset and the canonical CLR materializations.
+    /// Calcite's types do not map one to one onto <see cref="DbType"/>; these tests cover the supported
+    /// subset and the CLR type each is read as.
     /// </remarks>
     public class CalciteTypeCoverageTests
     {
@@ -172,7 +172,7 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Output_Timestamp_early_date_0001_should_round_trip()
         {
-            // Earliest representable Calcite TIMESTAMP — proleptic Gregorian year 0001
+            // proleptic Gregorian year 0001, the earliest DateTime can hold
             using var r = ExecuteSingleRow("VALUES (TIMESTAMP '0001-01-01 00:00:00')");
             var dt = r.GetDateTime(0).ToUniversalTime();
             Assert.Equal(1, dt.Year);
@@ -199,10 +199,9 @@ namespace Apache.Calcite.Data.Tests
         public void Parameter_Timestamp_sub_millisecond_ticks_are_truncated_to_ms()
         {
             // 0001-01-01T00:00:00.0102004 — ticks value 102004 (10.2004 ms).
-            // Calcite TIMESTAMP resolution is milliseconds. The binding calls
-            // DateTimeOffset.ToUnixTimeMilliseconds(), which truncates toward zero.
-            // Because this date produces a large negative Unix timestamp, truncation
-            // toward zero effectively rounds the fractional ms *up*: 10.2004 ms → 11 ms.
+            // Calcite TIMESTAMP resolution is milliseconds. The binding counts milliseconds from the
+            // Unix epoch and truncates toward zero. This date is a large negative count, so truncating
+            // toward zero rounds the fractional millisecond up: 10.2004 ms becomes 11 ms.
             var input = new DateTime(1, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddTicks(102004);
             Assert.Equal(10, input.Millisecond); // sanity: the CLR ms field is 10
 
@@ -217,7 +216,7 @@ namespace Apache.Calcite.Data.Tests
             cmd.Parameters.Add(p);
 
             var actual = (DateTime)cmd.ExecuteScalar()!;
-            // ToUnixTimeMilliseconds truncates toward zero → negative remainder rounds up to 11 ms.
+            // truncation toward zero of a negative count rounds up to 11 ms
             var expected = new DateTime(1, 1, 1, 0, 0, 0, 11, DateTimeKind.Utc);
             Assert.Equal(expected, actual.ToUniversalTime());
         }
@@ -226,7 +225,7 @@ namespace Apache.Calcite.Data.Tests
         public void Output_Timestamp_readable_as_DateTimeOffset_utc()
         {
             using var r = (CalciteDataReader)ExecuteSingleRow("VALUES (TIMESTAMP '2024-07-04 13:45:30.750')");
-            // GetDateTime materialises as UTC DateTime; wrap it for a DateTimeOffset comparison.
+            // GetDateTime returns a UTC DateTime; wrap it for a DateTimeOffset comparison.
             var dt = r.GetDateTime(0).ToUniversalTime();
             Assert.Equal(new DateTimeOffset(2024, 7, 4, 13, 45, 30, 750, TimeSpan.Zero), new DateTimeOffset(dt));
         }
@@ -287,9 +286,9 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Output_DateTimeFunctions_should_be_retrievable_as_clr_types()
         {
-            // Calcite datetime functions. Note: the Calcite docs describe CURRENT_TIME and
-            // CURRENT_TIMESTAMP as TIMESTAMP WITH TIME ZONE, but at runtime CalciteSignature.columns
-            // reports them as plain TIME / TIMESTAMP, so the ADO.NET surface mirrors that.
+            // Calcite's reference describes CURRENT_TIME and CURRENT_TIMESTAMP as TIMESTAMP WITH TIME
+            // ZONE, but the operators return plain TIME and TIMESTAMP, and the reader follows the
+            // column types the statement reports.
             //   LOCALTIME, LOCALTIME(p)            -> TIME      -> TimeSpan / TimeOnly
             //   LOCALTIMESTAMP, LOCALTIMESTAMP(p)  -> TIMESTAMP -> DateTime
             //   CURRENT_TIME                       -> TIME      -> TimeSpan
@@ -333,21 +332,12 @@ namespace Apache.Calcite.Data.Tests
             Assert.NotEqual(default, currentTimestamp);
         }
 
-        // ------------------------------------------------------------------------------------
-        // Input: parameter binding for the standard DbType set, round-tripped via
-        // VALUES (CAST(? AS <sql_type>)). Calcite is positional like ODBC: '?' placeholders
-        // are bound by ordinal in the order Parameters were added; ParameterName is informational.
-        // The CAST around '?' supplies the SQL type the planner needs at validation time.
-        // ------------------------------------------------------------------------------------
-
         [Fact]
         public void Output_Uuid_should_round_trip_as_Guid()
         {
             using var r = ExecuteSingleRow("VALUES (UUID 'cccccccc-0000-0000-0000-000000000001')");
-            // Calcite's runtime representation of UUID is a java.util.UUID; it surfaces as a Guid.
-            // The claim as well as the value: this asserted the two reads and not the column's own
-            // answer, and the column answered object, because a UUID's Avatica rep is OBJECT and only
-            // the SQL type name can say otherwise.
+            // Calcite holds a UUID in a UuidValue; the reader surfaces it as a Guid, and the column's
+            // field type says so as well as the value.
             Assert.Equal(typeof(Guid), r.GetFieldType(0));
             Assert.Equal(new Guid("cccccccc-0000-0000-0000-000000000001"), r.GetGuid(0));
             Assert.Equal(new Guid("cccccccc-0000-0000-0000-000000000001"), (Guid)r.GetValue(0));
@@ -360,6 +350,13 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(typeof(Guid), r.GetFieldType(0));
             Assert.Equal(new Guid("cccccccc-0000-0000-0000-000000000001"), r.GetGuid(0));
         }
+
+        // ------------------------------------------------------------------------------------
+        // Input: parameter binding for the standard DbType set, round-tripped via
+        // VALUES (CAST(? AS <sql_type>)). Calcite's parameters are positional: '?' placeholders
+        // are bound by ordinal in the order Parameters were added; ParameterName is informational.
+        // The CAST around '?' supplies the SQL type the validator needs.
+        // ------------------------------------------------------------------------------------
 
         [Fact]
         public void Parameter_Boolean_should_round_trip()
@@ -456,8 +453,8 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Parameter_UInt16_should_round_trip()
         {
-            // UInt16 is widened to INTEGER (Java Integer) on the way in; the reader surfaces it
-            // back as int, so we compare against the expected int value.
+            // The value is converted to the INTEGER the CAST gives the placeholder, and read back as
+            // an int.
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
@@ -475,7 +472,7 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Parameter_UInt32_should_round_trip()
         {
-            // UInt32 is widened to BIGINT (Java Long) on the way in; the reader surfaces it as long.
+            // The value is converted to the BIGINT the CAST gives the placeholder, and read back as a long.
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
@@ -493,10 +490,9 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Parameter_UInt64_should_round_trip()
         {
-            // UInt64 is sent as BigDecimal; the reader surfaces it as decimal.
-            // Calcite's DECIMAL implementation is backed by Java long, so precision is capped at 19
-            // digits (Long.MAX_VALUE). Use a value that fits within that constraint but still exceeds
-            // the Int64 range to confirm the unsigned binding path is exercised.
+            // The value is converted to the DECIMAL the CAST gives the placeholder, and read back as a
+            // decimal. Calcite's default type system caps DECIMAL precision at 19 digits, so the value
+            // has 19 digits and still exceeds the Int64 range.
             using var c = new CalciteConnection(TestModels.InlineEmptyModelConnectionString);
             c.Open();
             using var cmd = c.CreateCommand();
@@ -543,9 +539,8 @@ namespace Apache.Calcite.Data.Tests
 
         // ------------------------------------------------------------------------------------
         // Unsigned typed getters: GetByte/GetUInt16/32/64 on CalciteDataReader, reading the unsigned
-        // Calcite SQL types. Each is the one representation Calcite's runtime produces for that type —
-        // an org.joou.UByte for TINYINT UNSIGNED, a UShort for SMALLINT UNSIGNED, and so on — and
-        // nothing else is that type, which the refusals below hold.
+        // Calcite SQL types, which Calcite holds in org.joou.UByte, UShort, UInteger and ULong. Only
+        // those types answer to these getters; the refusals below cover the signed ones.
         // ------------------------------------------------------------------------------------
 
         [Fact]
@@ -590,9 +585,9 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// Text in canonical GUID form is text. Parsing it here would have <c>GetGuid</c> answer for a
-        /// type the column does not have; <c>CAST(x AS UUID)</c> is how a caller says it means one, and
-        /// <see cref="Output_Uuid_cast_from_a_string_should_round_trip_as_Guid"/> is that.
+        /// A character column holding text in GUID form is still character. <c>GetGuid</c> does not parse
+        /// it; a caller casts to <c>UUID</c> instead, as
+        /// <see cref="Output_Uuid_cast_from_a_string_should_round_trip_as_Guid"/> does.
         /// </summary>
         [Fact]
         public void GetGuid_should_refuse_a_character_column_holding_guid_text()
@@ -638,7 +633,7 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// A <c>DECIMAL</c> wide enough to hold the same number is still a <c>DECIMAL</c>. Nineteen
-        /// digits, not twenty: Calcite backs DECIMAL with a Java long and caps the precision there.
+        /// digits is the most Calcite's default type system allows.
         /// </summary>
         [Fact]
         public void GetUInt64_should_refuse_a_decimal()

@@ -9,23 +9,22 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// </summary>
     /// <remarks>
     /// <para>
-    /// What a test asserts about the rows is that the answer is right; what it asserts about these is that
-    /// the server is what answered. The two are separate claims, and a query the adapter declined to push
-    /// down would satisfy the first while saying nothing about the dialect.
+    /// Asserting on the generated statement shows that the server evaluated the expression; the rows alone
+    /// would also be right if the adapter had declined to push it down.
     /// </para>
     /// <para>
     /// IKVM does not project a Java default method onto a CLR class that implements the interface, so
-    /// <c>andThen</c> has to be written even though a hook handler is never composed with another.
+    /// <c>andThen</c> is implemented here.
     /// </para>
     /// </remarks>
     sealed class GeneratedSql : java.util.function.Consumer
     {
 
         /// <summary>
-        /// Two handlers as one, which is what <c>Consumer.andThen</c> answers in Java.
+        /// Two handlers run in order, as <c>Consumer.andThen</c> returns in Java.
         /// </summary>
-        /// <param name="first"></param>
-        /// <param name="then"></param>
+        /// <param name="first">The handler run first.</param>
+        /// <param name="then">The handler run second.</param>
         sealed class Composed(java.util.function.Consumer first, java.util.function.Consumer then) : java.util.function.Consumer
         {
 

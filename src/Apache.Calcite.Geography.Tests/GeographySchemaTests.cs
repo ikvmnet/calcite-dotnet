@@ -23,15 +23,13 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The operators reached through the stock Calcite JDBC driver, with nothing chained and nothing
-    /// subclassed.
+    /// Runs the operators through Calcite's own JDBC driver, with the functions registered on a schema by
+    /// <see cref="GeographySchema.AddTo"/> rather than supplied as an operator table.
     /// </summary>
     /// <remarks>
-    /// This is the whole point of typing them over <c>GEOMETRY</c>. Everything else in this suite drives a
-    /// planner by hand and hands it an operator table, which only a host embedding Calcite can do. Here the
-    /// connection is <c>jdbc:calcite:</c>, the schema is registered the way an adapter would register one,
-    /// and the SQL goes through <c>Statement.executeQuery</c> — the path a consumer who has never heard of
-    /// this package takes.
+    /// The other tests drive a planner directly with an operator table, which only a host embedding Calcite
+    /// can do. Here the connection is <c>jdbc:calcite:fun=spatial</c> and the SQL goes through
+    /// <c>Statement.executeQuery</c>, as for any JDBC client.
     /// </remarks>
     public class GeographySchemaTests
     {
@@ -102,7 +100,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Calcite's own planar operators take the same column, which is the cost of there being one type.
+        /// Calcite's planar operators accept the same column, since it is an ordinary geometry.
         /// </summary>
         [Fact]
         public void ShouldLetCalcitesOwnOperatorsTakeTheSameColumn()
@@ -114,7 +112,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Two rows, a degree apart on the equator, in a table an adapter could have built.
+        /// A scannable table of two rows, <c>(ID, GEOG)</c>: 1 at <c>POINT(0.5 0)</c> and 2 at
+        /// <c>POINT(20 0)</c>, stamped with SRID 4326.
         /// </summary>
         sealed class PlacesTable : AbstractTable, ScannableTable
         {

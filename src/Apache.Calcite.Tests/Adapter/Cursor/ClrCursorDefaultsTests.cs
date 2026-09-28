@@ -19,15 +19,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Holds the operator table to the shape the convention reads it by, and the operators to linq4j's
-    /// timing.
+    /// Tests of <c>ClrCursorDefaults</c>: the naming its operators follow, and that each operator acquires,
+    /// reads and closes its sources when the corresponding linq4j operator does.
     /// </summary>
     public class ClrCursorDefaultsTests
     {
 
         /// <summary>
-        /// A cursor over rows in hand that counts what is asked of it.
+        /// A cursor over a fixed list of rows that counts its advances and records its disposal.
         /// </summary>
+        /// <param name="rows">The rows the cursor returns, in order.</param>
         sealed class CountingCursor(IReadOnlyList<object[]> rows) : ClrCursor<object[]>
         {
 
@@ -63,13 +64,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An operator that awaits its acquisition returns a <see cref="ValueTask{TResult}"/> of a cursor,
-        /// carries the suffix and ends in a token; one that acquires synchronously returns the cursor, and
-        /// carries neither.
+        /// An operator that awaits its acquisition returns a <see cref="ValueTask{TResult}"/> of a cursor, has
+        /// the <c>Async</c> suffix and takes a token last; one that acquires synchronously returns the cursor
+        /// and has no suffix.
         /// </summary>
         /// <remarks>
-        /// The tree-reading tests tell the two sets apart by exactly this, so it is held here directly, on
-        /// the type rather than on a plan.
+        /// Code that inspects a plan's expression tree tells the two kinds apart by name, so the convention is
+        /// checked here on the type itself.
         /// </remarks>
         [Fact]
         public void ShouldNameEveryAwaitingOpenWithTheSuffixAndNoOtherOpen()
@@ -103,9 +104,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A satisfied fetch has drawn one row more than it returned.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>take</c> is <c>takeWhile</c> over <c>n &lt; count</c>, and the enumerator has to draw a row
-        /// before it can test it. That is Calcite's, and the cursor keeps it.
+        /// linq4j's <c>take</c> is <c>takeWhile</c> over <c>n &lt; count</c>, whose enumerator draws a row
+        /// before testing it; the cursor does the same.
         /// </remarks>
         [Fact]
         public async Task ShouldDrawOneRowMoreThanItTakes()
@@ -125,6 +127,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Disposing an operator's cursor disposes its source, read or not.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldDisposeTheSourceWithTheCursor()
         {
@@ -138,9 +141,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A concat opens each source at its turn, by the opener of the advance that reached it, and
+        /// A concat opens each source when an advance reaches it, with the opener of that advance's kind, and
         /// closes it once exhausted.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldOpenEachConcatSourceAtItsTurn()
         {
@@ -173,9 +177,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A union drains its first source and closes it before it opens its second.
         /// </summary>
         /// <remarks>
-        /// Over scalar rows, because the natural comparer the null stands for is Java's <c>equals</c>, and
-        /// two arrays holding the same values are not equal by it; a plan passes the physical type's own
-        /// comparer for an array row.
+        /// The rows are scalars because a null comparer means Java's <c>equals</c>, under which two arrays
+        /// holding the same values are not equal; a plan passes the physical type's comparer for array rows.
         /// </remarks>
         [Fact]
         public void ShouldDrainTheFirstSourceBeforeOpeningTheSecond()
@@ -200,10 +203,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A semi join over an empty outer never opens its inner.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// CALCITE-2909. Calcite holds the inner lookup behind a <c>Suppliers.memoize</c> and only asks for it
-        /// while testing the first outer row, so an outer that has no rows never builds it. Building the
-        /// lookup first reads a whole input for an answer that was already known.
+        /// Calcite holds the inner lookup behind <c>Suppliers.memoize</c> and asks for it only while testing the
+        /// first outer row, so an outer with no rows never builds it.
         /// </remarks>
         [Fact]
         public async Task ShouldNotEnumerateTheInnerOfASemiJoinOverAnEmptyOuter()
@@ -230,9 +233,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A semi join over a non-empty outer builds its lookup once and no more, by the opener of the
+        /// A semi join over a non-empty outer builds its lookup exactly once, with the opener of the kind of
         /// advance that read the first outer row.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldEnumerateTheInnerOfASemiJoinOnce()
         {
@@ -265,11 +269,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A correlated join refuses RIGHT and FULL where it is built, not where it is read.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>correlateJoin</c> throws before it constructs the enumerable at all. Deferring the refusal into
-        /// an advance would let a plan be opened and only fail once rows were read; falling through and
-        /// inner-joining would let it not fail at all. The awaiting open refuses before it awaits its outer,
-        /// so the refusal is the open's rather than the first advance's.
+        /// <c>correlateJoin</c> throws before it constructs the enumerable. The awaiting open likewise refuses
+        /// before it awaits its outer, so the open fails rather than the first advance.
         /// </remarks>
         [Fact]
         public async Task ShouldRefuseARightOrFullCorrelateWhereItIsBuilt()
@@ -300,9 +303,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A correlated function that answers null is read as a cursor of no rows.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>Linq4j.emptyEnumerable()</c>, which Calcite substitutes rather than dereferencing. A LEFT join
-        /// therefore emits the outer row against null instead of throwing, through either advance.
+        /// Calcite substitutes <c>Linq4j.emptyEnumerable()</c> for a null rather than dereferencing it, so a LEFT
+        /// join emits the outer row against null instead of throwing, through either advance.
         /// </remarks>
         [Fact]
         public async Task ShouldReadANullCorrelatedSequenceAsEmpty()
@@ -322,9 +326,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A correlated join opens its inner once per outer row, by the opener of the advance that reached
-        /// that row, and closes it before opening the next.
+        /// A correlated join opens its inner once per outer row, with the opener of the kind of advance that
+        /// reached that row, and closes it before opening the next.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>correlateJoin</c> acquires its outer at <c>enumerator()</c>, which is the open, and each inner
         /// inside <c>moveNext</c>; the previous inner is closed there before the next is acquired.
@@ -373,7 +378,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An ASOF join drains both inputs at the open, the left before the right is opened.
+        /// An ASOF join drains both inputs at the open, closing the left before opening the right.
         /// </summary>
         /// <remarks>
         /// <c>asofJoin</c> builds its indexes in the method body, one try-with-resources after the other,
@@ -383,7 +388,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldDrainBothAsofInputsAtTheOpen()
         {
             // Java integers, because the keys go into a java.util.HashMap and the timestamps through a Java
-            // comparator, exactly as a plan's would
+            // comparator, as a plan's would
             var left = new ScalarCursor([java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2)]);
             var leftDisposedWhenRightOpened = false;
             ScalarCursor? right = null;
@@ -409,14 +414,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A spool leaves a round's rows in the collection on the advance that finds the input exhausted,
-        /// whichever kind of advance that is, and each row is converted on its way in.
+        /// A spool replaces the collection's contents with the round's rows on the advance that finds the input
+        /// exhausted, whichever kind of advance that is, converting each row to its Java form.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>lazyCollectionSpool</c> buffers in <c>moveNext</c> and flushes in the same <c>moveNext</c> that
-        /// returns false, so the collection is untouched while rows are being read and holds the round after.
-        /// What reads it back is Java, so a row goes in as Java's: an <see cref="int"/> row is a
-        /// <c>java.lang.Integer</c> in the collection.
+        /// <c>lazyCollectionSpool</c> buffers in <c>moveNext</c> and flushes in the <c>moveNext</c> that returns
+        /// false, so the collection is untouched while rows are read. Java code reads the collection back, so an
+        /// <see cref="int"/> row is stored as a <c>java.lang.Integer</c>.
         /// </remarks>
         [Fact]
         public async Task ShouldLeaveTheRoundInTheCollectionOnceTheInputIsExhausted()
@@ -438,8 +443,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A cursor over CLR integers in hand.
+        /// A cursor over a fixed list of CLR integers.
         /// </summary>
+        /// <param name="rows">The values the cursor returns, in order.</param>
         sealed class ScalarIntCursor(IReadOnlyList<int> rows) : ClrCursor<int>
         {
 
@@ -469,11 +475,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A collect drains its input where it is called, which is the open, and closes it there.
+        /// A collect drains and closes its input when it is called, which is at the open.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>EnumerableCollect</c> calls <c>toList</c> in its generated <c>bind</c> and wraps the value in
-        /// <c>singletonEnumerable</c>; evaluating the tree is that bind.
+        /// <c>singletonEnumerable</c>; evaluating the open corresponds to that bind.
         /// </remarks>
         [Fact]
         public async Task ShouldDrainACollectAtTheOpen()
@@ -492,10 +499,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The awaiting collect drains at the open too: the open awaits the drain and hands back the one
-        /// row, rather than folding on the first advance as a sequence that cannot await at
-        /// <c>GetAsyncEnumerator</c> had to.
+        /// The awaiting collect also drains at the open: the open awaits the drain and returns a cursor over the
+        /// one row, rather than leaving the drain to the first advance.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldDrainACollectAtTheOpenAsync()
         {
@@ -530,13 +537,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An uncollect builds and opens each row's sequence at its turn, inside the advance, and closes
-        /// it once exhausted.
+        /// An uncollect builds and opens each row's sequence inside the advance that reaches it, and closes it
+        /// once exhausted.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>EnumerableDefaults.selectMany</c> acquires its source in a field initializer and each row's
-        /// sequence inside <c>moveNext</c>; the source arrives opened here and nothing else is touched at
-        /// the open.
+        /// sequence inside <c>moveNext</c>; here the source arrives opened and nothing else is touched at the
+        /// open.
         /// </remarks>
         [Fact]
         public async Task ShouldOpenEachRowsSequenceAtItsTurn()
@@ -577,6 +585,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// which is the order Calcite's generated <c>bind</c> reads them in and the order the synchronous
         /// tree evaluates them in.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldOpenEachCombinedQueryAfterTheOneBeforeItIsRead()
         {
@@ -608,12 +617,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Builds a one-entry map, as <c>SqlFunctions.map</c> builds a query's row.
         /// </summary>
+        /// <param name="key">The entry's key.</param>
+        /// <param name="value">The entry's value, boxed as a <c>java.lang.Integer</c>.</param>
+        /// <returns>The map <c>SqlFunctions.map</c> builds from the key and value.</returns>
         static java.util.Map Map(string key, int value) =>
             org.apache.calcite.runtime.SqlFunctions.map([key, java.lang.Integer.valueOf(value)]);
 
         /// <summary>
-        /// A cursor over rows of any type in hand.
+        /// A cursor over a fixed list of rows of any type that records its disposal.
         /// </summary>
+        /// <typeparam name="T">The row type.</typeparam>
+        /// <param name="rows">The rows the cursor returns, in order.</param>
         sealed class RowsCursor<T>(IReadOnlyList<T> rows) : ClrCursor<T>
         {
 
@@ -645,24 +659,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An IE join holds the input order of two entries its comparator calls equal, whichever way it is
-        /// opened.
+        /// An IE join keeps the input order of entries its comparator calls equal, whichever way it is opened.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// linq4j sorts both orders with <c>List.sort</c>, which is stable; <see cref="List{T}.Sort()"/> is
-        /// an introsort and is not. The entry comparator answers 0 for two equal keys of the <em>same</em>
-        /// input -- it breaks a tie only between an entry of one input and an entry of the other -- so among
-        /// equal same-side entries the order is decided by stability alone, and it reaches the order the
-        /// pairs come out in.
+        /// linq4j sorts both orders with <c>List.sort</c>, which is stable; <see cref="List{T}.Sort()"/> is an
+        /// introsort and is not. The entry comparator returns 0 for equal keys from the same input, breaking
+        /// ties only between the two inputs, so the order of equal same-side entries depends on stability alone
+        /// and determines the order of the output pairs.
         ///
-        /// <para>The differential suite cannot see this. <c>SALES</c> has six rows, so an IE join over it
-        /// sorts twelve entries, and .NET's introsort insertion-sorts a run of sixteen or fewer -- which is
-        /// stable. Forty entries is past the threshold.</para>
+        /// <para>The differential suite cannot show this: an IE join over <c>SALES</c> sorts twelve entries, and
+        /// .NET's introsort insertion-sorts runs of sixteen or fewer, which is stable. Forty entries exceeds that
+        /// threshold.</para>
         ///
-        /// <para>Each predicate holds for every pairing and for no pair of one side, so the whole product
-        /// is in the answer and no tie is ever broken by side: what comes out is that product, left rows
-        /// outermost, each side in the order it arrived. Anything else is a sort that moved an equal
-        /// entry.</para>
+        /// <para>Each predicate holds for every cross pairing and for no same-side pair, so the result is the
+        /// whole product, left rows outermost, each side in arrival order. Any other order means a sort moved
+        /// an equal entry.</para>
         /// </remarks>
         [Fact]
         public async Task ShouldHoldTheInputOrderOfEqualIeJoinKeys()
@@ -719,13 +731,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A window drains its input and computes every row at the open, whichever open it is, and the
-        /// cursor handed back reads from the finished list.
+        /// A window drains its input and computes every row at the open, whichever open is used, and the
+        /// returned cursor reads from the finished list.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>EnumerableWindow</c>'s block runs to <c>Linq4j.asEnumerable(list)</c> where it is evaluated.
-        /// The awaiting open is held to the same moment, awaiting the drain rather than leaving it to the
-        /// first advance.
+        /// <c>EnumerableWindow</c>'s block runs through to <c>Linq4j.asEnumerable(list)</c> when it is
+        /// evaluated. The awaiting open does the same, awaiting the drain rather than leaving it to the first
+        /// advance.
         /// </remarks>
         [Fact]
         public async Task ShouldComputeTheWindowAtTheOpen()
@@ -765,12 +778,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A grouped aggregate folds its whole input at the open, before a row is read from it, and closes
-        /// the input there.
+        /// A grouped aggregate folds and closes its whole input at the open, before any row is read.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>groupBy_</c> drains the input into the map and only then returns a <c>LookupResultEnumerable</c>
-        /// over a map that is already finished; the call is the open.
+        /// <c>groupBy_</c> drains the input into a map and then returns a <c>LookupResultEnumerable</c> over the
+        /// finished map; here the call is the open.
         /// </remarks>
         [Fact]
         public async Task ShouldFoldAGroupedAggregateAtTheOpen()
@@ -794,6 +807,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <see cref="ShouldFoldAGroupedAggregateAtTheOpen"/> through the awaiting open, which awaits the
         /// fold rather than leaving it to the first advance.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldFoldAGroupedAggregateAtTheAwaitingOpen()
         {
@@ -812,12 +826,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A sorted aggregate reads nothing at the open and emits a group when its key changes, holding
-        /// nothing but the accumulator of the group being read.
+        /// A sorted aggregate reads nothing at the open and emits a group when its key changes, holding only the
+        /// accumulator of the current group.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <c>SortedAggregateEnumerator</c>'s constructor acquires the enumerator and its <c>moveNext</c>
-        /// reads one row past the group, which is the row that starts the next.
+        /// <c>SortedAggregateEnumerator</c>'s constructor acquires the enumerator, and its <c>moveNext</c> reads
+        /// one row past the group: the row that starts the next group.
         /// </remarks>
         [Fact]
         public async Task ShouldEmitASortedGroupWhenItsKeyChanges()
@@ -848,9 +863,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An aggregate with no group folds where it is called, which is the open, and its awaiting twin
-        /// awaits the fold inside the open and hands back the one row.
+        /// An aggregate with no grouping folds its input when it is called, which is at the open, and the
+        /// awaiting form awaits the fold inside the open and returns a cursor over the one row.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldFoldASingletonAggregateAtTheOpen()
         {
@@ -880,6 +896,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A distinct drains its input at the open and closes it there.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldDrainADistinctAtTheOpen()
         {
@@ -909,7 +926,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An accumulator of one counter.
+        /// Creates an accumulator holding one counter.
         /// </summary>
         sealed class Count : Function0
         {
@@ -933,7 +950,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Answers the counter of a group.
+        /// Returns a group's counter.
         /// </summary>
         sealed class Result : Function2
         {
@@ -943,7 +960,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Answers the counter of the one group there is.
+        /// Returns the counter of the single group.
         /// </summary>
         sealed class SingleResult : Function1
         {
@@ -956,9 +973,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// An intersect drains its second source and closes it before it opens its first.
         /// </summary>
         /// <remarks>
-        /// <c>EnumerableDefaults.intersect</c> runs <c>source1.into(set1)</c> to completion and only then
-        /// reads <c>source0.enumerator()</c> against the set, which is why the first source arrives as an
-        /// open and the second as a cursor.
+        /// <c>EnumerableDefaults.intersect</c> runs <c>source1.into(set1)</c> to completion before reading
+        /// <c>source0.enumerator()</c> against the set, so the first source is passed as an opener and the
+        /// second as an opened cursor.
         /// </remarks>
         [Fact]
         public void ShouldDrainTheSecondSourceBeforeOpeningTheFirstOfAnIntersect()
@@ -982,8 +999,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// INTERSECT ALL keeps a row once per pairing, counting rather than merely holding.
+        /// INTERSECT ALL keeps a row once per pairing of equal rows, so it counts occurrences rather than
+        /// testing membership.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldKeepARowOncePerPairingOfAnIntersectAll()
         {
@@ -1026,9 +1045,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A merge union opens every input and positions each on its first row inside its own open, and
-        /// then advances only the input whose row it emitted.
+        /// A merge union opens every input and positions each on its first row inside its own open, then
+        /// advances only the input whose row it emitted.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
         /// <c>MergeUnionEnumerator</c>'s constructor acquires each input and calls <c>moveNext</c> on it,
         /// all at <c>enumerator()</c>; the cursor's open does both.
@@ -1097,7 +1117,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <remarks>
         /// linq4j's bounded <c>orderBy</c> tests the fetch inside <c>enumerator()</c> before calling
-        /// <c>source.enumerator()</c>, and answers <c>Linq4j.emptyEnumerator()</c> without it.
+        /// <c>source.enumerator()</c>, and returns <c>Linq4j.emptyEnumerator()</c> for a fetch of zero.
         /// </remarks>
         [Fact]
         public void ShouldNotOpenTheSourceOfALimitSortForAFetchOfNoRows()
@@ -1116,9 +1136,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A limit sort has drained and closed its source by the time its open returns, whichever way it
-        /// was opened, and hands back the rows the offset and fetch leave, in order.
+        /// A limit sort has drained and closed its source by the time its open returns, whichever open is used,
+        /// and returns the rows the offset and fetch select, in order.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldDrainTheSourceOfALimitSortAtTheOpen()
         {
@@ -1161,7 +1182,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// An offset past every row a limit sort holds answers nothing.
+        /// A limit sort whose offset passes the last row returns no rows.
         /// </summary>
         [Fact]
         public void ShouldAnswerNothingFromALimitSortWhoseOffsetPassesTheEnd()
@@ -1177,8 +1198,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A cursor over scalar rows in hand.
+        /// A cursor over a fixed list of scalar rows that counts its advances and records its disposal.
         /// </summary>
+        /// <param name="rows">The rows the cursor returns, in order.</param>
         sealed class ScalarCursor(IReadOnlyList<object> rows) : ClrCursor<object>
         {
 

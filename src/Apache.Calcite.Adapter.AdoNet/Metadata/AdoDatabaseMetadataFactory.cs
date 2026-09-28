@@ -4,12 +4,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Creates <see cref="AdoDatabaseMetadata"/> instances for a given <see cref="DbDataSource"/>.
+    /// Chooses and creates the <see cref="AdoDatabaseMetadata"/> for a <see cref="DbDataSource"/>.
     /// </summary>
     /// <remarks>
-    /// Implement this factory when the metadata for a data source cannot be determined until an
-    /// actual <see cref="DbDataSource"/> is available at runtime. Pass the factory to the adapter
-    /// configuration so it can obtain metadata on demand.
+    /// <see cref="AdoDatabaseMetadataFactoryImpl"/> is the default. Derive from this class to choose differently,
+    /// and pass the factory to <see cref="AdoSchema.Create(org.apache.calcite.schema.SchemaPlus, string, DbDataSource, AdoDatabaseMetadataFactory, string, string)"/>.
     /// </remarks>
     public abstract class AdoDatabaseMetadataFactory
     {

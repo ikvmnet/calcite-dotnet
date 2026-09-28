@@ -350,8 +350,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And a <c>SchemaFactory</c> names any factory, with every <c>schema.</c>-prefixed key handed to
-        /// it as an operand.
+        /// Without a <c>Model</c>, a <c>SchemaFactory</c> names any factory, and every <c>schema.</c>-prefixed
+        /// key is handed to it as an operand.
         /// </summary>
         [Fact]
         public void SchemaFactory_should_make_a_schema_from_the_named_factory()
@@ -401,9 +401,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// What bounds the set of data sources the provider keeps: time. One that has gone its idle
-        /// lifetime with no connection open is released, schemas disposed, and the next connection builds
-        /// again.
+        /// A pooled data source that has gone its idle lifetime with no connection open is released and its
+        /// schemas disposed, and the next connection builds again.
         /// </summary>
         [Fact]
         public async Task An_idle_data_source_should_be_released_after_its_idle_lifetime()

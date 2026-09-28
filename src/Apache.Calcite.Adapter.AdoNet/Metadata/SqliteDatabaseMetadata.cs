@@ -11,8 +11,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Implements the <see cref="AdoDatabaseMetadata"/> for the Microsoft Sqlite driver.
+    /// The metadata for SQLite through <c>Microsoft.Data.Sqlite</c>.
     /// </summary>
+    /// <remarks>
+    /// SQLite has one database and no schemas, so every member refuses a database or schema name. Tables are the
+    /// <c>sqlite_master</c> rows of type <c>table</c>, and columns come from <c>PRAGMA table_xinfo</c>, typed by the
+    /// declared type name's affinity.
+    /// </remarks>
     partial class SqliteDatabaseMetadata : AdoDatabaseMetadata
     {
 
@@ -26,12 +31,19 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         private static partial Regex GetFloatRegex();
 
         /// <summary>
-        /// Parses the 'table_xinfo' output for a field into an <see cref="AdoFieldMetadata"/>.
+        /// Builds the column metadata from a row of <c>PRAGMA table_xinfo</c>.
         /// </summary>
-        /// <param name="name"></param>
-        /// <param name="dataType"></param>
-        /// <param name="notNull"></param>
-        /// <returns></returns>
+        /// <param name="name">The column's name.</param>
+        /// <param name="dataType">The declared type, such as <c>VARCHAR(20)</c>.</param>
+        /// <param name="notNull"><c>0</c> where the column is nullable.</param>
+        /// <returns>The column metadata.</returns>
+        /// <remarks>
+        /// The type follows SQLite's affinity rules loosely: a name containing <c>INT</c> or <c>BOOL</c> is
+        /// <see cref="DbType.Int64"/>; <c>CHAR</c>, <c>CLOB</c>, <c>TEXT</c> or <c>BLOB</c> is
+        /// <see cref="DbType.String"/>; <c>REAL</c>, <c>FLOA</c>, <c>DOUB</c>, <c>DEC</c> or <c>NUM</c> is
+        /// <see cref="DbType.Single"/>; anything else is <see cref="DbType.String"/>. A parenthesised size, and a
+        /// scale after a comma, are parsed into the size and precision.
+        /// </remarks>
         static AdoFieldMetadata ParseField(string name, string dataType, string notNull)
         {
             int nullable = 2;
@@ -41,16 +53,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             int size = 2000000000;
             int prec = 10;
 
-            /*
-             * improved column types
-             * ref https://www.sqlite.org/datatype3.html - 2.1 Determination Of Column Affinity
-             * plus some degree of artistic-license applied
-             */
+            // loosely https://www.sqlite.org/datatype3.html, "Determination Of Column Affinity"
             dataType = dataType == null ? "TEXT" : dataType.ToUpperInvariant();
 
             DbType dbType;
 
-            // rule #1 + boolean
+            // affinity rule 1, with BOOL added
             if (GetIntegerRegex().IsMatch(dataType))
             {
                 dbType = DbType.Int64;
@@ -71,54 +79,48 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             }
 
 
-            // try to find an (optional) length/dimension of the column
+            // an optional "(n)" or "(n, m)" after the type name
             int sod = dataType.IndexOf('(');
             if (sod > 0)
             {
-                // find end of dimension
                 int eod = dataType.IndexOf(')', sod);
                 if (eod > 0)
                 {
                     string? intPart, decPart;
 
-                    // check for two values (integer part, fraction) divided by comma
                     int sep = dataType.IndexOf(',', sod);
                     if (sep > 0)
                     {
                         intPart = dataType[(sod + 1)..sep];
                         decPart = dataType[(sep + 1)..eod];
                     }
-                    // only a single dimension
                     else
                     {
                         intPart = dataType[(sod + 1)..eod];
                         decPart = null;
                     }
 
-                    // try to parse the values
                     try
                     {
                         int integer = int.Parse(intPart.Trim());
 
-                        // parse decimals?
                         if (decPart != null)
                         {
                             prec = int.Parse(decPart.Trim());
-                            size = integer + prec; // columns size equals sum of integer and decimal part of dimension
+                            size = integer + prec;
                         }
                         else
                         {
-                            prec = 0; // no decimals
-                            size = integer; // columns size equals dimension
+                            prec = 0;
+                            size = integer;
                         }
                     }
                     catch (FormatException)
                     {
-                        // just ignore invalid dimension formats here
+                        // an unparseable size keeps the defaults
                     }
                 }
 
-                // "TYPE_NAME" (colType) is without the length/ dimension
                 dataType = dataType[..sod].Trim();
             }
 
@@ -130,19 +132,26 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dbDataSource"></param>
+        /// <param name="dbDataSource">The data source to read metadata from.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="dbDataSource"/> is <see langword="null"/>.</exception>
         public SqliteDatabaseMetadata(DbDataSource dbDataSource)
         {
             _dbDataSource = dbDataSource ?? throw new ArgumentNullException(nameof(dbDataSource));
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns <see langword="null"/>: SQLite has one database.
+        /// </summary>
+        /// <returns><see langword="null"/>.</returns>
         public override string? GetDefaultDatabase()
         {
             return null;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns <see langword="null"/>: SQLite has no schemas.
+        /// </summary>
+        /// <returns><see langword="null"/>.</returns>
         public override string? GetDefaultSchema()
         {
             return null;
@@ -152,10 +161,13 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         public override SqlDialect Dialect => SqliteSqlDialect.DEFAULT;
 
         /// <inheritdoc />
+        /// <remarks>
+        /// Parameters are named <c>$P0</c>, <c>$P1</c> and so on.
+        /// </remarks>
         public override IAdoSqlSyntax Syntax { get; } = new SqliteSqlSyntax();
 
         /// <summary>
-        /// Microsoft.Data.Sqlite binds the <c>$name</c> form rather than the default.
+        /// Names parameters in the <c>$name</c> form Microsoft.Data.Sqlite binds.
         /// </summary>
         sealed class SqliteSqlSyntax : IAdoSqlSyntax
         {
@@ -165,7 +177,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns an empty set: SQLite has no schemas.
+        /// </summary>
+        /// <param name="databaseName">Must be <see langword="null"/>.</param>
+        /// <returns>An empty set.</returns>
+        /// <exception cref="ArgumentException"><paramref name="databaseName"/> is not <see langword="null"/>.</exception>
         public override IReadOnlySet<AdoSchemaMetadata> GetSchemas(string? databaseName)
         {
             if (databaseName is not null)
@@ -174,7 +191,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             return new HashSet<AdoSchemaMetadata>();
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the tables listed in <c>sqlite_master</c>.
+        /// </summary>
+        /// <param name="databaseName">Must be <see langword="null"/>.</param>
+        /// <param name="schemaName">Must be <see langword="null"/>.</param>
+        /// <returns>The tables, with no database or schema.</returns>
+        /// <exception cref="ArgumentException"><paramref name="databaseName"/> or <paramref name="schemaName"/> is not
+        /// <see langword="null"/>.</exception>
         public override IReadOnlySet<AdoTableMetadata> GetTables(string? databaseName, string? schemaName)
         {
             if (databaseName is not null)
@@ -197,7 +221,16 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
             return list;
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the table's columns from <c>PRAGMA table_xinfo</c>.
+        /// </summary>
+        /// <param name="databaseName">Must be <see langword="null"/>.</param>
+        /// <param name="schemaName">Must be <see langword="null"/>.</param>
+        /// <param name="tableName">The table's name, which is written into the pragma between single quotes
+        /// without escaping.</param>
+        /// <returns>The columns.</returns>
+        /// <exception cref="ArgumentException"><paramref name="databaseName"/> or <paramref name="schemaName"/> is not
+        /// <see langword="null"/>.</exception>
         public override IReadOnlySet<AdoFieldMetadata> GetFields(string? databaseName, string? schemaName, string tableName)
         {
             if (databaseName is not null)

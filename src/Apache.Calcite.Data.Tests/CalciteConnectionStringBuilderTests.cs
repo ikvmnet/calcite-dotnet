@@ -112,7 +112,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The key a data source is looked up by: the same for every spelling of one connection string.
+        /// The key a data source is looked up by is the same for every spelling of one connection string.
         /// </summary>
         [Fact]
         public void DataSourceKey_should_ignore_order_and_casing()
@@ -126,17 +126,14 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A connection string carries the key to the engine under the name Calcite reads the property by.
+        /// The engine properties carry the setting under the name Calcite reads it by.
         /// </summary>
         /// <remarks>
-        /// Which is not the same as the key's own spelling, and the assertion must not be written as one:
-        /// <c>DbConnectionStringBuilder</c> lower-cases a keyword it parses, and what puts Calcite's name
-        /// back is the <c>CalciteEngineProperties</c> entry. So the expected name is <c>camelName()</c>.
-        ///
-        /// <para>Nor is the value compared as a string. A <see cref="bool"/> set on the builder comes back
-        /// out of the connection string as <c>True</c>, which <c>Build</c> writes through
-        /// <c>ToString()</c>; Calcite parses it with <c>Boolean.parseBoolean</c> and does not care. So what
-        /// is asserted is the read Calcite itself does — <c>wrap(properties).getBoolean()</c>.</para>
+        /// That name is the property's <c>camelName()</c>, not the connection string key:
+        /// <c>DbConnectionStringBuilder</c> lower-cases keywords it parses, and <c>CalciteEngineProperties</c>
+        /// maps them back to Calcite's names. The value is checked with Calcite's own read,
+        /// <c>wrap(properties).getBoolean()</c>, rather than as a string, since <c>Build</c> writes a
+        /// <see cref="bool"/> as <c>True</c> and Calcite parses it case-insensitively.
         /// </remarks>
         [Fact]
         public void TopDownGeneralDecorrelationEnabled_should_round_trip_and_default_to_unset()

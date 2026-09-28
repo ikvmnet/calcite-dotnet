@@ -12,13 +12,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalRepeatUnion"/> to a <see cref="ClrCursorRepeatUnion"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableRepeatUnionRule</c>.
+    /// </remarks>
     public class ClrCursorRepeatUnionRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorRepeatUnionRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorRepeatUnionRule Create()
         {
             return (ClrCursorRepeatUnionRule)Config.INSTANCE
@@ -30,7 +33,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorRepeatUnionRule(Config config) :
             base(config)
         {
@@ -60,13 +63,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalTableSpool"/> to a <see cref="ClrCursorTableSpool"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableTableSpoolRule</c>.
+    /// </remarks>
     public class ClrCursorTableSpoolRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorTableSpoolRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorTableSpoolRule Create()
         {
             return (ClrCursorTableSpoolRule)Config.INSTANCE
@@ -78,7 +84,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorTableSpoolRule(Config config) :
             base(config)
         {

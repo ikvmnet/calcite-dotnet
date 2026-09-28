@@ -21,12 +21,11 @@ namespace Apache.Calcite.Data.Internal
     /// one, the model, and any schemas a <see cref="CalciteDataSource"/> was asked to hold.
     /// </summary>
     /// <remarks>
-    /// This is the half of Calcite's connection that lives as long as the data source rather than the
-    /// connection. Calcite's JDBC connection builds it in two steps — the root and <c>DUAL</c> in
-    /// <c>CalciteConnectionImpl</c>'s constructor, the model in the driver's <c>onConnectionInit</c> —
-    /// and this class is those two steps, in that order, so that a model can overwrite <c>DUAL</c> and never
-    /// the reverse. What Calcite builds once per connection is built here once per data source, and every
-    /// connection the data source opens shares it.
+    /// The part of Calcite's JDBC connection that lives as long as the data source: Calcite builds the root
+    /// and <c>DUAL</c> in <c>CalciteConnectionImpl</c>'s constructor and then applies the model in the
+    /// driver's <c>onConnectionInit</c>. <see cref="Build"/> runs the same two steps in the same order, so a
+    /// model can replace <c>DUAL</c>. Calcite does this once per connection; here it is done once per data
+    /// source, and every connection the data source opens shares the result.
     /// </remarks>
     internal sealed class CalciteDataSourceRoot
     {
@@ -46,9 +45,9 @@ namespace Apache.Calcite.Data.Internal
         /// </summary>
         /// <param name="options">The connection string options.</param>
         /// <param name="configure">Steps to run over the root after the model, in order.</param>
-        /// <param name="rootSchema">Root schema to build on, or null to create one. Used verbatim, as
-        /// upstream uses one handed to its connection, and <c>DUAL</c> and the model are applied to it all
-        /// the same.</param>
+        /// <param name="rootSchema">Root schema to build on, or <see langword="null"/> to create one.
+        /// <c>DUAL</c> and the model are added to it either way, as Calcite does with a root handed to its
+        /// connection.</param>
         /// <exception cref="CalciteException">Thrown when the root or the model could not be built.</exception>
         public static CalciteDataSourceRoot Build(CalciteConnectionStringBuilder options, IReadOnlyList<Action<SchemaPlus>> configure, CalciteSchema? rootSchema = null)
         {
@@ -61,7 +60,6 @@ namespace Apache.Calcite.Data.Internal
 
                 var root = rootSchema ?? CalciteSchema.createRootSchema(true);
 
-                // Add dual table metadata when isSupportedDualTable return true
                 if (cfg.conformance().isSupportedDualTable())
                 {
                     SchemaPlus schemaPlus = root.plus();
@@ -71,7 +69,7 @@ namespace Apache.Calcite.Data.Internal
                         ImmutableList.of(), null, java.lang.Boolean.valueOf(false)));
                 }
 
-                // the driver's ModelHandler step, run after the constructor's work as upstream runs it
+                // the model after DUAL, as Calcite's driver applies it after the connection's constructor
                 string? defaultSchemaName = null;
                 var model = Model(options, cfg);
                 if (model != null)
@@ -89,9 +87,10 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// The model to read, which is the <c>Model</c> key where there is one, and otherwise a model written
-        /// around the schema factory the <c>SchemaFactory</c> or <c>SchemaType</c> key names, holding every
-        /// <c>schema.</c>-prefixed key as an operand. <c>Driver.createHandler().model</c>.
+        /// Returns the model to load: the <c>Model</c> key where it is set, otherwise an inline model with one
+        /// custom schema over the factory the <c>SchemaFactory</c> or <c>SchemaType</c> key names, taking every
+        /// <c>schema.</c>-prefixed key as an operand, otherwise <see langword="null"/>. Mirrors the model
+        /// resolution in Calcite's <c>Driver.createHandler</c>.
         /// </summary>
         static string? Model(CalciteConnectionStringBuilder options, CalciteConnectionConfig config)
         {
@@ -151,15 +150,15 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Applies a Calcite model to the root schema, either from an inline JSON definition or a file path.
+        /// Applies a Calcite model to the root schema, from inline JSON or a file.
         /// </summary>
-        /// <param name="rootSchema">The root schema to which the model will be applied.</param>
-        /// <param name="model">Either an inline JSON model definition (prefixed with "inline:" or starting with "{") or a file path to a
-        /// model definition.</param>
-        /// <param name="defaultSchema">When this method returns, contains the default schema name defined in the model, or <see langword="null"/>
-        /// if no default schema is defined.</param>
-        /// <exception cref="FileNotFoundException">Thrown when the specified model file does not exist.</exception>
-        /// <exception cref="CalciteException">Thrown when the model fails to load.</exception>
+        /// <param name="rootSchema">The root schema to apply the model to.</param>
+        /// <param name="model">Inline JSON, prefixed with <c>inline:</c> or starting with <c>{</c>, or the path
+        /// of a model file.</param>
+        /// <param name="defaultSchema">When this method returns, the model's default schema name, or
+        /// <see langword="null"/> where it names none.</param>
+        /// <exception cref="CalciteException">The model file does not exist or the model fails to load. A missing
+        /// file is reported as an inner <see cref="FileNotFoundException"/>.</exception>
         static void ApplyModel(CalciteSchema rootSchema, string model, out string? defaultSchema)
         {
             try
@@ -204,16 +203,13 @@ namespace Apache.Calcite.Data.Internal
         /// Gets the lock a statement plans under and DDL alters the root under.
         /// </summary>
         /// <remarks>
-        /// Calcite's connection is driven by one thread and its root by one connection, so nothing in Calcite
-        /// guards the root: a <c>CalciteSchema</c> keeps its tables and sub-schemas in <c>NameMap</c>s over
-        /// <c>TreeMap</c>s, and a DDL statement writes into them while a statement planning reads them. A
-        /// root shared by connections used concurrently needs the reader-writer shape: planning — the
-        /// snapshot, validation, optimisation, implementation — under the read lock, many at a time, and DDL
-        /// under the write lock, alone. The lock is thread-affine, so it spans planning, which is one thread's
-        /// work, and not execution: a table is resolved again from the snapshot when a plan runs, the
-        /// snapshot shares its table map with the live root by Calcite's own javadoc, and an asynchronous
-        /// read cannot hold a lock across its awaits. That lookup against a concurrent DDL is the exposure
-        /// that stays open, and it is Calcite's.
+        /// Calcite does not guard a root against concurrent use: a <c>CalciteSchema</c> keeps its tables and
+        /// sub-schemas in <c>NameMap</c>s over <c>TreeMap</c>s, and DDL writes into them. Planning (snapshot,
+        /// validation, optimization, implementation) takes the read lock, so many statements plan at once;
+        /// DDL takes the write lock. The lock is thread-affine, so it covers planning, which runs on one
+        /// thread, and not execution, which may resume on others across awaits. A running plan resolves
+        /// tables again from its snapshot, and the snapshot shares its table map with the live root, so a
+        /// table lookup during execution is not protected against concurrent DDL.
         /// </remarks>
         public ReaderWriterLockSlim Lock { get; } = new(LockRecursionPolicy.SupportsRecursion);
 
@@ -226,8 +222,8 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets when this root last had no session holding it, as <see cref="Environment.TickCount64"/> —
-        /// its construction, or the last <see cref="Release"/> that left it with none.
+        /// Gets the <see cref="Environment.TickCount64"/> at which this root last became unused: its
+        /// construction, or the last <see cref="Release"/> that left no session holding it.
         /// </summary>
         public long IdleSince
         {
@@ -263,15 +259,13 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Marks this root as done with, disposing it now where no session holds it and otherwise when
-        /// the last one lets go.
+        /// Marks this root as no longer wanted, disposing it now where no session holds it and otherwise when
+        /// the last session releases it.
         /// </summary>
         /// <remarks>
-        /// This is what a data source does to a root it drops — on <see cref="CalciteDataSource.Clear"/>,
-        /// on its own disposal, and when the provider evicts or prunes it — and what a session does to a
-        /// root built for it alone. A connection still open keeps working: the root goes when the last
-        /// session on it is disposed, the way a pooled connection a caller has cleared is closed when it is
-        /// returned rather than while it is busy.
+        /// A data source retires its root on <see cref="CalciteDataSource.Clear"/>, on disposal, and when the
+        /// provider evicts or prunes it; a session retires a root built for it alone. Connections still open
+        /// on the root keep working until they are disposed.
         /// </remarks>
         public void Retire()
         {
@@ -290,11 +284,9 @@ namespace Apache.Calcite.Data.Internal
         /// Disposes every schema on the root that can be disposed, sub-schemas first.
         /// </summary>
         /// <remarks>
-        /// Calcite has no disposal hook for a schema: a <c>SchemaFactory</c> builds one and nothing ever
-        /// tells it the schema is done with, so an adapter holding a client holds it for the life of the
-        /// process. A root has a lifetime here, so the schemas on it get one too — a schema that implements
-        /// <see cref="IDisposable"/> is disposed when its root is, which is when it has been
-        /// <see cref="Retire">retired</see> and no session holds it.
+        /// Calcite has no disposal hook for a schema. A schema that implements <see cref="IDisposable"/> is
+        /// disposed here, when its root has been <see cref="Retire">retired</see> and no session holds it, so
+        /// an adapter holding a client can release it.
         /// </remarks>
         void Dispose()
         {

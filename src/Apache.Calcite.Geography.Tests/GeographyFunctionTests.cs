@@ -12,13 +12,12 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What the bodies behind the operators compute.
+    /// Tests the geodesic results of the constructors, relations and measurements, calling the methods
+    /// directly rather than through a query.
     /// </summary>
     /// <remarks>
-    /// Called directly rather than through a query, because what is under test is the geodesy and not the
-    /// plumbing. Where a case has a planar answer that differs, Calcite's own answer is asserted next to it:
-    /// the disagreement is the reason this package exists, so a test that only pinned our number would not
-    /// say anything.
+    /// Where Calcite's planar answer differs, it is asserted beside the geodesic one, so each test shows the
+    /// case in which the two readings disagree.
     /// </remarks>
     public class GeographyFunctionTests
     {
@@ -27,10 +26,9 @@ namespace Apache.Calcite.Geography.Tests
         /// One degree of longitude at the equator on WGS84, in metres.
         /// </summary>
         /// <remarks>
-        /// The semi-major axis times <c>π/180</c>, and what a geodesic store answers — measured against a
-        /// live service in #90. It is not one degree of <em>latitude</em>, which is 110574.3885: that the two
-        /// differ is the whole of what says these are ellipsoidal. The figures below that have no closed form
-        /// on an ellipsoid are recorded rather than derived, for the same reason.
+        /// The semi-major axis times <c>π/180</c>. A degree of latitude is shorter, 110574.3885 m, because the
+        /// ellipsoid is flattened. Figures below that have no closed form on the ellipsoid are recorded values
+        /// rather than derived ones.
         /// </remarks>
         const double Degree = 111319.49079327357;
 
@@ -38,8 +36,9 @@ namespace Apache.Calcite.Geography.Tests
         /// The geodesic distance from a meridian to a point one degree of longitude off it at 5°N.
         /// </summary>
         /// <remarks>
-        /// Recorded, not derived. On a sphere this is <c>asin(sin(1°) · cos(5°)) · R</c>; the ellipsoid has no
-        /// such form, and the closest point on the edge is found by S2 before the distance to it is measured.
+        /// A recorded value. On a sphere this would be <c>asin(sin(1°) · cos(5°)) · R</c>; the ellipsoid has no
+        /// such closed form. The closest point on the edge is found by S2 and the distance to it is then
+        /// measured on the ellipsoid.
         /// </remarks>
         const double EdgeAtFiveDegrees = 110898.66346;
 
@@ -60,8 +59,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The SRID a caller may name is the only one a geography can be in, and any other is refused rather
-        /// than ignored.
+        /// An explicit SRID of 4326 is accepted, any other SRID is refused, and a null argument gives null.
         /// </summary>
         [Fact]
         public void ShouldReadWktWithAnSrid()
@@ -90,7 +88,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The crossings are re-typings and nothing else happens at run time.
+        /// <c>AsGeometry</c> and <c>AsGeography</c> return their argument unchanged.
         /// </summary>
         [Fact]
         public void ShouldCrossWithoutTouchingTheValue()
@@ -102,7 +100,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A degree of longitude on the equator is a degree of arc, and the answer is in metres.
+        /// The distance between two points a degree of longitude apart on the equator is <see cref="Degree"/>
+        /// metres.
         /// </summary>
         [Fact]
         public void ShouldMeasureADegreeOfArcInMetres()
@@ -114,14 +113,9 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The same call under Calcite answers one — the number of degrees — and the difference is not a
-        /// scale factor.
+        /// Calcite answers 1 (degree) for a degree of longitude at any latitude, while the geodesic distance
+        /// shrinks with latitude, so no single scale factor converts one to the other.
         /// </summary>
-        /// <remarks>
-        /// A degree of longitude is a degree of arc on the equator and about a hundred and eleven metres less
-        /// than that at fifty degrees north, while the planar answer is one in both places. No conversion of
-        /// the result recovers the other, and no transformation of the inputs does either.
-        /// </remarks>
         [Fact]
         public void ShouldDisagreeWithThePlanarDistanceByMoreThanAScaleFactor()
         {
@@ -132,8 +126,8 @@ namespace Apache.Calcite.Geography.Tests
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(Wkt("POINT(0 50)"), Wkt("POINT(1 50)")).Should().Be(1);
 
             north.Should().BeLessThan(equator);
-            // near the spherical prediction 1/cos(50 degrees) and not equal to it, which on a sphere it
-            // would be exactly -- one more place the ellipsoid shows through
+            // On a sphere the ratio would be exactly 1/cos(50 degrees); on the ellipsoid it is close but not
+            // equal.
             (equator / north).Should().BeApproximately(1.55268, 1e-4);
             (equator / north).Should().NotBeApproximately(1 / Math.Cos(50 * Math.PI / 180), 1e-4);
         }
@@ -145,12 +139,9 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The distance from a point to a meridian edge one degree of longitude away.
+        /// The distance from a point to a polygon is the distance to its nearest edge, here a meridian one
+        /// degree of longitude away.
         /// </summary>
-        /// <remarks>
-        /// A meridian is a great circle, so the arc from the point to it is
-        /// <c>asin(sin(1°) · cos(5°))</c> exactly.
-        /// </remarks>
         [Fact]
         public void ShouldMeasureToTheNearestEdgeOfAPolygon()
         {
@@ -160,14 +151,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The nearest edge is the one that closes the ring.
+        /// The distance is measured to the edge that closes the ring when that edge is nearest.
         /// </summary>
         /// <remarks>
-        /// A ring arrives from JTS with its first coordinate repeated at the end, and dropping that repeat —
-        /// which is what an S2 loop wants — costs the ring its last edge. Nothing else here notices: the
-        /// containment tests go through the loop, which is built from the de-duplicated vertices and closes
-        /// itself, so only a distance or an intersection nearest that one edge tells the two apart. Without
-        /// the closing edge this answers the distance to a corner instead, some five times larger.
+        /// A JTS ring repeats its first coordinate at the end, and an S2 loop does not, so the closing edge is
+        /// easily lost when converting. Containment would not show it, since an S2 loop closes itself; only a
+        /// distance or intersection nearest that edge does. Without the edge this would measure to a corner,
+        /// about five times further.
         /// </remarks>
         [Fact]
         public void ShouldMeasureToTheEdgeThatClosesARing()
@@ -209,16 +199,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A polygon edge is a great-circle arc, and a great-circle arc between two points at the same
-        /// latitude does not follow that parallel.
+        /// A polygon edge is a great-circle arc, which between two points on the same parallel does not follow
+        /// the parallel.
         /// </summary>
         /// <remarks>
-        /// This is the disagreement that no scale factor and no reprojection recovers, and it is why the two
-        /// readings need types that cannot be confused. The northern edge of the square runs from ten degrees
-        /// north at longitude zero to ten degrees north at longitude ten; as a straight line in longitude and
-        /// latitude it stays on the parallel, and as a great circle it reaches about ten degrees and two and
-        /// a quarter minutes at the midpoint. A point between the two is inside one polygon and outside the
-        /// other — not a different distance, a different answer.
+        /// The square's northern edge runs along 10 degrees north from longitude 0 to 10. As a straight line
+        /// in degrees it stays on the parallel; as a great circle it reaches about 10 degrees 2.25 minutes at
+        /// its midpoint. A point between the two is inside the geodesic polygon and outside the planar one.
         /// </remarks>
         [Fact]
         public void ShouldFollowAGreatCircleEdgeWhereCalciteFollowsAParallel()
@@ -231,15 +218,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Two points either side of the antimeridian are a fifth of a degree apart, not three hundred and
-        /// fifty-nine and four fifths.
+        /// Two points either side of the antimeridian are 0.2 degrees apart, where Calcite measures 359.8.
         /// </summary>
-        /// <remarks>
-        /// The antimeridian is one of the four places the design issue names as having to be measured against
-        /// a live store before any of this may recheck a pushed-down predicate. What is held here is the
-        /// nearer half of that: that this convention is on the right side of the seam at all, and that the
-        /// planar reading is not merely a different number but a different journey.
-        /// </remarks>
         [Fact]
         public void ShouldMeasureAcrossTheAntimeridian()
         {
@@ -259,15 +239,13 @@ namespace Apache.Calcite.Geography.Tests
             var here = Wkt("POINT(0 89.9)");
             var there = Wkt("POINT(180 89.9)");
 
-            // 22338.795683 at the service, per #90's "near the pole" row -- this agrees with it to a
-            // micrometre, which is a second confirmation of the model on coordinates nothing here chose
+            // A reference WGS84 geodesic distance for this pair, from an independent geodesic service.
             GeographyFunctions.Distance(here, there)!.doubleValue().Should().BeApproximately(22338.795683, 1e-3);
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Distance(here, there).Should().BeApproximately(180, 1e-9);
         }
 
         /// <summary>
-        /// The pole has a longitude in the coordinates and no longitude on the Earth, so every spelling of it
-        /// is the same place.
+        /// A pole written with any longitude is the same place.
         /// </summary>
         [Fact]
         public void ShouldTreatEverySpellingOfThePoleAsOnePlace()
@@ -281,15 +259,12 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A polygon written across the antimeridian, where the two readings are not merely different but
-        /// exact inversions of one another.
+        /// A polygon written across the antimeridian is read as the complement of Calcite's planar reading.
         /// </summary>
         /// <remarks>
-        /// The ring runs from longitude 179 east to -179, which on the sphere is a two-degree box straddling
-        /// the seam and in the plane is a three-hundred-and-fifty-eight-degree band that is everything except
-        /// that box. So each of these three points is inside one polygon and outside the other, and there is
-        /// no tolerance and no reprojection that reconciles them. This is why the two readings need types
-        /// that cannot be confused.
+        /// The ring runs east from longitude 179 to -179. On the sphere that is a two-degree box straddling
+        /// the antimeridian; in the plane it is a 358-degree band excluding that box. Each point tested is
+        /// inside one and outside the other.
         /// </remarks>
         [Fact]
         public void ShouldReadAPolygonAcrossTheAntimeridianInsideOutFromCalcite()
@@ -307,18 +282,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An area is in square metres, and its planar counterpart is in square degrees.
+        /// The area is in square metres; Calcite's planar area is in square degrees and answers 1.
         /// </summary>
         /// <remarks>
-        /// The region bounded by the parallels and meridians through the four corners has an area of the
-        /// radius squared times the span of longitude in radians times the difference of the sines of the two
-        /// latitudes. This polygon is a little larger than that region and has to be: its northern edge is a
-        /// great circle between two places at one degree north, and a great circle between them runs north of
-        /// the parallel that joins them. So the closed form is a floor rather than an answer, and the excess
-        /// over it is the bulge — the same bulge that decides whether a point just north of the parallel is
-        /// inside the polygon.
-        ///
-        /// <para>Calcite answers one, which is the box measured in degrees.</para>
+        /// The box's northern edge is a geodesic between two points at 1 degree north and runs slightly north
+        /// of that parallel, so the polygon is slightly larger than the region between the parallels.
         /// </remarks>
         [Fact]
         public void ShouldMeasureAreaInSquareMetres()
@@ -326,9 +294,8 @@ namespace Apache.Calcite.Geography.Tests
             var box = Wkt("POLYGON((0 0, 1 0, 1 1, 0 1, 0 0))");
             var area = GeographyFunctions.Area(box)!.doubleValue();
 
-            // recorded rather than derived: the spherical closed form this used to compare against has no
-            // ellipsoidal counterpart, and area diverges between the two models further than distance does --
-            // the sphere makes this box 12363722802, which is 0.45% more
+            // A recorded value: the ellipsoid has no closed form for this area. A spherical model would give
+            // about 0.45% more.
             area.Should().BeApproximately(12308778361.47, 1.0);
 
             org.apache.calcite.runtime.SpatialTypeFunctions.ST_Area(box)!.doubleValue().Should().BeApproximately(1, 1e-9);
@@ -344,8 +311,8 @@ namespace Apache.Calcite.Geography.Tests
             GeographyFunctions.Perimeter(line)!.doubleValue().Should().Be(0);
             GeographyFunctions.Area(line)!.doubleValue().Should().Be(0);
 
-            // the two edges on meridians are a degree each; the two that follow a parallel are shorter as
-            // great circles than the parallel they are written along, and the southern one is the equator
+            // The southern edge is a degree of the equator; the meridian edges are a degree of latitude, and
+            // the northern edge a geodesic at 1 degree north, all slightly shorter.
             GeographyFunctions.Perimeter(box)!.doubleValue()
                 .Should().BeLessThan(4 * Degree).And.BeGreaterThan(3.9 * Degree);
             GeographyFunctions.Length(box)!.doubleValue()
@@ -353,8 +320,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Two boxes either side of the antimeridian have bounding boxes that meet, and the planar reading
-        /// puts them at opposite ends of the world.
+        /// The envelopes of two boxes meeting at the antimeridian intersect; Calcite's do not.
         /// </summary>
         [Fact]
         public void ShouldAnswerEnvelopesIntersectAcrossTheAntimeridian()
@@ -375,7 +341,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A coordinate that is not a place on the Earth. JTS has no opinion, because a plane has no edges.
+        /// A longitude outside the valid range makes a geometry invalid; Calcite's planar check accepts it.
         /// </summary>
         [Fact]
         public void ShouldRefuseACoordinateThatIsNotOnTheEarth()

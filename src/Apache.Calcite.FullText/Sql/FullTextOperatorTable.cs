@@ -7,226 +7,157 @@ namespace Apache.Calcite.FullText.Sql
 {
 
     /// <summary>
-    /// The <c>CLR_FT_*</c> operators: a full text surface a query can be written against without naming a store.
+    /// The operator table holding the <c>CLR_FT_*</c> full text operators: their names, arities, operand
+    /// types and return types.
     /// </summary>
     /// <remarks>
-    /// <para>Chained by a host onto whatever it already has:</para>
+    /// <para>A host that builds its own validator chains this table onto the ones it already uses:</para>
     ///
     /// <code>
     /// SqlOperatorTables.chain(SqlStdOperatorTable.instance(), FullTextOperatorTable.Instance())
     /// </code>
     ///
-    /// <para>and declared on a schema by <see cref="Schema.FullTextSchema"/> for everyone else, because a
-    /// plain <c>CalciteConnection</c> chains nothing and a host is the only party that can. The two routes
-    /// are both needed and neither is a duplicate of the other; see that class.</para>
+    /// <para>A caller that cannot chain an operator table, such as one using a plain <c>jdbc:calcite:</c>
+    /// connection, declares the same operators on a schema with <see cref="Schema.FullTextSchema"/> instead.
+    /// Use one route or the other, not both: with both registered, a call whose searched operand is an
+    /// <c>ARRAY</c> column fails in Calcite's overload resolution.</para>
     ///
-    /// <para><b>Nothing here has a body, and nothing here will.</b> A full text answer is the store's
-    /// analyzer — tokenising, case folding, stemming, stopwords, per language — and which documents match is
-    /// whatever that analyzer decides. An in-process evaluator would answer differently from the store for
-    /// the same query, which is worse than not answering: a predicate rechecked against it would discard rows
-    /// the store correctly returned. So a call that reaches code generation is refused, and
-    /// <see cref="Schema.FullTextSchemaFunction"/> is where the refusal gets a sentence saying why.</para>
+    /// <para>None of these operators has an in-process implementation. Which documents match, and how they
+    /// score, is decided by the store's analyzer, so a store adapter has to push each call down into the
+    /// store's own query. A call that no rule pushed down fails when the plan is compiled.</para>
     ///
-    /// <para><b>Each operator is a public field</b>, so an adapter can recognise one by identity when it has
-    /// the operator to hand. It must not rely on that: what arrives in a plan resolved through a schema is a
-    /// <c>SqlUserDefinedFunction</c> Calcite built around the declaration, carrying the name and the arity and
-    /// not being this object. <see cref="Matches"/> is the check that works on both routes.</para>
+    /// <para>A call resolved through a schema carries a <c>SqlUserDefinedFunction</c> that Calcite builds
+    /// around the declaration, not the operator in this table. Recognise a call with <see cref="Matches"/>,
+    /// <see cref="IsFullText"/>, <see cref="IsScoring"/> and <see cref="IsTerm"/>, which compare names and so
+    /// work for either route, rather than by reference to these fields.</para>
     ///
-    /// <h4>Where the names come from</h4>
-    ///
-    /// <para>Full text <em>is</em> standardised — ISO/IEC 13249-2, <i>SQL multimedia and application
-    /// packages, Part 2: Full-Text</i>, the same series whose Part 3 is Spatial. It defines a
-    /// <c>FullText</c> type whose <c>Contains</c> and <c>Score</c> methods take a structured pattern, with
-    /// plain SQL functions of those names beside them, and it prefixes the pattern type hierarchy
-    /// <c>FT_</c>: <c>FT_Pattern</c>, <c>FT_WordOrPhrase</c>, <c>FT_StemmedWord</c>, <c>FT_Proxi</c>,
-    /// <c>FT_Soundex</c>, <c>FT_Fuzzy</c>, <c>FT_IsAbout</c> and the rest.</para>
-    ///
-    /// <para><b>So the prefix is borrowed and the shape is not.</b> The standard's <c>Contains(doc, pattern)</c>
-    /// is binary, with every structure — <c>&amp;</c>, <c>|</c>, <c>NOT</c>, <c>STEMMED FORM OF</c>,
-    /// <c>SOUNDS LIKE</c>, <c>IN SAME SENTENCE AS</c>, <c>THESAURUS</c> — inside the pattern string. Adopting
-    /// that would put a pattern parser in every adapter, which is the analyzer problem above moved from
-    /// evaluation into parsing. A list of bare keywords is the one thing every store can express, so that is
-    /// what these take. Its own spelling, bare <c>CONTAINS</c>, is unavailable regardless:
-    /// <c>SqlStdOperatorTable.CONTAINS</c> is the SQL:2011 period predicate and the parser reserves the
-    /// word.</para>
-    ///
-    /// <para><b>Taking a store's spellings instead was considered</b>, that being what Calcite did for
-    /// spatial — 69 of the 144 <c>ST_*</c> in its reference are PostGIS or H2GIS extensions rather than
-    /// OpenGIS, and its own acknowledgements name PostGIS's tests as a reference implementation. It works
-    /// there because PostGIS's spatial surface already <em>is</em> a function family over one type Calcite
-    /// models as <c>GEOMETRY</c>: only the names had to be borrowed. Full text has no such store. PostgreSQL
-    /// spells it <c>tsvector @@ tsquery</c> — two types Calcite has no <c>SqlTypeName</c> for and a query
-    /// grammar; SQL Server <c>CONTAINS</c> and <c>FREETEXT</c>; MySQL <c>MATCH … AGAINST</c>; SQLite FTS5
-    /// <c>MATCH</c>. They agree on nothing, so a name taken from one is a name the others must map anyway,
-    /// and it would additionally be a name Calcite might one day give a library function.</para>
-    ///
-    /// <h4>What is deliberately not here</h4>
-    ///
-    /// <para><b>No pattern or query string.</b> See above: a grammar in a shared package is a grammar every
-    /// adapter has to parse.</para>
-    ///
-    /// <para><b>No language or analyzer argument</b>, and the reason is structural rather than a judgement
-    /// about where it belongs. A leading configuration name and a keyword are both character strings, so
-    /// <c>CLR_FT_CONTAINS_ALL(BODY, 'english', 'steel')</c> and <c>CLR_FT_CONTAINS_ALL(BODY, 'steel', 'frame')</c>
-    /// would be the same call: a variadic keyword list has no room for an optional string in front of it.
-    /// Two stores do take one per call — PostgreSQL as <c>to_tsvector('english', body)</c> and SQL Server as
-    /// the optional <c>LANGUAGE</c> term on all four of its constructs — and both have a default standing
-    /// behind it, from the database in one case and the full text index in the other. Everywhere else it is a
-    /// property of the thing searched: Cosmos's container full text policy, MySQL's column collation, SQLite
-    /// FTS5's tokenizer, Elasticsearch's field mapping. An adapter that needs one takes it from its own
-    /// configuration.</para>
-    ///
-    /// <para><b>No proximity, highlighting or snippets.</b> Each is offered by some stores and not others,
-    /// and where two offer one they disagree about what it means — proximity is measured in tokens by one
-    /// store and in positions by another, and SQL Server's count excludes the search terms themselves. A name
-    /// in a shared package that means something different per adapter is worse than no name, because a query
-    /// written against one store then plans against another and answers differently rather than failing.
-    /// Phrase, prefix and fuzzy are here, as <see cref="ClrFtPhrase"/>, <see cref="ClrFtPrefix"/> and
-    /// <see cref="ClrFtFuzzy"/>: every surveyed store has the first, and the three agree on what they
-    /// mean.</para>
+    /// <para>Keywords are passed as a list of separate operands rather than as a query string in a store's
+    /// grammar, so that no adapter has to parse another store's syntax. Phrase, prefix and fuzzy terms are
+    /// expressed with the term constructors <see cref="ClrFtPhrase"/>, <see cref="ClrFtPrefix"/> and
+    /// <see cref="ClrFtFuzzy"/>, which stand where a keyword goes. There is no language or analyzer argument,
+    /// and no proximity, highlighting or snippet operator.</para>
     /// </remarks>
     public sealed class FullTextOperatorTable : SqlOperatorTable
     {
 
         /// <summary>
-        /// <c>CLR_FT_CONTAINS(searched, keyword)</c>. Whether the keyword occurs in what is searched.
+        /// <c>CLR_FT_CONTAINS(searched, keyword)</c>: whether the keyword occurs in what is searched. Answers a
+        /// nullable <c>BOOLEAN</c>.
         /// </summary>
         /// <remarks>
-        /// Exactly two operands. <c>CLR_FT_CONTAINS_ALL</c> with one keyword means the same thing and is
-        /// accepted; this exists because a single-keyword search is the common one and reads better written
-        /// as itself.
+        /// Takes exactly two operands. It means the same as <c>CLR_FT_CONTAINS_ALL</c> or
+        /// <c>CLR_FT_CONTAINS_ANY</c> with a single keyword.
         /// </remarks>
         public static readonly SqlFunction ClrFtContains =
             Predicate("CLR_FT_CONTAINS", [FullTextOperand.Searched, FullTextOperand.Term], null, SqlOperandCountRanges.of(2));
 
         /// <summary>
-        /// <c>CLR_FT_CONTAINS_ALL(searched, keyword, …)</c>. Whether every keyword occurs.
+        /// <c>CLR_FT_CONTAINS_ALL(searched, keyword, …)</c>: whether every keyword occurs. Takes one or more
+        /// keywords and answers a nullable <c>BOOLEAN</c>.
         /// </summary>
         public static readonly SqlFunction ClrFtContainsAll =
             Predicate("CLR_FT_CONTAINS_ALL", [FullTextOperand.Searched], FullTextOperand.Term, SqlOperandCountRanges.from(2));
 
         /// <summary>
-        /// <c>CLR_FT_CONTAINS_ANY(searched, keyword, …)</c>. Whether any keyword occurs.
+        /// <c>CLR_FT_CONTAINS_ANY(searched, keyword, …)</c>: whether any keyword occurs. Takes one or more
+        /// keywords and answers a nullable <c>BOOLEAN</c>.
         /// </summary>
         public static readonly SqlFunction ClrFtContainsAny =
             Predicate("CLR_FT_CONTAINS_ANY", [FullTextOperand.Searched], FullTextOperand.Term, SqlOperandCountRanges.from(2));
 
         /// <summary>
-        /// <c>CLR_FT_SCORE(searched, keyword, …)</c>. How well what is searched matches the keywords.
+        /// <c>CLR_FT_SCORE(searched, keyword, …)</c>: how well what is searched matches the keywords. Takes one
+        /// or more keywords and answers a nullable <c>DOUBLE</c>.
         /// </summary>
         /// <remarks>
-        /// <para>The number itself means nothing across stores and is not meant to: BM25 from one, cover
-        /// density from another, a normalised similarity from a third. What is portable is the <em>order</em>
-        /// it puts rows in, which is what a query ordering by it is asking for.</para>
+        /// <para>The value is whatever the store's ranking function computes, so it is not comparable across
+        /// stores; the order it puts rows in is what a query can rely on.</para>
         ///
-        /// <para><b>Where a score may appear is the adapter's to say, not this package's.</b> Cosmos permits
-        /// one in an <c>ORDER BY RANK</c> clause and nowhere else — a projected score is rejected outright by
-        /// the service — while PostgreSQL's <c>ts_rank</c> projects like any other function. So this is
-        /// declared as an ordinary scalar and an adapter refuses the placements its store refuses.</para>
-        ///
-        /// <para><b>And whether it is an expression at all is the adapter's too.</b> SQL Server has no scalar
-        /// rank: <c>CONTAINS</c> and <c>FREETEXT</c> are predicates answering true or false, and the rank is a
-        /// <c>RANK</c> column of the table <c>CONTAINSTABLE</c> or <c>FREETEXTTABLE</c> returns, reached by
-        /// joining it to the base table on the full text index's unique key. So an adapter there turns this
-        /// call into a join rather than into a fragment of one, and one that cannot supply the key declines
-        /// it. That is the widest thing an adapter has to do with one of these, and it is why the scalar form
-        /// is the right thing to declare: it is what a query wants to write, and what realising it costs is a
-        /// property of the store.</para>
+        /// <para>It is declared as an ordinary scalar function, and each adapter decides where its store
+        /// allows one. Cosmos DB accepts a score only in <c>ORDER BY RANK</c>; PostgreSQL's <c>ts_rank</c> can
+        /// be projected; SQL Server has no scalar rank, so an adapter there has to join to
+        /// <c>CONTAINSTABLE</c> on the full text key, or decline the call.</para>
         /// </remarks>
         public static readonly SqlFunction ClrFtScore =
             Scoring("CLR_FT_SCORE", [FullTextOperand.Searched], FullTextOperand.Term, SqlOperandCountRanges.from(2));
 
         /// <summary>
-        /// <c>CLR_FT_RRF(score, score, …)</c>. Several scores fused into one by reciprocal rank fusion.
+        /// <c>CLR_FT_RRF(score, score, …)</c>: two or more scores fused into one by reciprocal rank fusion.
+        /// Answers a nullable <c>DOUBLE</c>.
         /// </summary>
         /// <remarks>
-        /// Here because hybrid search is what full text is usually half of: a keyword score and a vector
-        /// similarity, combined into one ordering. The operands are scores rather than keywords, which is why
-        /// it has no searched position.
+        /// Every operand is numeric, so a full text score can be fused with any other score an adapter
+        /// offers, such as a vector similarity, for hybrid search. It has no searched operand.
         /// </remarks>
         public static readonly SqlFunction ClrFtRrf =
             Scoring("CLR_FT_RRF", [], FullTextOperand.Score, SqlOperandCountRanges.from(2));
 
         /// <summary>
-        /// <c>CLR_FT_PHRASE(text)</c>. The text as an ordered phrase, in a keyword position.
+        /// <c>CLR_FT_PHRASE(text)</c>: the text as an ordered phrase. A term constructor, used where a keyword
+        /// goes.
         /// </summary>
         /// <remarks>
-        /// <para><b>This exists because a multi-word keyword is not portable.</b> Cosmos reads
-        /// <c>FullTextContains(c.text, "red bicycle")</c> as a phrase; PostgreSQL's <c>plainto_tsquery</c>
-        /// reads the same two words as <c>red &amp; bicycle</c>, which matches a document holding them
-        /// paragraphs apart. So a bare multi-word keyword means different things per store &#8212; the failure
-        /// this package exists to prevent &#8212; and saying which is meant is the fix. A single-word term is
-        /// the same either way and needs none of this.</para>
-        ///
-        /// <para>Every surveyed store has one: <c>phraseto_tsquery</c> and <c>&lt;-&gt;</c>, SQL Server's
-        /// quoted term, MySQL's quoted boolean term, FTS5's quoted phrase, <c>match_phrase</c>, Atlas's
-        /// <c>phrase</c>. Cosmos's is a plain multi-word term, so an adapter there renders it by
-        /// unwrapping.</para>
+        /// Use this for a multi-word search that must match the words together and in order. Stores differ in
+        /// how they read a bare multi-word keyword: Cosmos DB treats it as a phrase, while PostgreSQL's
+        /// <c>plainto_tsquery</c> matches the words anywhere in the document.
         /// </remarks>
         public static readonly SqlFunction ClrFtPhrase =
             Term("CLR_FT_PHRASE", [FullTextOperand.Text]);
 
         /// <summary>
-        /// <c>CLR_FT_PREFIX(text)</c>. Anything beginning with the text, in a keyword position.
+        /// <c>CLR_FT_PREFIX(text)</c>: any word beginning with the text. A term constructor, used where a
+        /// keyword goes.
         /// </summary>
         /// <remarks>
-        /// <c>to_tsquery('a:*')</c>, SQL Server's <c>"a*"</c>, MySQL's <c>a*</c>, FTS5's <c>a*</c>,
-        /// <c>match_phrase_prefix</c>, Atlas's <c>wildcard</c>. Cosmos has no prefix search, so a Cosmos
-        /// adapter declines this one &#8212; which is the point of an adapter being allowed to decline.
+        /// Not every store has prefix search (Cosmos DB does not); an adapter for such a store declines the call.
         /// </remarks>
         public static readonly SqlFunction ClrFtPrefix =
             Term("CLR_FT_PREFIX", [FullTextOperand.Text]);
 
         /// <summary>
-        /// <c>CLR_FT_FUZZY(text, edits)</c>. The text within a number of edits, in a keyword position.
+        /// <c>CLR_FT_FUZZY(text, edits)</c>: the text, matched within an <c>INTEGER</c> number of edits. A term
+        /// constructor, used where a keyword goes.
         /// </summary>
         /// <remarks>
-        /// Cosmos's <c>{"term": "bycycle", "distance": 2}</c>, Elasticsearch's <c>fuzziness</c>, Atlas
-        /// Search's <c>fuzzy.maxEdits</c>. The edit count is Levenshtein in all three and capped at two by
-        /// Cosmos and by Atlas; the cap is not enforced here, because the store is what has to honour it and
-        /// a package that guessed the cap would refuse a store that later raised it.
+        /// No upper limit on the edit count is enforced here; a store that caps it (Cosmos DB and Atlas Search
+        /// allow at most two) is left to reject a larger one.
         /// </remarks>
         public static readonly SqlFunction ClrFtFuzzy =
             Term("CLR_FT_FUZZY", [FullTextOperand.Text, FullTextOperand.Distance]);
 
         /// <summary>
-        /// <c>CLR_FT_WEIGHT(score, weight)</c>. A score counting for more or less than the others fused with
-        /// it.
+        /// <c>CLR_FT_WEIGHT(score, weight)</c>: a score weighted relative to the others it is fused with.
+        /// Answers a nullable <c>DOUBLE</c>.
         /// </summary>
         /// <remarks>
-        /// <para>Cosmos's <c>RRF</c> takes its weights as a trailing array &#8212;
-        /// <c>RRF(f1, f2, [0.9, 0.1])</c> &#8212; which is positional, so a weight and the score it belongs to
-        /// are kept in step by counting. Written as a wrapper they cannot come apart, and an adapter whose
-        /// store wants the array builds it by walking operands it already has to walk.</para>
-        ///
-        /// <para>It answers a score, so it goes wherever a score goes, and a store with no weighting renders
-        /// the inner one and declines only where the weight is not one.</para>
+        /// The weight travels with the score it applies to, so an adapter whose store takes weights
+        /// positionally (Cosmos DB's <c>RRF(f1, f2, [0.9, 0.1])</c>) builds that list from the operands. A
+        /// store with no weighting can render the inner score where the weight is one and decline otherwise.
         /// </remarks>
         public static readonly SqlFunction ClrFtWeight =
             Scoring("CLR_FT_WEIGHT", [FullTextOperand.Score, FullTextOperand.Weight], null, SqlOperandCountRanges.of(2));
 
         /// <summary>
-        /// Determines whether an operator is the named one, whichever route resolved it.
+        /// Determines whether an operator is the given full text operator, whichever route resolved it.
         /// </summary>
         /// <remarks>
-        /// <b>By name, and never by identity.</b> A call resolved through a schema carries a
-        /// <c>SqlUserDefinedFunction</c> Calcite built around the declaration — same name, different object —
-        /// so an identity test recognises a call reached through a chained operator table and silently fails
-        /// to recognise the same call reached through a connection. What an adapter does with the answer is
-        /// usually to render the call, and the name is the whole of what rendering needs.
+        /// Compares names. A call resolved through a schema carries a <c>SqlUserDefinedFunction</c> with the
+        /// same name as the field in this class but a different identity, so a reference comparison would
+        /// recognise the call only when the operator table was chained.
         /// </remarks>
-        /// <param name="op">The operator to test.</param>
-        /// <param name="function">The operator it should be.</param>
-        /// <returns><c>true</c> where the operator is that one.</returns>
+        /// <param name="op">The operator to test; may be <c>null</c>.</param>
+        /// <param name="function">The operator it should be, normally one of the fields of this class.</param>
+        /// <returns><c>true</c> where both are non-null and have the same name.</returns>
         public static bool Matches(SqlOperator? op, SqlFunction function)
         {
             return op is not null && function is not null && op.getName() == function.getName();
         }
 
         /// <summary>
-        /// Determines whether an operator is one of these, whichever route resolved it.
+        /// Determines by name whether an operator is one of the <c>CLR_FT_*</c> operators, whichever route
+        /// resolved it.
         /// </summary>
-        /// <param name="op">The operator to test.</param>
+        /// <param name="op">The operator to test; may be <c>null</c>.</param>
         /// <returns><c>true</c> where the operator is a full text operator.</returns>
         public static bool IsFullText(SqlOperator? op)
         {
@@ -239,14 +170,14 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Determines whether an operator answers a relevance score rather than a match.
+        /// Determines by name whether an operator answers a relevance score: <c>CLR_FT_SCORE</c>,
+        /// <c>CLR_FT_RRF</c> or <c>CLR_FT_WEIGHT</c>.
         /// </summary>
         /// <remarks>
-        /// The distinction an adapter needs most often, because the two halves are legal in different places:
-        /// a predicate belongs in a <c>WHERE</c>, and where a score belongs is the store's business. Cosmos
-        /// takes one in <c>ORDER BY RANK</c> alone.
+        /// Stores often allow scores in fewer places than predicates, so an adapter uses this to decide where
+        /// a call may be pushed down.
         /// </remarks>
-        /// <param name="op">The operator to test.</param>
+        /// <param name="op">The operator to test; may be <c>null</c>.</param>
         /// <returns><c>true</c> where the operator answers a score.</returns>
         public static bool IsScoring(SqlOperator? op)
         {
@@ -258,13 +189,12 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Defines a full text predicate.
+        /// Defines a full text predicate answering a nullable <c>BOOLEAN</c>.
         /// </summary>
         /// <remarks>
-        /// Nullable, because a store may have nothing to say about a row a plan keeps — an outer join's
-        /// unmatched side, a row outside the searched partition. The failure modes are not symmetrical:
-        /// declaring it <c>NOT NULL</c> licences the planner to rewrite on a guarantee the data does not
-        /// provide and the answer is wrong, while declaring it nullable at worst costs a rewrite.
+        /// Nullable because a store may have no answer for some rows a plan keeps, such as an outer join's
+        /// unmatched side; declaring it <c>NOT NULL</c> would let the planner rewrite on a guarantee the store
+        /// does not give.
         /// </remarks>
         static SqlFunction Predicate(string name, FullTextOperand[] leading, FullTextOperand? repeating, SqlOperandCountRange range)
         {
@@ -276,12 +206,8 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Defines a scoring function.
+        /// Defines a scoring function answering a nullable <c>DOUBLE</c>, which a query can order by.
         /// </summary>
-        /// <remarks>
-        /// <c>DOUBLE</c> so that a query can order by one and the validator will accept the sort. Nullable for
-        /// the reason a predicate is.
-        /// </remarks>
         static SqlFunction Scoring(string name, FullTextOperand[] leading, FullTextOperand? repeating, SqlOperandCountRange range)
         {
             var checker = new FullTextOperandTypeChecker(leading, repeating, range);
@@ -292,24 +218,14 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Defines a term constructor: a value that occupies a keyword position and says what kind of term it
+        /// Defines a term constructor: a call that stands in a keyword position and says what kind of term it
         /// is.
         /// </summary>
         /// <remarks>
-        /// <para><b>Typed <c>ANY</c>, and that is what makes the idea work at all.</b>
-        /// <c>FamilyOperandTypeChecker</c> passes an operand whose own family is <c>ANY</c> against any
-        /// declared family, so one of these satisfies a <c>CHARACTER</c> keyword position without that
-        /// position having to be widened &#8212; a plain keyword is still held to being text.</para>
-        ///
-        /// <para><b>Structural rather than textual, deliberately.</b> The alternative is what every store
-        /// does: put the structure in the string, as <c>to_tsquery('a:*')</c> or <c>'"a*"'</c> or
-        /// <c>{"term": …, "distance": …}</c>. A shared package cannot adopt one store's grammar without
-        /// making every other adapter parse it, and cannot invent its own without making every adapter parse
-        /// that. Written as calls, the structure is in the plan an adapter already walks, and one it cannot
-        /// render is one it declines by name.</para>
-        ///
-        /// <para>These are not values and mean nothing outside a keyword position; one that reaches code
-        /// generation is refused like the rest.</para>
+        /// Typed <c>ANY</c>. <c>FamilyOperandTypeChecker</c> accepts an operand of family <c>ANY</c> against
+        /// any declared family, so a constructor satisfies a <c>CHARACTER</c> keyword position while a plain
+        /// keyword is still required to be character. The same rule means one constructor nested in another
+        /// also validates.
         /// </remarks>
         static SqlFunction Term(string name, FullTextOperand[] operands)
         {
@@ -321,13 +237,14 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Determines whether an operator describes a term rather than answering about one.
+        /// Determines by name whether an operator is a term constructor: <c>CLR_FT_PHRASE</c>,
+        /// <c>CLR_FT_PREFIX</c> or <c>CLR_FT_FUZZY</c>.
         /// </summary>
         /// <remarks>
-        /// What an adapter asks of an operand in a keyword position: a call this answers for is a term
-        /// constructor to be read, and anything else is the keyword itself.
+        /// An adapter reading an operand in a keyword position uses this to tell a term constructor from a
+        /// plain keyword expression.
         /// </remarks>
-        /// <param name="op">The operator to test.</param>
+        /// <param name="op">The operator to test; may be <c>null</c>.</param>
         /// <returns><c>true</c> where the operator constructs a term.</returns>
         public static bool IsTerm(SqlOperator? op)
         {
@@ -341,9 +258,9 @@ namespace Apache.Calcite.FullText.Sql
         static readonly FullTextOperatorTable instance = new();
 
         /// <summary>
-        /// Gets the operator table.
+        /// Gets the shared instance of the operator table.
         /// </summary>
-        /// <returns>The table.</returns>
+        /// <returns>The table, holding all nine <c>CLR_FT_*</c> operators.</returns>
         public static FullTextOperatorTable Instance()
         {
             return instance;

@@ -14,9 +14,9 @@ namespace Apache.Calcite.Extensions.Config
     /// A dictionary view over the <c>schema.*</c> entries in a Calcite <see cref="Properties"/> map.
     /// </summary>
     /// <remarks>
-    /// Properties in this dictionary are stored with a <c>schema.</c> prefix in the underlying
-    /// <see cref="Properties"/> map and are forwarded to the Calcite schema factory at connection
-    /// time. Access this map through <see cref="CalciteConnectionProperties.SchemaProperties"/>.
+    /// Keys in this dictionary have no prefix; each is stored in the underlying <see cref="Properties"/> map
+    /// with a <c>schema.</c> prefix, and Calcite passes those entries to the schema factory as operands when
+    /// the connection is made. Obtain one through <see cref="CalciteConnectionProperties.SchemaProperties"/>.
     /// </remarks>
     public class CalciteConnectionPropertiesSchemaMap : IDictionary<string, string>
     {
@@ -36,7 +36,7 @@ namespace Apache.Calcite.Extensions.Config
         /// Gets or sets the schema property with the specified key.
         /// </summary>
         /// <param name="key">The schema property name, without the <c>schema.</c> prefix.</param>
-        /// <returns>The property value.</returns>
+        /// <returns>The property value, or <see langword="null"/> if it is not set.</returns>
         public string this[string key]
         {
             get => _properties.getProperty($"schema.{key}");
@@ -44,7 +44,7 @@ namespace Apache.Calcite.Extensions.Config
         }
 
         /// <summary>
-        /// Enumerates all <c>schema.*</c> entries in the backing property map.
+        /// The <c>schema.*</c> entries of the backing map.
         /// </summary>
         IEnumerable<Map.Entry> Entries => _properties.elements()
             .AsEnumerable<Map.Entry>()

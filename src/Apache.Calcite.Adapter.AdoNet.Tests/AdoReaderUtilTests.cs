@@ -14,13 +14,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
 {
 
     /// <summary>
-    /// Covers the mapping from a provider's value to the representation Calcite's runtime expects.
+    /// Tests <see cref="AdoReaderUtil"/>'s mapping from a provider's value to the representation Calcite's
+    /// runtime expects.
     /// </summary>
     /// <remarks>
-    /// This mapping is reached from generated code in <c>AdoToEnumerableConverter</c> and from
-    /// <see cref="Utils.ObjectArrayRowBuilder"/>, so what it returns is what every row in the enumerable
-    /// convention is made of. Calcite's runtime reads those as boxed Java values, which is why the assertions
-    /// are about <c>java.lang</c> types rather than .NET ones.
+    /// The converters and <see cref="Utils.ObjectArrayRowBuilder"/> build rows from these values, and
+    /// Calcite's runtime reads them as boxed Java values, so the assertions are about <c>java.lang</c> types.
     /// </remarks>
     public class AdoReaderUtilTests : IDisposable
     {
@@ -50,12 +49,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Returns a reader positioned on a single row holding the given expression.
         /// </summary>
-        /// <param name="selectExpression"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// The command outlives the call: disposing it closes the reader it produced, and every assertion
-        /// here happens after the reader is handed back.
+        /// The command is kept until the test is disposed, because disposing it would close the reader.
         /// </remarks>
+        /// <param name="selectExpression">The text placed after <c>SELECT</c>, producing the single column to
+        /// read.</param>
+        /// <returns>An open reader already advanced onto the row.</returns>
         DbDataReader Row(string selectExpression)
         {
             var command = _connection.CreateCommand();
@@ -97,8 +96,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Calcite's TINYINT is signed, and Java's <c>byte</c> is IKVM's unsigned one, so the sign has to
-        /// travel in the bits rather than in the type.
+        /// Calcite's <c>TINYINT</c> is signed, but IKVM maps Java's <c>byte</c> to the unsigned CLR
+        /// <see cref="byte"/>, so the sign travels in the bits; <c>java.lang.Byte.toString</c> reads them signed.
         /// </summary>
         [Fact]
         public void ANegativeTinyIntKeepsItsSign()
@@ -144,15 +143,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Unsigned types
 
         /// <summary>
-        /// Calcite's unsigned types are not a variation on the signed ones: <c>getJavaClass</c> answers a
-        /// joou value for each, and <c>CalciteResultValue</c> is written to decode exactly those. Every one
-        /// of them threw <c>Unsupported SQL type mapping</c> until there was a case for it, so
-        /// <c>AdoTable</c>'s mapping of <c>UInt16</c>, <c>UInt32</c> and <c>UInt64</c> could type a column
-        /// and never read one.
+        /// Each unsigned type reads across its whole range. Calcite's <c>getJavaClass</c> maps each unsigned
+        /// type to a joou class rather than to the signed type's class.
         /// </summary>
-        /// <param name="expression"></param>
-        /// <param name="typeName"></param>
-        /// <param name="expected"></param>
+        /// <param name="expression">The SQLite expression that produces the value to read.</param>
+        /// <param name="typeName">The name of the unsigned <see cref="SqlTypeName"/> the value is read as.</param>
+        /// <param name="expected">The value's expected string form once read.</param>
         [Theory]
         [InlineData("0", nameof(SqlTypeName.UTINYINT), "0")]
         [InlineData("200", nameof(SqlTypeName.UTINYINT), "200")]
@@ -169,9 +165,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The class matters as much as the value: <c>CalciteResultValue</c> decodes a <c>UTINYINT</c> by
-        /// asking whether the value is a joou <c>UByte</c>, and a <see cref="java.lang.Short"/> holding the
-        /// same number is not one.
+        /// The class matters as well as the value: <c>Apache.Calcite.Data</c> recognises a <c>UTINYINT</c> by
+        /// its joou <c>UByte</c> class, and a <see cref="java.lang.Short"/> holding the same number is not one.
         /// </summary>
         [Fact]
         public void AnUnsignedValueIsAJoouValue()
@@ -182,8 +177,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The distinction the whole mapping turns on. 200 in a signed <c>TINYINT</c> is -56, which is why
-        /// an unsigned tiny integer is a <c>UTINYINT</c> and not a <c>TINYINT</c>.
+        /// The byte that is 200 unsigned is -56 signed, so an unsigned tiny integer must be read as
+        /// <c>UTINYINT</c> and not <c>TINYINT</c>.
         /// </summary>
         [Fact]
         public void TheSameByteSignedAndUnsignedAreDifferentNumbers()
@@ -196,7 +191,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// An unsigned value is null-safe like every other, the joou types being references.
+        /// A database null in an unsigned column reads as null.
         /// </summary>
         [Fact]
         public void AnUnsignedNullIsNull()
@@ -221,9 +216,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// FLOAT is eight bytes in Calcite and shares DOUBLE's representation — <c>getJavaClass</c> returns
-        /// <c>Double</c> for both, and marks the pairing "sic". Reading one as a four byte float silently
-        /// loses precision.
+        /// <c>FLOAT</c> is eight bytes in Calcite and shares <c>DOUBLE</c>'s representation:
+        /// <c>getJavaClass</c> returns <c>Double</c> for both. Reading it as a four-byte float loses precision.
         /// </summary>
         [Fact]
         public void FloatSharesDoublesRepresentation()
@@ -237,7 +231,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// REAL is the four byte one.
+        /// <c>REAL</c> is the four-byte type.
         /// </summary>
         [Fact]
         public void RealIsReadAsAJavaFloat()
@@ -250,8 +244,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A decimal is exact, so it travels as a <see cref="java.math.BigDecimal"/> rather than through a
-        /// double that could not represent it.
+        /// A decimal is exact, so it is read as a <see cref="java.math.BigDecimal"/> rather than a double.
         /// </summary>
         [Fact]
         public void DecimalIsReadAsABigDecimal()
@@ -315,8 +308,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Temporal types
 
         /// <summary>
-        /// A date is a count of whole days since 1 January 1970 in an <see cref="java.lang.Integer"/>, which
-        /// is what <c>SqlFunctions.internalToDate</c> decodes with <c>LocalDate.ofEpochDay</c>.
+        /// A date is a count of whole days since 1 January 1970 in a <see cref="java.lang.Integer"/>, which
+        /// <c>SqlFunctions.internalToDate</c> decodes with <c>LocalDate.ofEpochDay</c>.
         /// </summary>
         [Fact]
         public void DateIsReadAsDaysSinceTheEpoch()
@@ -345,8 +338,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// A date is not a timestamp. They were once the same line, which meant a date arrived 86,400,000
-        /// times too large and boxed as the wrong type.
+        /// A date is a day count in an <see cref="java.lang.Integer"/>, not a millisecond count in a
+        /// <see cref="java.lang.Long"/> as a timestamp is.
         /// </summary>
         [Fact]
         public void ADateIsNotAMillisecondCount()
@@ -360,9 +353,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The reason the date component is taken directly: a value whose <see cref="DateTime.Kind"/> is
-        /// unspecified would pick up the machine's offset on the way through
-        /// <see cref="DateTimeOffset"/>, and midnight west of UTC would fall to the day before.
+        /// The date component is taken directly from the provider's <see cref="DateTime"/>. Converting an
+        /// unspecified <see cref="DateTime.Kind"/> through <see cref="DateTimeOffset"/> would apply the
+        /// machine's offset, and midnight west of UTC would fall on the day before.
         /// </summary>
         [Fact]
         public void MidnightDoesNotDependOnTheMachineTimeZone()
@@ -385,9 +378,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// The contract that matters: what the adapter produces is what the reader edge decodes. A date used
-        /// to arrive as a <see cref="java.lang.Long"/>, which <c>CalciteResultValue</c> has no case for, so
-        /// every date column threw on its first row.
+        /// The day count the adapter produces decodes back to the stored date.
         /// </summary>
         [Fact]
         public void ADateSurvivesTheRoundTripToADotNetDate()
@@ -395,7 +386,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
             using var reader = Row("'2024-03-15'");
             var value = (java.lang.Integer)AdoReaderUtil.GetDbReaderValue(reader, 0, SqlTypeName.DATE)!;
 
-            // the decode CalciteResultValue performs for SqlTypeName.DATE
+            // a DATE day count decoded to a DateTime
             var decoded = new DateTime(1970, 1, 1, 0, 0, 0, DateTimeKind.Utc).AddDays(value.intValue());
 
             Assert.Equal(new DateTime(2024, 3, 15, 0, 0, 0, DateTimeKind.Utc), decoded);
@@ -406,7 +397,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Other and null
 
         /// <summary>
-        /// OTHER is the escape hatch, and hands back whatever the provider gave.
+        /// <c>OTHER</c> returns the provider's value unchanged.
         /// </summary>
         [Fact]
         public void OtherIsReadAsTheProviderValue()
@@ -444,7 +435,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Unsupported
 
         /// <summary>
-        /// A type with no mapping is refused by name rather than silently mis-read.
+        /// A type with no mapping throws an exception naming the type.
         /// </summary>
         [Fact]
         public void AnUnmappedTypeIsRefusedByName()
@@ -462,8 +453,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Overload agreement
 
         /// <summary>
-        /// The <c>RelDataType</c> overload is the one a row builder reaches, and has to agree with the one
-        /// generated code reaches.
+        /// The <c>RelDataType</c> overload agrees with the <see cref="SqlTypeName"/> overload.
         /// </summary>
         [Fact]
         public void BothOverloadsAgree()

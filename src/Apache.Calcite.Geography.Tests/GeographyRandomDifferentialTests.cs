@@ -15,27 +15,17 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The same comparison <see cref="GeographyDifferentialTests"/> makes, over shapes nobody chose.
+    /// Makes the comparison <see cref="GeographyDifferentialTests"/> makes, over generated shapes.
     /// </summary>
     /// <remarks>
-    /// The hand-written set is a set of cases someone thought of, and every defect it found was one that had
-    /// not been thought of until it was written down. This generates instead, and generates on a lattice
-    /// rather than from arbitrary doubles, because the interesting cases are the coincidences — a vertex
-    /// exactly on an edge, two edges collinear, two polygons sharing a corner — and random doubles never
-    /// produce one. A seven-by-seven grid produces them constantly.
+    /// Shapes are drawn on a seven-by-seven lattice rather than from arbitrary doubles, so that coincidences
+    /// (a vertex exactly on an edge, collinear edges, polygons sharing a corner) occur often. The lattice is a
+    /// small box on the equator, where a geodesic edge and a straight line in degrees cannot be told apart,
+    /// so any disagreement is a defect. The seeds are fixed, so a failure is reproducible.
     ///
-    /// <para>Everything stays inside a small box on the equator, where a great-circle edge and a straight
-    /// line in longitude and latitude cannot be told apart, so any disagreement is a defect here rather than
-    /// a difference of model. The seed is fixed, so a failure is reproducible and reportable rather than a
-    /// thing that happened once.</para>
-    ///
-    /// <para>This is what stands in for the exact boolean operations. <c>S2BooleanOperation</c> would settle
-    /// <c>CLR_ST_GEOG_WITHIN</c> by construction, and it is not reachable: the version of S2 published to Maven
-    /// Central is the 2021 one, which does not have it, and the current source is compiled to Java 11, which
-    /// IKVM does not read. Porting it is a port of four thousand lines and the <c>S2Builder</c>,
-    /// <c>S2BuilderGraph</c>, <c>S2CrossingEdgesQuery</c> and <c>primitives</c> machinery underneath it. So
-    /// the relation here is this project's own, and what makes it trustworthy is the size of the oracle
-    /// rather than the pedigree of the algorithm.</para>
+    /// <para>The S2 Java library this package references has no <c>S2BooleanOperation</c>, so the relations
+    /// such as <c>CLR_ST_GEOG_WITHIN</c> are this package's own; this comparison is the main check on
+    /// them.</para>
     /// </remarks>
     public class GeographyRandomDifferentialTests
     {
@@ -51,23 +41,18 @@ namespace Apache.Calcite.Geography.Tests
         const int Extent = 3;
 
         /// <summary>
-        /// Metres per degree of longitude at the equator on WGS84, which is where the shapes below sit.
+        /// Metres per degree of longitude at the equator on WGS84, where the shapes sit.
         /// </summary>
         /// <remarks>
-        /// A scale factor between a planar answer in degrees and a geodesic one in metres is a spherical
-        /// idea, and these measurements are no longer spherical. There is no single number here: a degree
-        /// east is 111319.49 and a degree north is 110574.39, so a comparison scaled by either is out by up
-        /// to 0.67% depending on which way the two shapes lie.
-        ///
-        /// <para>So the numeric comparisons below are a <em>bound</em> rather than an oracle. They catch a
-        /// wrong unit, a wrong factor, a wrong shape — what a differential test is for — and they cannot
-        /// confirm the model. <c>Wgs84MeasurementTests</c> is what does that, against figures measured from a
-        /// live geodesic service.</para>
+        /// On the ellipsoid a degree east at the equator is 111319.49 m and a degree north is 110574.39 m, so a
+        /// planar measurement scaled by this factor can be off by up to 0.67% depending on direction. The
+        /// numeric comparisons are therefore a bound that catches a wrong unit, factor or shape, not a check
+        /// of the model; <see cref="Wgs84MeasurementTests"/> checks the model.
         /// </remarks>
         const double Degree = 111319.49079327357;
 
         /// <summary>
-        /// How far the two models may differ before a difference is real.
+        /// The relative difference allowed between a geodesic and a scaled planar measurement.
         /// </summary>
         const double ModelGap = 1e-2;
 
@@ -110,12 +95,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A shape of some kind, or <c>null</c> when the draw did not make one.
+        /// A random shape of one of seven kinds, or <c>null</c> when the draw does not make one.
         /// </summary>
         /// <remarks>
-        /// The hole of a donut is inset from its own shell rather than drawn on its own, because a hole drawn
-        /// independently is almost never inside the shell and the shape would be thrown away as invalid — the
-        /// case would live in the generator and never reach the comparison.
+        /// A polygon's hole is inset one step from its shell rather than drawn independently, because an
+        /// independent hole is rarely inside the shell and the invalid shape would be skipped.
         /// </remarks>
         static string? Shape(Random random)
         {
@@ -148,17 +132,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Runs every operation over a few thousand generated pairs and reports every disagreement at once.
+        /// Runs every relation and measurement over generated pairs and reports the disagreements.
         /// </summary>
         /// <remarks>
-        /// Only shapes Calcite calls valid are compared: what a relation means over an invalid geometry is
-        /// not defined by either model, so a disagreement there would say nothing. Validity itself is
-        /// compared over everything generated, valid or not, because that operation does have an answer for
-        /// both.
-        ///
-        /// <para>The counts are asserted as well as the disagreements. A generator that quietly stopped
-        /// producing polygons, or a Calcite that started refusing every pair, would otherwise leave this
-        /// green by leaving it empty.</para>
+        /// Validity is compared for every generated left-hand shape. The relations and measurements are
+        /// compared only for pairs Calcite calls valid, since neither model defines them over an invalid
+        /// geometry. The number of pairs compared is asserted, so that the test cannot pass by comparing
+        /// nothing. It stops early after ten disagreements.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOverGeneratedShapes()
@@ -214,7 +194,7 @@ namespace Apache.Calcite.Geography.Tests
                     Compare(differences, "ENVELOPESINTERSECT", left, right,
                         () => GeographyFunctions.EnvelopesIntersect(a, b)!.booleanValue(), () => SpatialTypeFunctions.ST_EnvelopesIntersect(a, b), ref refused);
 
-                    // outside the band where the two models decide differently; see Degree
+                    // skipped near the threshold, where the two models can decide differently; see Degree
                     if (Math.Abs(SpatialTypeFunctions.ST_Distance(a, b) - 0.0025) > ModelGap * 0.0025)
                         Compare(differences, "DWITHIN", left, right,
                             () => GeographyFunctions.DWithin(a, b, java.lang.Double.valueOf(0.0025 * Degree))!.booleanValue(),
@@ -232,8 +212,7 @@ namespace Apache.Calcite.Geography.Tests
                     Measure(differences, "PERIMETER", left, left,
                         () => GeographyFunctions.Perimeter(a)!.doubleValue(), SpatialTypeFunctions.ST_Perimeter(a)!.doubleValue() * Degree);
 
-                    // an area is two lengths, so the scale between the two readings is the square of the one
-                    // a distance uses
+                    // an area scales by the square of the length factor
                     Measure(differences, "AREA", left, left,
                         () => GeographyFunctions.Area(a)!.doubleValue(), SpatialTypeFunctions.ST_Area(a)!.doubleValue() * Degree * Degree);
                 }
@@ -244,12 +223,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Compares a measurement, ours in metres against Calcite's in degrees brought to the same units.
+        /// Compares a geodesic measurement in metres with Calcite's planar one already scaled to metres.
         /// </summary>
         /// <remarks>
-        /// A relative tolerance, because these are quantities rather than answers: at this scale on the
-        /// equator a degree of arc and a degree of coordinate are the same length to far more places than a
-        /// hundredth of a per cent, and the absolute floor is there for the pairs whose answer is zero.
+        /// The tolerance is <see cref="ModelGap"/> relative to the planar value, with an absolute floor for
+        /// answers of zero.
         /// </remarks>
         static void Measure(List<string> differences, string what, string left, string right, Func<double> geodesic, double planar)
         {
@@ -269,7 +247,7 @@ namespace Apache.Calcite.Geography.Tests
             }
             catch (java.lang.IllegalArgumentException)
             {
-                // Geometry.relate will not take a geometry collection; there is nothing to compare against
+                // Geometry.relate refuses a geometry collection, so there is no answer to compare with.
                 refused++;
                 return;
             }

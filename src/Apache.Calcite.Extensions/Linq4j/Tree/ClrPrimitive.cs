@@ -7,32 +7,30 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
 {
 
     /// <summary>
-    /// The eight Java primitives and their boxes, answered for the CLR.
+    /// Answers linq4j <c>Primitive</c>'s questions about the eight Java primitives and their box classes for
+    /// CLR types.
     /// </summary>
     /// <remarks>
-    /// <c>Primitive</c>, for types that have been through IKVM. Calcite asks it whether a type is a primitive,
-    /// which primitive a box holds, and what a primitive boxes to; the questions are the same and the runtime
-    /// is the difference.
-    ///
-    /// <para>The pairing is taken from linq4j rather than written out, so a primitive is matched with the box
-    /// Calcite itself matches it with, and the CLR types are whichever ones IKVM actually chose. Every answer
-    /// is a <c>Primitive</c> of Calcite's or a CLR <see cref="Type"/>; nothing here builds an expression.</para>
+    /// The pairs are read from linq4j's <c>Primitive</c> values and mapped to the CLR types IKVM gives them, so
+    /// the CLR type of a Java <c>int</c> is <see cref="int"/> and of <c>java.lang.Integer</c> is IKVM's
+    /// <c>java.lang.Integer</c>.
     /// </remarks>
     public static class ClrPrimitive
     {
 
         /// <summary>
-        /// CLR type of each Java primitive, against the <c>Primitive</c> that describes it.
+        /// The <c>Primitive</c> for each Java primitive's CLR type.
         /// </summary>
         static readonly Dictionary<Type, J.Primitive> primitives = [];
 
         /// <summary>
-        /// CLR type of each Java box class, against the <c>Primitive</c> it boxes.
+        /// The <c>Primitive</c> for each Java box class's CLR type.
         /// </summary>
         static readonly Dictionary<Type, J.Primitive> boxes = [];
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Fills the two maps from <c>Primitive.values()</c>, skipping <c>void</c> and the entries with no
+        /// primitive or box class.
         /// </summary>
         static ClrPrimitive()
         {
@@ -49,12 +47,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the primitive a type is, or <see langword="null"/> where it is not one.
+        /// Returns the primitive <paramref name="type"/> is, or <see langword="null"/> if it is not one.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The CLR type.</param>
+        /// <returns>The primitive, or <see langword="null"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// <c>Primitive.of</c>.
+        /// The counterpart of <c>Primitive.of</c>.
         /// </remarks>
         public static J.Primitive? Of(Type type)
         {
@@ -64,12 +63,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the primitive a type boxes, or <see langword="null"/> where it is not a box.
+        /// Returns the primitive <paramref name="type"/> boxes, or <see langword="null"/> if it is not a Java
+        /// box class.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The CLR type.</param>
+        /// <returns>The primitive, or <see langword="null"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// <c>Primitive.ofBox</c>.
+        /// The counterpart of <c>Primitive.ofBox</c>.
         /// </remarks>
         public static J.Primitive? OfBox(Type type)
         {
@@ -79,23 +80,24 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns whether a type is a primitive.
+        /// Returns whether <paramref name="type"/> is a Java primitive.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The CLR type.</param>
+        /// <returns><see langword="true"/> if it is a primitive.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// <c>Primitive.is</c>.
+        /// The counterpart of <c>Primitive.is</c>.
         /// </remarks>
         public static bool Is(Type type) => Of(type) != null;
 
         /// <summary>
-        /// Returns the box class of a primitive, and the type itself where it is not one.
+        /// Returns the Java box class of a primitive, or <paramref name="type"/> itself if it is not one.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The CLR type.</param>
+        /// <returns>The CLR type of the box class, or <paramref name="type"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// <c>Primitive.box</c>. A row that is a primitive is boxed wherever it has to be a reference — inside
-        /// a sequence, as an argument of an outer join's selector, as the key of a map.
+        /// The counterpart of <c>Primitive.box</c>.
         /// </remarks>
         public static Type Box(Type type)
         {
@@ -105,13 +107,14 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns the primitive class a box holds, or <see langword="null"/> where the type is not a box.
+        /// Returns the primitive a Java box class holds, or <see langword="null"/> if
+        /// <paramref name="type"/> is not a box class.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The CLR type.</param>
+        /// <returns>The CLR type of the primitive, or <see langword="null"/>.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// <c>Primitive.ofBox(type).primitiveClass</c>, which is how Calcite spells the other direction of
-        /// <see cref="Box"/>.
+        /// The counterpart of <c>Primitive.ofBox(type).primitiveClass</c>, the inverse of <see cref="Box"/>.
         /// </remarks>
         public static Type? PrimitiveClass(Type type)
         {
@@ -121,13 +124,13 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree
         }
 
         /// <summary>
-        /// Returns whether a type is neither a primitive nor one of their boxes.
+        /// Returns whether <paramref name="type"/> is neither a Java primitive nor a Java box class.
         /// </summary>
-        /// <param name="type"></param>
-        /// <returns></returns>
+        /// <param name="type">The CLR type.</param>
+        /// <returns><see langword="true"/> if it is neither.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="type"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// <c>Primitive.flavor(type) == Flavor.OBJECT</c>. Calcite's <c>Flavor</c> has three values and every
-        /// caller here asks for this one, which is what selects the <c>Comparable</c> overload of a comparison.
+        /// The counterpart of <c>Primitive.flavor(type) == Flavor.OBJECT</c>.
         /// </remarks>
         public static bool IsObject(Type type)
         {

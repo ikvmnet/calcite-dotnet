@@ -7,20 +7,14 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Writes SQL for an ADO.NET provider, naming each query parameter the way that provider binds it.
+    /// A <see cref="SqlPrettyWriter"/> that writes each dynamic parameter as the name the provider binds it
+    /// under, from <see cref="IAdoSqlSyntax.GetParameterName"/>, and records which variable each one reads.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Calcite writes a dynamic parameter as a bare <c>?</c> and records its ordinal, because JDBC binds by
-    /// position: <c>PreparedStatement.setObject(i, …)</c> never needs a name. ADO.NET has no positional
-    /// binding — a <see cref="System.Data.Common.DbParameter"/> is matched to the command text by name — so
-    /// a bare <c>?</c> is a marker nothing can fill.
-    /// </para>
-    /// <para>
-    /// The marker is therefore written correctly the first time, rather than the text being patched
-    /// afterwards. Patching would mean deciding which <c>?</c> in a finished statement is a parameter and
-    /// which is data inside a string or a quoted identifier, and the writer already knows.
-    /// </para>
+    /// Calcite writes a dynamic parameter as a bare <c>?</c> because JDBC binds by position. Most ADO.NET providers
+    /// match a <see cref="System.Data.Common.DbParameter"/> to the command text by name, so the name is written
+    /// here as the statement is produced, where parameters cannot be confused with a <c>?</c> inside a string
+    /// literal or a quoted identifier.
     /// </remarks>
     public class AdoSqlWriter : SqlPrettyWriter
     {
@@ -31,9 +25,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dialect">The dialect the SQL is written for.</param>
-        /// <param name="syntax">How the driver names a parameter.</param>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="dialect">The dialect the SQL is written in.</param>
+        /// <param name="syntax">Names each parameter.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="syntax"/> is <see langword="null"/>.</exception>
         public AdoSqlWriter(SqlDialect dialect, IAdoSqlSyntax syntax) :
             base(dialect)
         {
@@ -41,19 +35,18 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the variable index behind each parameter, in the order the parameters appear.
+        /// Gets the variable index behind each parameter written so far, as <see cref="java.lang.Integer"/>s, in the
+        /// order the parameters appear. Takes the place of <c>SqlString.getDynamicParameters</c>.
         /// </summary>
-        /// <remarks>
-        /// The counterpart of <c>SqlString.getDynamicParameters</c>, collected here because the marker is no
-        /// longer the one the base writer records.
-        /// </remarks>
         public java.util.List Indexes => _indexes;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Writes the parameter's name and records its variable index.
+        /// </summary>
+        /// <param name="index">The variable index the parameter reads.</param>
         public override void dynamicParam(int index)
         {
-            // the position among parameters, not the variable index, is what the name is derived from: it is
-            // what the enricher counts by when it fills them
+            // named by position among the parameters, which is how the enricher adds them
             print(_syntax.GetParameterName(_indexes.size()));
             _indexes.add(java.lang.Integer.valueOf(index));
 

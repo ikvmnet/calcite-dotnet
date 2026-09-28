@@ -4,19 +4,16 @@
         <TargetFrameworks>net8.0;net10.0</TargetFrameworks>
         <LangVersion>latest</LangVersion>
         <Nullable>enable</Nullable>
-        <!-- an xunit.v3 test project is a program: the package writes the entry point and the assembly runs
-             itself on Microsoft.Testing.Platform -->
+        <!-- xunit.v3 test projects are executables running on Microsoft.Testing.Platform. -->
         <OutputType>Exe</OutputType>
-        <!-- xUnit1051 wants every call taking a CancellationToken to take the framework's, so that a hung
-             test can be cancelled. These suites pass the tokens they mean to, and several exist to assert
-             what happens to one, so adopting it is a change to make on its own terms. -->
+        <!-- xUnit1051 asks every call to pass the test framework's CancellationToken. These tests pass
+             the tokens they are testing. -->
         <NoWarn>$(NoWarn);xUnit1051</NoWarn>
         <TestingPlatformShowTestsFailure>true</TestingPlatformShowTestsFailure>
     </PropertyGroup>
 
     <ItemGroup>
-        <!-- the VSTest bridge, for `dotnet test` and the IDE: xunit.runner.visualstudio is the adapter
-             and Microsoft.NET.Test.Sdk the testhost. CI runs the assembly itself and uses neither. -->
+        <!-- For `dotnet test` and IDE test runners (VSTest). CI runs the test assembly directly. -->
         <PackageReference Include="Microsoft.NET.Test.Sdk" Version="18.8.1" />
         <PackageReference Include="xunit.v3" Version="4.0.1" />
         <PackageReference Include="xunit.runner.visualstudio" Version="4.0.0">
@@ -31,8 +28,8 @@
 
     <ItemGroup>
         <ProjectReference Include="..\Apache.Calcite.Geography\Apache.Calcite.Geography.csproj" />
-        <!-- tests only: the shipped package references nothing here, but proving the operators run in
-             the ClrEnumerable conventions needs the conventions -->
+        <!-- Test-only: the package does not reference Extensions, but the tests run the operators under
+             ClrCursorConvention. -->
         <ProjectReference Include="..\Apache.Calcite.Extensions\Apache.Calcite.Extensions.csproj" />
     </ItemGroup>
 

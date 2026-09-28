@@ -9,29 +9,17 @@ namespace Apache.Calcite.FullText.Sql
 {
 
     /// <summary>
-    /// Checks the operands of a <c>CLR_FT_*</c> call: a fixed run of leading positions, then the same kind
-    /// repeated for as many more as the call carries.
+    /// Checks the operands of a <c>CLR_FT_*</c> call: a fixed run of leading positions, then optionally one
+    /// kind repeated for every further operand.
     /// </summary>
     /// <remarks>
-    /// <para>Calcite has a checker for a fixed list of families (<c>OperandTypes.family</c>), one for the same
-    /// family repeated (<c>OperandTypes.repeat</c>), and one that checks the count and nothing else
-    /// (<c>OperandTypes.variadic</c>). None of them is <em>one</em> position followed by a repeat of a
-    /// different one, which is the shape of every variadic operator here: something searched, then keywords.
-    /// So the choice was this, or <c>variadic</c> and no type checking at all.</para>
+    /// <para>Calcite's own checkers cover a fixed list of families (<c>OperandTypes.family</c>) or one family
+    /// repeated (<c>OperandTypes.repeat</c>), but not a leading position followed by a repeat of a different
+    /// family, which is the shape of the variadic operators here.</para>
     ///
-    /// <para><b>The families are the same ones the schema route derives.</b>
-    /// <c>CalciteCatalogReader.toOp</c> builds a schema function's checker out of its declared parameter
-    /// types, mapping each to <c>type.getSqlTypeName().getFamily()</c>. <see cref="FamilyOf"/> and
-    /// <see cref="TypeOf"/> are the two ends of that: the type a parameter declares is a type in the family
-    /// this checks for. That is what makes a call resolved through a chained operator table and a call
-    /// resolved through a schema validate alike, rather than merely being intended to.</para>
-    ///
-    /// <para><b>Every position is required, and that is load bearing.</b> <c>SqlCallBinding.operands</c> pads
-    /// a call out to the whole parameter list with <c>DEFAULT</c> where three things hold at once — room
-    /// under the count range's maximum, <c>isOptional</c> at that position, and <c>isFixedParameters</c> —
-    /// and no store has a rendering for <c>DEFAULT</c>. <see cref="isOptional"/> answering <c>false</c> stops
-    /// it here; <see cref="Schema.FullTextSchema"/> stops it on the other route by declaring one function per
-    /// arity.</para>
+    /// <para>The families checked are those of the types <see cref="TypeOf"/> gives the schema declarations.
+    /// <c>CalciteCatalogReader.toOp</c> builds a schema function's checker from the families of its parameter
+    /// types, so a call validates alike whichever route resolved it.</para>
     /// </remarks>
     public sealed class FullTextOperandTypeChecker : SqlOperandTypeChecker
     {
@@ -46,6 +34,7 @@ namespace Apache.Calcite.FullText.Sql
         /// <param name="leading">What the first positions take.</param>
         /// <param name="repeating">What every position after them takes, or <c>null</c> where there are none.</param>
         /// <param name="range">How many operands the call may carry.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="leading"/> or <paramref name="range"/> is <c>null</c>.</exception>
         public FullTextOperandTypeChecker(FullTextOperand[] leading, FullTextOperand? repeating, SqlOperandCountRange range)
         {
             ArgumentNullException.ThrowIfNull(leading);
@@ -59,7 +48,11 @@ namespace Apache.Calcite.FullText.Sql
         /// <summary>
         /// Returns what the position at the given ordinal takes.
         /// </summary>
-        /// <param name="ordinal">The position.</param>
+        /// <remarks>
+        /// Past the leading positions this is the repeating kind, or, where there is none, the last leading
+        /// kind. The count is not checked.
+        /// </remarks>
+        /// <param name="ordinal">The zero-based position.</param>
         /// <returns>The operand kind.</returns>
         public FullTextOperand At(int ordinal)
         {
@@ -70,22 +63,16 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Checks the count here and hands the types to Calcite.
+        /// Checks the operand count against the range, then checks the types with Calcite's
+        /// <c>FamilyOperandTypeChecker</c> over the family of each position.
         /// </summary>
         /// <remarks>
-        /// <para><b>Delegated rather than restated, and that is the whole point.</b> The other route's checker
-        /// is a <c>FamilyOperandTypeChecker</c> that <c>CalciteCatalogReader.toOp</c> builds from the declared
-        /// parameter types, so building one here over the same families makes the two routes apply not merely
-        /// equivalent rules but the same code. Restating the rule was tried and the two disagreed
-        /// immediately: Calcite's coerces where it can — a character literal in a numeric position, an
-        /// integer in a character one — and a hand-written comparison does not, so a call refused by a host
-        /// that chains this table was accepted by a connection that does not.</para>
-        ///
-        /// <para>The count is checked here because <c>FamilyOperandTypeChecker</c> has no opinion on arity
-        /// beyond the length of its family list, which is built per call from the count it is given.</para>
+        /// The schema route's checker is also a <c>FamilyOperandTypeChecker</c>, built by
+        /// <c>CalciteCatalogReader.toOp</c> from the same families, so both routes apply the same rules,
+        /// including its implicit coercions.
         /// </remarks>
         /// <param name="callBinding">The call.</param>
-        /// <param name="throwOnFailure">Whether to throw rather than answer.</param>
+        /// <param name="throwOnFailure">Whether to throw a validation error rather than return <c>false</c>.</param>
         /// <returns>Whether the operands are acceptable.</returns>
         public bool checkOperandTypes(SqlCallBinding callBinding, bool throwOnFailure)
         {
@@ -121,8 +108,7 @@ namespace Apache.Calcite.FullText.Sql
             foreach (var operand in leading)
                 names.Add(NameOf(operand));
 
-            // the ellipsis is not a family Calcite knows; it is the signature a caller reads in the error,
-            // and there is nothing else to say about a position that repeats without end
+            // the ellipsis marks the repeating position in the signature shown in a validation error
             if (repeating is FullTextOperand more)
                 names.Add(NameOf(more) + "...");
 
@@ -130,23 +116,13 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Returns <c>false</c>: this checker is not a <c>SqlOperandMetadata</c>.
+        /// Returns <c>false</c>, because this checker is not a <c>SqlOperandMetadata</c>.
         /// </summary>
         /// <remarks>
-        /// <para><b>The flag is a promise about this object's type, not a statement about the parameters.</b>
-        /// <c>SqlUtil.filterRoutinesByParameterTypeAndName</c> keeps a routine whose checker says <c>false</c>
-        /// and <em>casts</em> one that says <c>true</c> to <c>SqlOperandMetadata</c>, unguarded. It was
-        /// answering <c>true</c> for the one operator here that has no repeating position, and every statement
-        /// naming that operator died in an <c>InvalidCastException</c> out of the validator — measured, and
-        /// not something the operator's own arity would lead anyone to expect.</para>
-        ///
-        /// <para>Nothing is lost by declining. The comment at that call site says as much: a routine with no
-        /// parameter metadata is kept, only without the coercion that filter would have applied — and the
-        /// operand checker still runs, which is where these are checked. It is also not what stops the
-        /// <c>DEFAULT</c> padding: <see cref="isOptional"/> is.</para>
-        ///
-        /// <para><c>SqlFunctionCategory.SYSTEM</c> does not avoid any of this. <c>SqlFunction.deriveType</c>
-        /// calls <c>SqlUtil.lookupRoutine</c> for every function it types, whatever the category.</para>
+        /// <c>SqlUtil.filterRoutinesByParameterTypeAndName</c> casts a checker that answers <c>true</c> to
+        /// <c>SqlOperandMetadata</c> without checking, so answering <c>true</c> here would throw during
+        /// validation. A routine whose checker answers <c>false</c> is kept by that filter, and its operands
+        /// are still checked by <see cref="checkOperandTypes"/>.
         /// </remarks>
         /// <returns><c>false</c>.</returns>
         public bool isFixedParameters()
@@ -155,7 +131,7 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Returns <c>false</c>: a <c>CLR_FT_*</c> call takes exactly the operands it is written with.
+        /// Returns <c>false</c>: no position is optional, so Calcite never pads a call with <c>DEFAULT</c>.
         /// </summary>
         /// <param name="i">The position.</param>
         /// <returns><c>false</c>.</returns>
@@ -164,8 +140,8 @@ namespace Apache.Calcite.FullText.Sql
             return false;
         }
 
-        // IKVM does not project a Java default method as a C# default interface member, so an implementer
-        // written here has to restate every one of them. These are Calcite's own bodies.
+        // IKVM does not expose a Java default method as a C# default interface member, so each is restated
+        // here with Calcite's own body.
 
         /// <inheritdoc />
         public SqlOperandTypeChecker.Consistency getConsistency()
@@ -201,14 +177,9 @@ namespace Apache.Calcite.FullText.Sql
         /// Returns the type family a position accepts.
         /// </summary>
         /// <remarks>
-        /// A searched position is <c>ANY</c>, and that accepts <em>everything</em> rather than everything
-        /// <c>SqlTypeFamily.ANY.getTypeNames()</c> lists: <c>FamilyOperandTypeChecker</c> switches on the
-        /// declared family and returns true for <c>ANY</c> before consulting any type name, refusing only a
-        /// <c>CURSOR</c>. That distinction is worth knowing, because the list it does not consult is
-        /// <c>SqlTypeName.ALL_TYPES</c>, which despite its name has no <c>ARRAY</c> and no <c>MAP</c> — and a
-        /// searchable array column is ordinary, Cosmos declaring one for <c>/tags</c> and PostgreSQL having
-        /// <c>text[]</c>. A row passes for the same reason, which is how SQL Server and MySQL name the list of
-        /// columns they search.
+        /// A searched position is <c>ANY</c>. <c>FamilyOperandTypeChecker</c> accepts any operand type but
+        /// <c>CURSOR</c> against the <c>ANY</c> family without consulting <c>SqlTypeFamily.ANY.getTypeNames()</c>, so <c>ARRAY</c>,
+        /// <c>MAP</c> and <c>ROW</c> operands pass although that list omits them.
         /// </remarks>
         /// <param name="operand">The operand kind.</param>
         /// <returns>The family.</returns>
@@ -230,14 +201,13 @@ namespace Apache.Calcite.FullText.Sql
         /// Returns the type a schema function declares for a position.
         /// </summary>
         /// <remarks>
-        /// The type whose family is <see cref="FamilyOf"/>, so that the checker Calcite derives from a
-        /// declaration accepts what this one accepts. <c>ANY</c> is a <c>SqlTypeName</c> in its own right and
-        /// is safe to declare — <c>SqlTypeAssignmentRule</c> has an entry for it, which is the thing
-        /// <c>OTHER</c> lacks and the reason a geography cannot be a schema function's parameter.
+        /// A type in the family <see cref="FamilyOf"/> returns, so that the checker Calcite derives from a
+        /// schema declaration accepts what this checker accepts. The operator table's type inference uses the
+        /// same types, so literals are typed alike on both routes.
         /// </remarks>
         /// <param name="operand">The operand kind.</param>
         /// <param name="typeFactory">The type factory.</param>
-        /// <returns>The type.</returns>
+        /// <returns>The type, nullable.</returns>
         public static RelDataType TypeOf(FullTextOperand operand, RelDataTypeFactory typeFactory)
         {
             var type = operand switch
@@ -255,7 +225,7 @@ namespace Apache.Calcite.FullText.Sql
         }
 
         /// <summary>
-        /// Returns what a position is called in a signature.
+        /// Returns the name a position is given in the allowed signatures shown in a validation error.
         /// </summary>
         /// <param name="operand">The operand kind.</param>
         /// <returns>The name.</returns>

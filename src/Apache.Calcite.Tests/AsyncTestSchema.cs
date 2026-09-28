@@ -18,20 +18,19 @@ namespace Apache.Calcite.Tests
 {
 
     /// <summary>
-    /// The rows the differential tests run over, held once and read by both a synchronous and an
-    /// asynchronous table.
+    /// The rows the asynchronous differential tests run over, shared by <see cref="SyncRowsTable"/> and
+    /// <see cref="AsyncRowsTable"/>.
     /// </summary>
     /// <remarks>
-    /// One copy on purpose. The asynchronous convention is compared against the synchronous one rather than
-    /// against Calcite — the synchronous one is already checked against Calcite query by query, so
-    /// transitivity gives the same oracle — and that comparison means nothing at all if the two sides are
-    /// reading two sets of rows that have drifted apart.
+    /// Awaiting reads are compared against synchronous reads rather than against Calcite, since the
+    /// synchronous reads are compared against Calcite elsewhere. That comparison needs both sides to read the
+    /// same rows, so there is one copy.
     /// </remarks>
     static class AsyncTestRows
     {
 
         /// <summary>
-        /// Partitions, ties, nulls and an order, so that a window has something to disagree over.
+        /// Rows with partitions, ties and a null, so a window function has something to distinguish.
         /// </summary>
         public static readonly object?[][] Sales =
         [
@@ -44,8 +43,8 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
-        /// Rows that arrive sorted by their first field, which is where a merge join and a merge union get
-        /// the collation they are only ever chosen for.
+        /// Rows sorted by their first field and declared so, which gives a merge join or a merge union the
+        /// collation it needs to be chosen.
         /// </summary>
         public static readonly object?[][] Sorted =
         [
@@ -56,17 +55,16 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
-        /// Twelve distinct keys, which is the one build-side size at which a hash join's leftovers can come
-        /// out in the wrong order.
+        /// Twelve distinct keys, a build-side size at which a hash join's unmatched rows come out in a different
+        /// order from the lookup map's.
         /// </summary>
         /// <remarks>
-        /// <c>hashEquiJoin_</c> ends a right or a full join by copying the lookup's key set into a
-        /// <c>java.util.HashSet</c> and walking that. The copy does not have the map's iteration order:
-        /// <c>HashSet(Collection)</c> sizes its table as <c>tableSizeFor(max((int) (n / 0.75f) + 1, 16))</c>,
-        /// while a map grown by insertion holds the smallest power of two at or above 16 that still leaves
-        /// <c>n &lt;= 0.75 * cap</c>. The two disagree exactly where <c>n = 0.75 * 2^k</c> — 12, 24, 48 — and
-        /// at twelve keys the map is a table of 16 and the copy a table of 32. <c>SALES</c> has six, which
-        /// puts both at 16 and says nothing.
+        /// <c>hashEquiJoin_</c> ends a right or full join by copying the lookup's key set into a
+        /// <c>java.util.HashSet</c> and iterating that. <c>HashSet(Collection)</c> sizes its table as
+        /// <c>tableSizeFor(max((int) (n / 0.75f) + 1, 16))</c>, while a map grown by insertion holds the
+        /// smallest power of two at or above 16 with <c>n &lt;= 0.75 * cap</c>. The two differ where
+        /// <c>n = 0.75 * 2^k</c> (12, 24, 48): at twelve keys the map has 16 buckets and the copy 32.
+        /// <c>SALES</c>, with six rows, puts both at 16.
         /// </remarks>
         public static readonly object?[][] Wide = BuildWide();
 
@@ -83,10 +81,9 @@ namespace Apache.Calcite.Tests
         /// Values in a column of type ANY, whose Java class is <c>Object</c>.
         /// </summary>
         /// <remarks>
-        /// A provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as ANY, so an
-        /// aggregate over one of these has to accumulate a value whose type is only known at run time. The
-        /// same rows as <c>ClrCursorConventionDifferentialTests.AnysTable</c>, which is what makes the
-        /// synchronous open an oracle for the awaiting one.
+        /// A provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as ANY, so an aggregate
+        /// over one accumulates a value whose type is known only at run time. The same rows as
+        /// <c>ClrCursorConventionDifferentialTests.AnysTable</c>.
         /// </remarks>
         public static readonly object?[][] Anys =
         [
@@ -98,12 +95,10 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
-        /// The values a document store puts behind a path that holds a JSON array.
+        /// Collections in ANY columns, as a document store returns a path that holds a JSON array.
         /// </summary>
         /// <remarks>
-        /// The same rows as <c>ClrCursorConventionDifferentialTests.DocsTable</c>, which is what makes the
-        /// synchronous open an oracle for the awaiting one — and it is the only oracle there is, because
-        /// Calcite cannot implement an UNNEST over a column of type ANY at all.
+        /// The same rows as <c>ClrCursorConventionDifferentialTests.DocsTable</c>.
         /// </remarks>
         public static readonly object?[][] Docs =
         [
@@ -113,13 +108,11 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
-        /// The values a document store puts behind an ANY column — a GUID, a timestamp and a number, each
-        /// written the way JSON writes it.
+        /// Values in ANY columns as a document store returns them: a GUID, a timestamp and a number, each
+        /// written as JSON writes it.
         /// </summary>
         /// <remarks>
-        /// The same rows as <c>ClrCursorConventionDifferentialTests.CastsTable</c>, whose remarks say what a cast
-        /// out of ANY actually does. The awaiting open reaches the same generator, and the point of running
-        /// the queries here is that it keeps reaching it.
+        /// The same rows as <c>ClrCursorConventionDifferentialTests.CastsTable</c>, for casts out of ANY.
         /// </remarks>
         public static readonly object?[][] Casts =
         [
@@ -130,6 +123,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the CASTS row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>An INTEGER <c>ID</c> and four nullable ANY columns, <c>G</c>, <c>T</c>, <c>M</c> and <c>N</c>.</returns>
         public static RelDataType CastsRowType(RelDataTypeFactory typeFactory)
         {
             RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
@@ -146,6 +141,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the WIDE row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>A VARCHAR <c>K</c> and an INTEGER <c>N</c>.</returns>
         public static RelDataType WideRowType(RelDataTypeFactory typeFactory)
         {
             return typeFactory.builder()
@@ -157,6 +154,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the SALES row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>The <c>SALES</c> columns, of which <c>AMOUNT</c> is nullable.</returns>
         public static RelDataType SalesRowType(RelDataTypeFactory typeFactory)
         {
             return typeFactory.builder()
@@ -168,12 +167,12 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// Timestamps an hour apart and one inside an hour, which is what a window table function needs to
-        /// have anything to put in two buckets.
+        /// Timestamps spread across three hours, two of them within the same hour, so a window table function
+        /// puts rows in more than one bucket.
         /// </summary>
         /// <remarks>
-        /// The same four rows the synchronous differential tests' EVENTS table holds, so that the two
-        /// harnesses put the same question to TUMBLE, HOP and SESSION.
+        /// The same four rows as the <c>EVENTS</c> table of <c>ClrCursorConventionDifferentialTests</c>, for
+        /// <c>TUMBLE</c>, <c>HOP</c> and <c>SESSION</c>.
         /// </remarks>
         public static readonly object?[][] Events =
         [
@@ -190,6 +189,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the EVENTS row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>A TIMESTAMP <c>ROWTIME</c> and an INTEGER <c>ID</c>.</returns>
         public static RelDataType EventsRowType(RelDataTypeFactory typeFactory)
         {
             return typeFactory.builder()
@@ -201,6 +202,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the SORTED row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>An INTEGER <c>K</c> and a VARCHAR <c>V</c>.</returns>
         public static RelDataType SortedRowType(RelDataTypeFactory typeFactory)
         {
             return typeFactory.builder()
@@ -212,6 +215,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the ANYS row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>An INTEGER <c>ID</c>, a VARCHAR <c>K</c>, and nullable ANY columns <c>V</c> and <c>S</c>.</returns>
         public static RelDataType AnysRowType(RelDataTypeFactory typeFactory)
         {
             return typeFactory.builder()
@@ -225,6 +230,8 @@ namespace Apache.Calcite.Tests
         /// <summary>
         /// Returns the DOCS row type.
         /// </summary>
+        /// <param name="typeFactory">The factory to build the type with.</param>
+        /// <returns>An INTEGER <c>ID</c> and nullable ANY columns <c>TAGS</c> and <c>NUMS</c>.</returns>
         public static RelDataType DocsRowType(RelDataTypeFactory typeFactory)
         {
             RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
@@ -237,9 +244,11 @@ namespace Apache.Calcite.Tests
         }
 
         /// <summary>
-        /// Returns a <c>java.util.List</c> of the items given, which is what a collection behind an ANY
-        /// column has to be for <c>SqlFunctions.flatProduct</c> to read it.
+        /// Returns a <c>java.util.List</c> of the items given, the form in which <c>SqlFunctions.flatProduct</c>
+        /// reads a collection behind an ANY column.
         /// </summary>
+        /// <param name="items">The list's elements, in order.</param>
+        /// <returns>A new <c>java.util.ArrayList</c> holding the items.</returns>
         static java.util.List List(params object?[] items)
         {
             var list = new java.util.ArrayList();
@@ -252,8 +261,11 @@ namespace Apache.Calcite.Tests
     }
 
     /// <summary>
-    /// A table of the synchronous convention over one of the shared row sets.
+    /// A Calcite <c>ScannableTable</c> over one of the shared row sets.
     /// </summary>
+    /// <param name="rows">The table's rows.</param>
+    /// <param name="rowType">Builds the table's row type from the type factory it is given.</param>
+    /// <param name="sorted">Whether the table's statistic states that its rows are sorted by the first column.</param>
     sealed class SyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, ScannableTable
     {
 
@@ -281,13 +293,15 @@ namespace Apache.Calcite.Tests
     }
 
     /// <summary>
-    /// A table of the asynchronous convention over one of the shared row sets.
+    /// An <see cref="IClrScannableTable"/> over one of the shared row sets whose rows arrive asynchronously.
     /// </summary>
+    /// <param name="rows">The table's rows.</param>
+    /// <param name="rowType">Builds the table's row type from the type factory it is given.</param>
+    /// <param name="sorted">Whether the table's statistic states that its rows are sorted by the first column.</param>
     /// <remarks>
-    /// <b>It suspends on every row.</b> A fixture whose <see cref="IAsyncEnumerable{T}"/> completes
-    /// synchronously exercises none of the resumption, ordering or disposal behaviour that distinguishes
-    /// this convention from the other one — every test would pass over a sequence that is asynchronous in
-    /// name only, and an operator that dropped its continuation would look correct.
+    /// The scan suspends on every row. A sequence that completed synchronously would exercise none of the
+    /// resumption, ordering or disposal behaviour of an awaiting read, and an operator that dropped its
+    /// continuation would still pass.
     /// </remarks>
     sealed class AsyncRowsTable(object?[][] rows, System.Func<RelDataTypeFactory, RelDataType> rowType, bool sorted) : AbstractTable, IClrScannableTable
     {
@@ -296,10 +310,8 @@ namespace Apache.Calcite.Tests
         /// Called with the running row count as each row is produced.
         /// </summary>
         /// <remarks>
-        /// So that a test can cancel at a known point in the input rather than after a wall-clock delay. A
-        /// timer is the wrong instrument here: ten thousand rows that each yield finish in well under the
-        /// shortest delay worth waiting for, and a test written that way passes because the query completed
-        /// rather than because anything was cancelled.
+        /// Lets a test cancel at a known row rather than after a delay; the rows are produced faster than any
+        /// useful delay, so a timed cancellation can pass because the query finished first.
         /// </remarks>
         public System.Action<int>? OnRow { get; set; }
 
@@ -314,11 +326,11 @@ namespace Apache.Calcite.Tests
         public bool SawCancellableToken { get; private set; }
 
         /// <summary>
-        /// Gets whether the sequence was disposed with something to await, rather than abandoned.
+        /// Gets whether the sequence was disposed and its disposal awaited, rather than abandoned.
         /// </summary>
         /// <remarks>
-        /// Set from the iterator's <c>finally</c>, which runs when the enumerator is disposed. A reader that
-        /// disposed the plan synchronously would never reach the awaited part of it.
+        /// Set at the end of the iterator's <c>finally</c>, after an await, so it is set only when the
+        /// enumerator's disposal runs to completion.
         /// </remarks>
         public bool DisposedAsynchronously { get; private set; }
 
@@ -338,10 +350,8 @@ namespace Apache.Calcite.Tests
 
         /// <inheritdoc />
         /// <remarks>
-        /// The awaiting-only table's half of the bargain. There is no pulled source to offer, so this blocks
-        /// a thread per row, which is what a caller reading these rows synchronously is asking for. Leaving
-        /// the interface default in place instead would be the mistake: it would wrap this, and a caller who
-        /// asked to await would get the blocking read back with a state machine around it.
+        /// This table's rows arrive only asynchronously, so a synchronous scan drains <see cref="ScanAsync"/>,
+        /// blocking the calling thread for each row.
         /// </remarks>
         public IEnumerable<object?[]> Scan(DataContext root) => BlockingDrain.Of(ScanAsync(root));
 
@@ -355,7 +365,7 @@ namespace Apache.Calcite.Tests
                 {
                     cancellationToken.ThrowIfCancellationRequested();
 
-                    // genuinely suspends, for the reason the class remarks give
+                    // suspends, for the reason the class remarks give
                     await Task.Yield();
 
                     Produced++;
@@ -366,7 +376,7 @@ namespace Apache.Calcite.Tests
             }
             finally
             {
-                // an awaited disposal reaches this; one dropped on the floor does not
+                // an awaited disposal reaches the assignment below; an abandoned one does not
                 await Task.Yield();
 
                 DisposedAsynchronously = true;
@@ -377,22 +387,17 @@ namespace Apache.Calcite.Tests
 
 
     /// <summary>
-    /// Drains an awaited sequence on the calling thread.
+    /// Drains an asynchronous sequence on the calling thread.
     /// </summary>
     /// <remarks>
-    /// What a table whose rows only ever arrive asynchronously has to write for its <c>Scan</c>. It is here
-    /// rather than reached out of the convention on purpose: <c>ClrSequences</c> is internal, an adapter
-    /// outside this repository cannot call it, and a test table that did would be modelling something no
-    /// real implementer can write.
+    /// This is what a table whose rows arrive only asynchronously writes for its <c>Scan</c>. It is written
+    /// here rather than calling <c>ClrSequences</c>, which is internal and so unavailable to an adapter
+    /// outside this repository.
     ///
-    /// <para><b>It is not four lines, and the first version written here was.</b> That one blocked on
-    /// <c>MoveNextAsync</c> directly and deadlocked
-    /// <c>ShouldReadAnAsynchronousLeafSynchronouslyUnderASynchronizationContext</c> — thirty seconds and a
-    /// hung thread. The operators of this convention await without <c>ConfigureAwait(false)</c>, so the
-    /// continuation is promised to whatever context is current at the moment of suspension, which is inside
-    /// <c>MoveNextAsync</c>'s synchronous phase and therefore before any wait begins. The context has to be
-    /// nulled <em>before</em> the call, not around the wait. <c>ClrSequences.ToEnumerable</c> says the same
-    /// thing and says it was measured; this is the second measurement.</para>
+    /// <para>The operators of this convention await without <c>ConfigureAwait(false)</c>, so a continuation
+    /// is posted to whatever synchronization context is current when the sequence suspends, which happens
+    /// inside the call to <c>MoveNextAsync</c>, before any wait begins. Blocking on that call under a context
+    /// deadlocks, so the context is cleared before each call rather than only around the wait.</para>
     /// </remarks>
     static class BlockingDrain
     {

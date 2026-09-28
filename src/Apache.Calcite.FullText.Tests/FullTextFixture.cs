@@ -29,14 +29,12 @@ namespace Apache.Calcite.FullText.Tests
 {
 
     /// <summary>
-    /// A schema to resolve names against, and the two ways of reaching them.
+    /// A test schema, and a planner that resolves names through either route.
     /// </summary>
     /// <remarks>
-    /// <c>Plan</c> reproduces by hand the one thing <c>CalcitePrepareImpl</c> does for every statement a
-    /// connection prepares: it chains the catalog reader onto the operator table the validator is built with.
-    /// Everything else here is what a host embedding Calcite would already have.
-    /// <see cref="FullTextConnectionTests"/> makes the same claims against a real connection, where none of
-    /// this is written down.
+    /// <see cref="Plan"/> chains the catalog reader after the operator tables, as <c>CalcitePrepareImpl</c>
+    /// does for a connection. <see cref="FullTextConnectionTests"/> covers the same ground through a real
+    /// connection.
     /// </remarks>
     static class FullTextFixture
     {
@@ -64,9 +62,8 @@ namespace Apache.Calcite.FullText.Tests
         /// <param name="chain">Whether to chain <see cref="FullTextOperatorTable"/>, as a host would.</param>
         /// <param name="declare">Whether the schema declares the functions, as a connection needs.</param>
         /// <param name="libraries">
-        /// Whether to chain every <c>SqlLibrary</c> table, which is what a connection setting <c>fun</c>
-        /// does — and which is chained ahead of the catalog reader, so it is where a name Calcite also uses
-        /// would shadow the schema's declaration.
+        /// Whether to chain every <c>SqlLibrary</c> table ahead of the catalog reader, as a connection setting
+        /// <c>fun</c> does.
         /// </param>
         /// <returns>The logical plan.</returns>
         public static RelNode Plan(string sql, bool chain = false, bool declare = true, bool libraries = false)
@@ -111,12 +108,9 @@ namespace Apache.Calcite.FullText.Tests
         /// Flattens everything a failure carries into one string.
         /// </summary>
         /// <remarks>
-        /// <b>The suppressed list is not optional here.</b> <c>EnumerableRelImplementor.implementRoot</c>
-        /// catches any <c>RuntimeException</c> a node's <c>implement</c> throws, builds an
-        /// <c>IllegalStateException("Unable to implement " + plan)</c>, and attaches the original with
-        /// <c>addSuppressed</c> — which <c>Throwable.toString</c> does not print. So a refusal raised while
-        /// generating code is invisible to an assertion on the message, and a test that read only the message
-        /// could not tell our refusal from any other reason a plan failed to implement.
+        /// Includes suppressed exceptions. <c>EnumerableRelImplementor.implementRoot</c> wraps an exception
+        /// thrown during code generation in <c>IllegalStateException("Unable to implement " + plan)</c> and
+        /// attaches the original with <c>addSuppressed</c>, so the refusal's message is found only there.
         /// </remarks>
         /// <param name="e">The failure.</param>
         /// <returns>Every message it carries.</returns>
@@ -168,13 +162,12 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// A table with one column of each kind a store might declare searchable.
+        /// A one-row table with one column of each kind a store might search.
         /// </summary>
         /// <remarks>
-        /// <c>BODY</c> is character, which is what a relational store searches; <c>DOC</c> is <c>ANY</c>,
-        /// which is how a document store types a property whose type the container does not declare; and
-        /// <c>TAGS</c> is an array of strings, which Cosmos and PostgreSQL both allow to be searchable and
-        /// which <c>SqlTypeName.ALL_TYPES</c> does not list.
+        /// <c>BODY</c> is character, as in a relational store; <c>DOC</c> is <c>ANY</c>, as a document store
+        /// types an undeclared property; <c>TAGS</c> is an array of strings, a type
+        /// <c>SqlTypeName.ALL_TYPES</c> does not list.
         /// </remarks>
         public sealed class DocumentTable : AbstractTable, ScannableTable
         {

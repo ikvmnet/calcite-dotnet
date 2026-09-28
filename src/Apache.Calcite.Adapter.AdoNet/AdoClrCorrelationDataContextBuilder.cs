@@ -13,22 +13,16 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Collects the correlation variables needed to construct an <see cref="AdoCorrelationDataContext"/> for a
-    /// correlated sub-query, for a plan of the <c>ClrCursorConvention</c> calling convention.
+    /// The <see cref="IAdoCorrelationDataContextBuilder"/> for a plan in <c>ClrCursorConvention</c>. It builds a
+    /// <c>System.Linq.Expressions</c> expression that constructs an <see cref="AdoCorrelationDataContext"/> when
+    /// the plan runs.
     /// </summary>
     /// <remarks>
-    /// What <see cref="AdoCorrelationDataContextBuilderImpl"/> does for a plan of Calcite's convention. Two
-    /// things differ, and the first is why this exists at all: a correlation variable is registered on the
-    /// implementor that is implementing the plan and is unknown to every other, so the variable has to be
-    /// read from the implementor of the convention the plan is in rather than Calcite's. Handing over the
-    /// wrong one does not fail while planning — it fails looking the variable up.
-    ///
-    /// <para>The second is that nothing here is linq4j. The other builds a linq4j tree and declares its field
-    /// reads into a block; this reads each field as an expression and builds the context directly, so no
-    /// block is needed and nothing is left to translate.</para>
-    ///
-    /// <para>One class serves both of a node's bodies because everything it touches is about a <em>row</em> —
-    /// the getter and the translator — and a row is the same thing whether the plan awaits.</para>
+    /// Correlation variables are registered on the implementor implementing the plan, so the fields are read
+    /// through that implementor's getters; the getters of another implementor do not know the variables. Each
+    /// field read is translated from linq4j where the getter produces it. Indexes start at
+    /// <see cref="AdoCorrelationDataContext.Offset"/>. One instance serves both the synchronous and the awaiting
+    /// body of a node.
     /// </remarks>
     public class AdoClrCorrelationDataContextBuilder : IAdoCorrelationDataContextBuilder
     {
@@ -47,8 +41,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// Initializes a new instance.
         /// </summary>
         /// <param name="implementor">The implementor of the plan the correlation variables are registered on.</param>
-        /// <param name="dataContext">The context the outer query was bound with.</param>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="dataContext">The expression of the context the outer query runs with, which the new context
+        /// wraps.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="implementor"/> or <paramref name="dataContext"/> is
+        /// <see langword="null"/>.</exception>
         public AdoClrCorrelationDataContextBuilder(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRelImplementor implementor, Expression dataContext) :
             this(
                 (implementor ?? throw new ArgumentNullException(nameof(implementor))).GetCorrelVariableGetter,
@@ -61,10 +57,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="correlVariableGetter">Answers the getter a correlation variable was registered with.</param>
-        /// <param name="translator">Turns the getter's linq4j field read into an expression.</param>
-        /// <param name="dataContext">The context the outer query was bound with.</param>
-        /// <exception cref="ArgumentNullException"></exception>
+        /// <param name="correlVariableGetter">Returns the getter a correlation variable was registered with.</param>
+        /// <param name="translator">Translates the getter's linq4j field read into an expression.</param>
+        /// <param name="dataContext">The expression of the context the outer query runs with.</param>
+        /// <exception cref="ArgumentNullException">An argument is <see langword="null"/>.</exception>
         AdoClrCorrelationDataContextBuilder(Func<string, RexToLixTranslator.InputGetter> correlVariableGetter, LixToClrTranslator translator, Expression dataContext)
         {
             _correlVariableGetter = correlVariableGetter ?? throw new ArgumentNullException(nameof(correlVariableGetter));
@@ -77,8 +73,7 @@ namespace Apache.Calcite.Adapter.AdoNet
         {
             ArgumentNullException.ThrowIfNull(id);
 
-            // the getter reads the field as linq4j and declares into the block it was created with, not one
-            // passed to it, so there is nothing for a block of this builder's to receive
+            // this getter declares into the block it was created with and ignores the block argument
             var field = _correlVariableGetter(id.getName()).field(null, ordinal, type);
 
             _parameters.Add(_translator.Translate(field));
@@ -86,9 +81,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Returns the expression constructing the context the sub-query reads its correlated values from.
+        /// Returns the expression that constructs the context from the registered fields.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The expression.</returns>
         public Expression Build()
         {
             return Expression.New(Constructor, _dataContext, Expression.NewArrayInit(typeof(object), _parameters));

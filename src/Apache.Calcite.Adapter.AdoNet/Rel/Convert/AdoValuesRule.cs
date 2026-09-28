@@ -8,17 +8,17 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Planner rule that converts a <see cref="Values"/> expressed in the default calling
-    /// convention to an <see cref="AdoValues"/> in the <see cref="AdoConvention"/>.
+    /// The rule that converts a logical <see cref="Values"/> into an <see cref="AdoValues"/>. Mirrors
+    /// <c>JdbcRules.JdbcValuesRule</c>.
     /// </summary>
     public class AdoValuesRule : AdoConverterRule
     {
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention that this rule targets.</param>
-        /// <returns>A configured <see cref="AdoValuesRule"/> instance.</returns>
+        /// <param name="convention">The convention converted to.</param>
+        /// <returns>The rule.</returns>
         public static AdoValuesRule Create(AdoConvention convention)
         {
             return (AdoValuesRule)Config.INSTANCE
@@ -28,9 +28,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoValuesRule(Config config) :
             base(config)
         {

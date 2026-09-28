@@ -11,19 +11,13 @@ namespace Apache.Calcite.Data.Internal
 {
 
     /// <summary>
-    /// Reads the rows of a plan through the cursor it opened.
+    /// Reads the rows of a plan through the cursor the plan opened.
     /// </summary>
     /// <remarks>
-    /// The cursor is the plan's own: a <see cref="ClrCursor"/> with <see cref="ClrCursor.Read"/> and
-    /// <see cref="ClrCursor.ReadAsync"/> over one position, so <see cref="Read"/> is the one and
-    /// <see cref="ReadAsync"/> the other, with the token that call was given handed to the advance. Nothing
-    /// stands between a row and the reader, and nothing here decides in advance which way the rows will be
-    /// read.
-    ///
-    /// <para>There used to be two of these, one over an <c>IEnumerator</c> and one over an
-    /// <c>IAsyncEnumerator</c>, and a connection-string key to choose between them, because a sequence
-    /// states once whether it will be pulled or awaited. A cursor does not, so there is one result and no
-    /// key.</para>
+    /// The plan's <see cref="IClrCursor"/> has a synchronous and an awaiting advance over one position, so
+    /// <see cref="Read"/> calls the one and <see cref="ReadAsync"/> the other, and a caller may mix them row
+    /// by row. The result owns the statement's data context and cancellation source and disposes them with
+    /// the cursor.
     /// </remarks>
     internal sealed class CalciteCursorResult : CalciteResult
     {
@@ -35,15 +29,14 @@ namespace Apache.Calcite.Data.Internal
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="signature"></param>
+        /// <param name="signature">The prepared statement.</param>
         /// <param name="registry">The mappings the session reads values through.</param>
         /// <param name="cursor">The plan's cursor, or <see langword="null"/> where there is nothing to
-        /// read — a DDL statement has already taken effect, and a DML one reports a count.</param>
-        /// <param name="recordsAffected"></param>
+        /// read: DDL, which has already taken effect, or a statement run for its affected-row count.</param>
+        /// <param name="recordsAffected">The affected-row count to report.</param>
         /// <param name="dataContext">The statement's context, which holds the registration tying its token
-        /// to Calcite's cancel flag.</param>
-        /// <param name="cancellation">The source the plan was opened under, linked to the caller's token.
-        /// This owns and disposes both: they live as long as the rows do.</param>
+        /// to Calcite's cancel flag. Disposed with this result.</param>
+        /// <param name="cancellation">The source the plan was opened under. Disposed with this result.</param>
         public CalciteCursorResult(IClrPrepare.Signature signature, ClrTypeRegistry registry, IClrCursor? cursor, long recordsAffected = -1, IDisposable? dataContext = null, CancellationTokenSource? cancellation = null) :
             base(signature, registry, recordsAffected)
         {
@@ -54,9 +47,8 @@ namespace Apache.Calcite.Data.Internal
 
         /// <inheritdoc />
         /// <remarks>
-        /// The cursor's synchronous advance. It blocks only where the leaf can only be awaited, and the
-        /// cursor does that blocking with the synchronization context suppressed before the call; everywhere
-        /// else nothing waits, because nothing was made asynchronous to begin with.
+        /// Blocks only where a table can only produce rows asynchronously; the cursor suppresses the
+        /// synchronization context before blocking, so a caller holding one does not deadlock.
         /// </remarks>
         public override bool Read()
         {
@@ -70,13 +62,11 @@ namespace Apache.Calcite.Data.Internal
 
         /// <inheritdoc />
         /// <remarks>
-        /// The cursor's awaiting advance, given this call's token: it reaches every operator down to the
-        /// leaf, which is what <c>DbDataReader.ReadAsync(token)</c> means and what a sequence could not
-        /// carry. The token is also registered against the statement's cancellation for the length of the
-        /// call, so that a sub-plan of Calcite's, which polls the cancel flag rather than taking a token,
-        /// stops too. That registration is scoped to the call, as <c>SqlDataReader.ReadAsync</c> scopes
-        /// its own, and it is made before the token is checked, for the reason that reader gives: a token
-        /// already cancelled kills the statement rather than being quietly declined.
+        /// The token is passed down to every operator of the plan. For the length of the call it is also
+        /// registered to cancel the statement's cancellation source, which Calcite's own operators observe
+        /// through the cancel flag rather than a token. As in <c>SqlDataReader.ReadAsync</c>, the registration
+        /// is made before the token is checked, so a token that is already cancelled cancels the statement
+        /// rather than only this call.
         /// </remarks>
         public override async Task<bool> ReadAsync(CancellationToken cancellationToken)
         {

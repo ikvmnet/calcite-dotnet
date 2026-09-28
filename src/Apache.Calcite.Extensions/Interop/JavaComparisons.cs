@@ -4,25 +4,18 @@ namespace Apache.Calcite.Extensions.Interop
 {
 
     /// <summary>
-    /// The comparisons of <c>Utilities</c> that take a <c>java.lang.Comparable</c>, for values that have been
-    /// through IKVM.
+    /// The <c>Utilities</c> comparisons that take a <c>java.lang.Comparable</c>, taking <see cref="object"/>
+    /// and comparing through <see cref="IComparable"/>.
     /// </summary>
     /// <remarks>
-    /// <c>PhysTypeImpl.generateComparator</c> casts a field to <c>Comparable</c> before comparing it, and the
-    /// cast is not a conversion: it is there so javac picks the <c>(Comparable, Comparable)</c> overload out of
-    /// the source Janino writes, rather than one of the eight primitive ones. Calcite never checks anything by
-    /// it, because in Java every value it reaches already is a <c>Comparable</c>.
+    /// <c>PhysTypeImpl.generateComparator</c> casts each field to <c>Comparable</c> only so that the Java
+    /// compiler picks the <c>(Comparable, Comparable)</c> overload. <c>java.lang.Comparable</c> is an IKVM
+    /// ghost interface: a <see cref="string"/> satisfies it in Java but not in the CLR type system, so a CLR
+    /// cast to it throws, in an expression tree and in C# alike. IKVM maps it onto <see cref="IComparable"/>,
+    /// which every Java-comparable value implements, so these methods compare through that instead.
     ///
-    /// <para>Here the cast would run, and <c>java.lang.Comparable</c> is one of the interfaces IKVM implements
-    /// as a <em>ghost</em>: a <see cref="string"/> satisfies it without the CLR type system saying so, and a
-    /// <c>castclass</c> to it throws. That holds for C# we write as much as for a tree we build — the ghost
-    /// conversion is emitted by IKVM's own compiler for the Java it compiles, and nowhere else.</para>
-    ///
-    /// <para>So the comparison is the value's own, reached the way the CLR states it. IKVM maps
-    /// <c>java.lang.Comparable</c> onto <see cref="IComparable"/>, so a value that is comparable in Java is
-    /// comparable here, by an interface the type system does see. The null ordering is Calcite's, copied:
-    /// nulls first sorts them below, nulls last above, and a merge join refuses two of them outright, because
-    /// treating them as equal would join a null to a null.</para>
+    /// <para>The null handling is Calcite's: nulls-first orders a null below any value, nulls-last above,
+    /// and the merge-join comparison throws when both values are null.</para>
     /// </remarks>
     static class JavaComparisons
     {
@@ -90,9 +83,9 @@ namespace Apache.Calcite.Extensions.Interop
         /// <c>Utilities.compareNullsLastForMergeJoin(Comparable, Comparable, Comparator)</c>.
         /// </summary>
         /// <remarks>
-        /// <c>EnumerableDefaults.compareNullsLastForMergeJoin</c>, which is what <c>Utilities</c> forwards to.
-        /// Two nulls are not equal here, and saying so is the exception the algorithm reads: a merge join that
-        /// called them equal would join every null of one input to every null of the other.
+        /// Mirrors <c>EnumerableDefaults.compareNullsLastForMergeJoin</c>, to which <c>Utilities</c> forwards.
+        /// Two nulls throw linq4j's <c>BothValuesAreNullException</c>, which the merge join catches; treating
+        /// them as equal would join nulls to nulls.
         /// </remarks>
         public static int CompareNullsLastForMergeJoin(object? v0, object? v1, java.util.Comparator? comparator)
         {
@@ -106,14 +99,12 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Returns the exception a merge join reads as "these two keys are both null".
+        /// Creates linq4j's <c>EnumerableDefaults.BothValuesAreNullException</c>.
         /// </summary>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>EnumerableDefaults.BothValuesAreNullException</c>, which linq4j declares package private, so it
-        /// can be neither named nor constructed from here. <c>ClrCursorDefaults.MergeJoin</c> catches it by
-        /// the name on the type for the same reason; this is the other half of that.
+        /// The type is package private, so it is created by reflection.
         /// </remarks>
+        /// <returns>A new instance of the exception, for the caller to throw.</returns>
         static java.lang.RuntimeException BothValuesAreNull()
         {
             return (java.lang.RuntimeException)Activator.CreateInstance(BothValuesAreNullType, nonPublic: true)!;

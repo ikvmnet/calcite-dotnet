@@ -15,21 +15,16 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// The editing functions and the constructors that build a geography out of parts, against the
-    /// <c>ST_*</c> each one mirrors.
+    /// Compares the editing functions and the constructors with the Calcite <c>ST_*</c> function each one
+    /// delegates to.
     /// </summary>
     /// <remarks>
-    /// The same kind of surface as the accessors and held the same way: these rearrange coordinates without
-    /// interpreting the space between them, so each is a delegation and the risk is the wiring rather than
-    /// the arithmetic.
+    /// Like the accessors, these rearrange coordinates without geodesy, so the tests check that each name is
+    /// wired to the right body.
     ///
-    /// <para>One divergence, and it is deliberate. Every one of these hands back a geography built from a
-    /// geography, and it is stamped WGS84 on the way out — <c>CLR_ST_GEOG_FORCE2D</c> answers something with an
-    /// SRID of 4326 where <c>ST_FORCE2D</c> answers something with an SRID of zero, because the transformers
-    /// underneath build through a geometry factory that does not carry one across. Calcite has nothing to
-    /// keep there and this package does: every geography it produces says what it is. The comparison below
-    /// is on the coordinates rather than the stamp, and
-    /// <see cref="ShouldStampEveryEditedGeographyWithWgs84"/> holds the stamp.</para>
+    /// <para>The results differ from Calcite's in one respect: this package stamps them with SRID 4326, where
+    /// Calcite's come back with SRID 0. The comparisons use WKT, which carries no SRID, and
+    /// <see cref="ShouldStampEveryEditedGeographyWithWgs84"/> checks the stamp.</para>
     /// </remarks>
     public class GeographyEditingTests
     {
@@ -163,8 +158,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A typed reader answers a shape of its own kind and null for anything else, which is Calcite's rule
-        /// and the whole of what makes the nine of them worth having.
+        /// Each typed reader returns a shape of its own kind and null for any other kind, as Calcite's do.
         /// </summary>
         [Fact]
         public void ShouldAgreeWithCalciteOnTheTypedReaders()
@@ -208,16 +202,13 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every editing operator run as SQL, and answered the same as the body behind it.
+        /// Runs every editing operator and constructor as SQL and requires the same answer as calling its
+        /// method.
         /// </summary>
         /// <remarks>
-        /// The comparisons above are between two C# methods and cannot see which of them a name is wired to.
-        /// The binding is by signature, so a declaration naming a method that does not exist with those
-        /// parameters fails when the table is built rather than when a query reaches it — but ten of these
-        /// take one geography and answer one geography, and nothing but running them tells
-        /// <c>CLR_ST_GEOG_FORCE2D</c> wired to <c>Force3D</c> from <c>CLR_ST_GEOG_FORCE2D</c> wired to
-        /// <c>Force2D</c>. Every result is wrapped in <c>CLR_ST_GEOG_ASTEXT</c>, since a geography is not
-        /// something a result set carries.
+        /// Many of these operators share a signature, so only running them shows that, for example,
+        /// <c>CLR_ST_GEOG_FORCE2D</c> is bound to <c>Force2D</c> and not <c>Force3D</c>. Every result is
+        /// wrapped in <c>CLR_ST_GEOG_ASTEXT</c> so that the column is a string.
         /// </remarks>
         [Fact]
         public void ShouldRunEveryEditingOperatorAsAnOperator()
@@ -232,9 +223,8 @@ namespace Apache.Calcite.Geography.Tests
 
             foreach (var (name, ours, _) in unary)
             {
-                // through CLR_ST_GEOG_ASTEXT on both sides, because that is what the statement asks for and it is
-                // not the same rendering as Geometry.toText: the writer ST_ASTEXT builds is told how many
-                // ordinates the shape has, and the default one always writes two
+                // AsText rather than Geometry.toText, because the statement asks for AsText and the two differ:
+                // ST_ASTEXT's writer is given the shape's number of ordinates, and toText always writes two.
                 var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours(geography) as Geometry));
                 if (answer.EndsWith("Exception"))
                     continue;
@@ -246,13 +236,12 @@ namespace Apache.Calcite.Geography.Tests
 
             var extra = new (string Sql, Func<object?> Ours)[]
             {
-                // ST_AddPoint takes a line and throws over anything else, so this one gets a line
+                // ST_AddPoint throws over anything but a line
                 ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_ADDPOINT(CLR_ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 1 1, 2 0)'), CLR_ST_GEOG_POINT(9, 9)))",
                     () => GeographyFunctions.AddPoint(Wkt("LINESTRING(0 0, 1 1, 2 0)"), Wkt("POINT(9 9)"))),
                 ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_REMOVEPOINT(CLR_ST_GEOG_LINEFROMTEXT('LINESTRING(0 0, 1 1, 2 0)'), 1))",
                     () => GeographyFunctions.RemovePoint(Wkt("LINESTRING(0 0, 1 1, 2 0)"), java.lang.Integer.valueOf(1))),
-                // over a point, because ST_AddZ throws over a polygon; see
-                // ShouldInheritTheDefectInAddZOverAPolygon
+                // a point, because ST_AddZ throws over a polygon (see ShouldInheritTheDefectInAddZOverAPolygon)
                 ("CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_ADDZ(CLR_ST_GEOG_POINT(1, 2), 5))",
                     () => GeographyFunctions.AddZ(Wkt("POINT(1 2)"), java.lang.Double.valueOf(5))),
                 ($"CLR_ST_GEOG_ASTEXT(CLR_ST_GEOG_REMOVEREPEATEDPOINTS({subject}, 0.5))",
@@ -277,8 +266,7 @@ namespace Apache.Calcite.Geography.Tests
             {
                 var answer = GeographyAccessorTests.Answer(() => GeographyFunctions.AsText(ours() as Geometry));
 
-                // an expression that throws would end the whole statement rather than answer a column, and
-                // what it would prove is already proven by the comparisons above
+                // An expression that throws would fail the whole statement; the comparisons above cover it.
                 if (answer.EndsWith("Exception"))
                     continue;
 
@@ -308,14 +296,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geography that came out of one of these says it is WGS84, whatever Calcite's own would have
-        /// said.
+        /// Every edited or constructed geometry has SRID 4326.
         /// </summary>
         /// <remarks>
-        /// The transformers underneath build through a geometry factory that does not carry an SRID across,
-        /// so Calcite's answer is stamped zero. That is nothing to Calcite, which has no reference system to
-        /// keep, and it is a small lie here: a geography is WGS84 and every one this package hands out says
-        /// so.
+        /// The JTS transformers Calcite uses build through a geometry factory with no SRID, so Calcite's own
+        /// results have SRID 0.
         /// </remarks>
         [Fact]
         public void ShouldStampEveryEditedGeographyWithWgs84()
@@ -342,12 +327,9 @@ namespace Apache.Calcite.Geography.Tests
         /// <c>ST_ADDZ</c> throws over a polygon, and so does <c>CLR_ST_GEOG_ADDZ</c>.
         /// </summary>
         /// <remarks>
-        /// A defect of Calcite's rather than one introduced here: the transformer it builds through hands a
-        /// <c>LinearRing</c> a coordinate sequence it then cannot read, and the null reference comes out of
-        /// JTS. It is inherited because the delegation is the whole of the implementation, and it is recorded
-        /// rather than worked around — a geography that behaves differently from the geometry it mirrors, in
-        /// a way that has nothing to do with geodesy, would be a divergence this package has no business
-        /// introducing.
+        /// This is a Calcite defect: the transformer <c>ST_ADDZ</c> builds through gives a <c>LinearRing</c> a
+        /// coordinate sequence it cannot read, and JTS throws a null reference. <c>CLR_ST_GEOG_ADDZ</c>
+        /// delegates to <c>ST_ADDZ</c> and reproduces it rather than diverge for a reason unrelated to geodesy.
         /// </remarks>
         [Fact]
         public void ShouldInheritTheDefectInAddZOverAPolygon()
@@ -358,7 +340,7 @@ namespace Apache.Calcite.Geography.Tests
             ((Action)(() => SpatialTypeFunctions.ST_AddZ(polygon, Dec(5)))).Should().Throw<NullReferenceException>();
             ((Action)(() => GeographyFunctions.AddZ(polygon, five))).Should().Throw<NullReferenceException>();
 
-            // over a point it is well behaved, which is what the operator is exercised with
+            // Over a point it works, which is what the operator test uses.
             GeographyFunctions.AddZ(Wkt("POINT(1 2)"), five).Should().NotBeNull();
         }
 

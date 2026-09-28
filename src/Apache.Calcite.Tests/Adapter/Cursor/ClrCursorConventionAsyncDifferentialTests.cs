@@ -20,28 +20,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs the same query with its plan implemented asynchronously and synchronously, and requires the same
-    /// rows.
+    /// Runs each query over tables that produce rows only asynchronously, opened and read with await, and over
+    /// synchronous tables holding the same rows, opened and read synchronously, and requires the same rows.
     /// </summary>
     /// <remarks>
-    /// The comparison is against the same plan read synchronously rather than against Calcite, and that is
-    /// not a weaker oracle: a plan of this convention is checked against Calcite query by query in
-    /// <see cref="ClrCursorConventionDifferentialTests"/>, so agreeing with it is agreeing with Calcite. It is also
-    /// the only comparison available — the asynchronous side reads a table Calcite has no SPI for, so its
-    /// schema is its own and a three-way comparison would be comparing two different sets of rows.
-    ///
-    /// <para>Both sides read <see cref="AsyncTestRows"/>, one copy, for exactly that reason.</para>
-    ///
-    /// <para><b>What this suite compares changed with the conventions.</b> It used to run two plans, one per
-    /// convention, over two schemas. It now runs one plan per schema and implements it twice, so a
-    /// disagreement is a disagreement between the two operator sets rather than between two node
-    /// hierarchies — which is what is left to get wrong.</para>
+    /// The expected answer is this convention's synchronous reading rather than Calcite's, because Calcite
+    /// cannot read the asynchronous tables. The synchronous reading is checked against Calcite in
+    /// <see cref="ClrCursorConventionDifferentialTests"/>. Both schemas hold the rows of
+    /// <see cref="AsyncTestRows"/>, so a difference comes from the awaiting operators rather than from the data.
     /// </remarks>
     public class ClrCursorConventionAsyncDifferentialTests
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts Calcite's test and JDBC assemblies on the boot class path.
         /// </summary>
         static ClrCursorConventionAsyncDifferentialTests()
         {
@@ -74,16 +66,29 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 rootSchema.add("DOCS", new SyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
 
-            // a table function the schema defines, whose call yields the sequence: ClrCursorTableFunctionScan
-            // takes it, and there is no input for either body to read
+            // a table function whose call yields the rows: ClrCursorTableFunctionScan implements it, with no
+            // input for either body to read
             rootSchema.add("NUMBERS", org.apache.calcite.schema.impl.TableFunctionImpl.create((java.lang.Class)typeof(NumbersTableFunction), "eval"));
 
             return rootSchema;
         }
 
         /// <summary>
-        /// Plans a statement in one convention and returns its rows, rendered.
+        /// Plans a statement over the asynchronous or the synchronous schema and returns its rows, rendered.
         /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <param name="async">Whether to plan over the asynchronous tables and read with await, rather than over the
+        /// synchronous tables and read synchronously.</param>
+        /// <param name="planOnly">Whether to return the plan's text instead of its rows.</param>
+        /// <param name="sortedAggregate">Whether to add the convention's sorted aggregate rule.</param>
+        /// <param name="batchNestedLoopJoin">Whether to add the convention's batch nested loop join rule.</param>
+        /// <param name="limitSort">Whether to add the convention's limit sort rule.</param>
+        /// <param name="excludeHashJoin">Whether to remove both conventions' hash join rules.</param>
+        /// <param name="excludeMergeJoin">Whether to remove both conventions' merge join rules.</param>
+        /// <param name="markJoin">Whether to rewrite sub-queries into mark correlates with <see cref="MarkJoinSubQueryProgram"/>.</param>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The rows rendered as text, or a single element holding the plan's text when
+        /// <paramref name="planOnly"/> is set.</returns>
         static async Task<List<string>> Run(string sql, bool async, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false, RelOptRule[]? remove = null)
         {
             var rootSchema = Schema(async);
@@ -93,19 +98,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             foreach (var rule in ClrCursorRules.Rules())
             {
-                // dropped on both sides together, or the comparison is between two different plans
+                // removed for both sides alike, so that both plan the same shape
                 if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                     continue;
 
-                // and the same for the hash join, which DefaultRulesProgram takes out of Calcite's rules only
+                // likewise the hash join; DefaultRulesProgram removes only Calcite's
                 if (excludeHashJoin && rule == ClrCursorRules.ClrCursorJoinRule)
                     continue;
 
                 rules.add(rule);
             }
 
-            // the three rules the convention declares as fields and leaves out of its default list; a caller
-            // turns one on
+            // three rules the convention declares but leaves out of Rules(); a caller adds them explicitly
             if (sortedAggregate)
                 rules.add(ClrCursorRules.ClrCursorSortedAggregateRule);
             if (batchNestedLoopJoin)
@@ -144,8 +148,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var rows = new List<string>();
 
-            // one factory, opened the way the side asks: with await over the asynchronous tables and read
-            // with the awaiting advance, synchronously over the synchronous ones and read with the other
+            // over the asynchronous tables the plan is opened and read with await; over the synchronous ones,
+            // opened and read synchronously
             var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters)
                 .ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
@@ -166,28 +170,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a hand-built rel in one convention and returns its rows, rendered.
+        /// Plans a rel built by <paramref name="build"/> over the asynchronous or the synchronous schema and
+        /// returns its rows, rendered.
         /// </summary>
-        /// <param name="build"></param>
-        /// <param name="async"></param>
-        /// <param name="planOnly"></param>
-        /// <param name="add"></param>
-        /// <param name="remove"></param>
-        /// <returns></returns>
+        /// <param name="build">Builds the logical plan against a builder over the chosen schema.</param>
+        /// <param name="async">Whether to plan over the asynchronous tables and read with await, rather than over the
+        /// synchronous tables and read synchronously.</param>
+        /// <param name="planOnly">Whether to return the plan's text instead of its rows.</param>
+        /// <param name="add">Rules to register alongside this convention's.</param>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The rows rendered as text, or a single element holding the plan's text when
+        /// <paramref name="planOnly"/> is set.</returns>
         /// <remarks>
-        /// <c>ClrCursorConventionDifferentialTests.RunRel</c> for this convention: the same planning, and the rule
-        /// registration of <see cref="Run"/> next door. It exists because SQL cannot reach every shape. The
-        /// one that forced it is a recursive query whose step aggregates the working table — standard SQL
-        /// will not put an aggregate in a recursive term, and that shape is the only thing that tells
-        /// <c>repeatUnion</c>'s termination test apart from "stop after an empty round".
+        /// The counterpart of <c>ClrCursorConventionDifferentialTests.RunRel</c>, for shapes SQL cannot reach,
+        /// such as a recursive query whose step aggregates the working table: standard SQL does not allow an
+        /// aggregate in a recursive term.
         ///
-        /// <para>Each side builds against its own schema, as <see cref="Run"/> does, so the asynchronous side
-        /// reads asynchronous tables and the synchronous side reads synchronous ones. The rel is therefore
-        /// built twice rather than shared, which is also what makes the builder's own state safe.</para>
-        ///
-        /// <para>No parser, so no validator and no sub-query program: a rel built here is already the shape
-        /// the planner is given. That is the point of the route and also its limit — nothing here exercises
-        /// how SQL becomes a rel.</para>
+        /// <para>Each side builds the rel against its own schema, so it is built twice rather than shared.
+        /// There is no parser, validator or sub-query program: the built rel is what the planner receives.</para>
         /// </remarks>
         static async Task<List<string>> RunRel(Func<RelBuilder, RelNode> build, bool async, bool planOnly = false, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
@@ -227,8 +227,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             var rows = new List<string>();
 
-            // one factory, opened the way the side asks: with await over the asynchronous tables and read
-            // with the awaiting advance, synchronously over the synchronous ones and read with the other
+            // over the asynchronous tables the plan is opened and read with await; over the synchronous ones,
+            // opened and read synchronously
             var factory = new ClrCursorRelImplementor(physical.getCluster().getRexBuilder(), parameters)
                 .ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
 
@@ -251,6 +251,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Requires that a hand-built rel gives the same rows opened with await as opened synchronously.
         /// </summary>
+        /// <param name="build">Builds the logical plan; it is called once for each schema.</param>
+        /// <param name="add">Rules to register alongside this convention's, on both sides.</param>
+        /// <param name="remove">Rules to remove once everything is registered, on both sides.</param>
+        /// <returns>A task that completes when both readings have been compared.</returns>
         static async Task SameRel(Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
             var async = await RunRel(build, true, add: add, remove: remove);
@@ -260,12 +264,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires the same rows, and that the cursor convention really planned the node aimed at.
+        /// Requires the same rows, and that the plan contains the node named by <paramref name="node"/>.
         /// </summary>
+        /// <param name="node">The node the asynchronous side's plan must contain.</param>
+        /// <param name="build">Builds the logical plan; it is called once for each schema and once more for the plan text.</param>
+        /// <param name="add">Rules to register alongside this convention's, on both sides.</param>
+        /// <param name="remove">Rules to remove once everything is registered, on both sides.</param>
+        /// <returns>A task that completes when the plan has been checked and both readings compared.</returns>
         /// <remarks>
-        /// The reason <see cref="SameThrough"/> gives, and it applies here with more force: a rel built by
-        /// hand does not have a parser's opinion about which node it wants, so a rule that fires on some
-        /// other shape than the one intended still produces rows that agree.
+        /// As for <see cref="SameThrough"/>: rows that agree do not show that the intended node was planned.
         /// </remarks>
         static async Task SameRelThrough(string node, Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
@@ -276,18 +283,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A boxed integer, which is what a literal of a hand-built rel takes.
+        /// Boxes an integer as a <c>java.lang.Integer</c>, as a literal of a hand-built rel requires.
         /// </summary>
+        /// <param name="value">The value to box.</param>
+        /// <returns>The value as a Java <c>Integer</c>, which <c>RelBuilder.literal</c> reads as an INTEGER literal.</returns>
         static java.lang.Integer I(int value) => java.lang.Integer.valueOf(value);
 
         /// <summary>
-        /// The context a plan of either convention is bound with.
+        /// The context a plan is bound with.
         /// </summary>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map the implementor stashed values into, which <c>get</c> answers from.</param>
         /// <remarks>
-        /// Its own rather than the synchronous harness's, which is nested and private there. It answers
-        /// <c>get</c> from the map the plan stashed into, because a plan reads its compile-time values back
-        /// through the context and answering null to one is how a query fails in a way no assertion here
-        /// would explain.
+        /// <c>get</c> answers from the map the implementor stashed values into, because a plan reads those
+        /// values back through the context at run time.
         /// </remarks>
         sealed class TestDataContext(org.apache.calcite.schema.SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
@@ -309,10 +318,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The sub-query pass that rewrites an EXISTS or an IN into a mark correlate rather than a join.
         /// </summary>
+        /// <returns>A hep program applying Calcite's mark-correlate sub-query rules, costed with this convention's
+        /// metadata provider.</returns>
         /// <remarks>
-        /// The same program the synchronous harness uses. Without it the mark join paths are unreachable
-        /// from SQL: the ordinary pass turns an EXISTS into a semi join and the marked variants never
-        /// appear.
+        /// The same program the synchronous harness uses. Without it the mark join paths are unreachable from
+        /// SQL: the ordinary pass turns an EXISTS into a semi join.
         /// </remarks>
         static Program MarkJoinSubQueryProgram()
         {
@@ -339,6 +349,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Requires that a query gives the same rows opened with await as opened synchronously.
         /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <param name="sortedAggregate">Whether to add the convention's sorted aggregate rule.</param>
+        /// <param name="batchNestedLoopJoin">Whether to add the convention's batch nested loop join rule.</param>
+        /// <param name="limitSort">Whether to add the convention's limit sort rule.</param>
+        /// <param name="excludeHashJoin">Whether to remove both conventions' hash join rules.</param>
+        /// <param name="excludeMergeJoin">Whether to remove both conventions' merge join rules.</param>
+        /// <param name="markJoin">Whether to rewrite sub-queries into mark correlates.</param>
+        /// <param name="remove">Rules to remove once everything is registered, on both sides.</param>
+        /// <returns>A task that completes when both readings have been compared.</returns>
         static async Task Same(string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool markJoin = false, RelOptRule[]? remove = null)
         {
             var async = await Run(sql, true, sortedAggregate: sortedAggregate, batchNestedLoopJoin: batchNestedLoopJoin, limitSort: limitSort, excludeHashJoin: excludeHashJoin, excludeMergeJoin: excludeMergeJoin, markJoin: markJoin, remove: remove);
@@ -348,15 +367,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a statement fails the same way whichever half of the convention reads it.
+        /// Requires that a statement fails with the same innermost exception whether it is read with await or
+        /// synchronously.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="message">Part of the message the pulled half fails with.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="message">Part of the message the synchronous reading must fail with.</param>
+        /// <returns>A task that completes when both failures have been compared.</returns>
         /// <remarks>
-        /// <see cref="Same"/> for a statement that throws. The awaiting half has to fail where the pulled
-        /// half fails and for the same reason — a refusal is an answer, and the two bodies of a node are
-        /// required to agree on it as much as on rows. Whether that refusal is Calcite's is the sync
-        /// suite's question, which compares against <c>EnumerableConvention</c>.
+        /// <see cref="Same"/> for a statement that throws. Whether the failure matches Calcite's is checked in
+        /// <see cref="ClrCursorConventionDifferentialTests"/>, which compares against <c>EnumerableConvention</c>.
         /// </remarks>
         static async Task SameFailure(string sql, string message)
         {
@@ -384,14 +403,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires the same rows, and that the cursor convention really planned the node aimed at.
+        /// Requires the same rows, and that the plan contains the node named by <paramref name="node"/>.
         /// </summary>
+        /// <param name="node">The node the asynchronous side's plan must contain.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="sortedAggregate">Whether to add the convention's sorted aggregate rule.</param>
+        /// <param name="batchNestedLoopJoin">Whether to add the convention's batch nested loop join rule.</param>
+        /// <param name="limitSort">Whether to add the convention's limit sort rule.</param>
+        /// <param name="excludeHashJoin">Whether to remove both conventions' hash join rules.</param>
+        /// <param name="excludeMergeJoin">Whether to remove both conventions' merge join rules.</param>
+        /// <param name="remove">Rules to remove once everything is registered, on both sides.</param>
+        /// <returns>A task that completes when the plan has been checked and both readings compared.</returns>
         /// <remarks>
-        /// The plan assertion is what stops a test from comparing something against itself. It matters more
-        /// here than in the synchronous harness, not less: this harness registers one convention's rules
-        /// only, so there is nothing for a converter to carry and a rule that fails to fire does not quietly
-        /// produce a plan of the other convention — it produces no plan at all — but a node reached by a
-        /// route nobody intended still looks like a pass.
+        /// Rows that agree do not show which node produced them; a query planned through some other node than
+        /// the one intended would pass <see cref="Same"/> without testing it.
         /// </remarks>
         static async Task SameThrough(string node, string sql, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, RelOptRule[]? remove = null)
         {
@@ -437,11 +462,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public Task ShouldAgreeOnAGrandTotal() => Same("SELECT SUM(AMOUNT), MIN(ID), MAX(ID) FROM SALES");
 
-        // MIN, MAX, SUM and AVG over a column of type ANY, whose Java class is Object. Neither convention
-        // gets these from Calcite — ClrAnyAggImplementors says why and ClrCursorConventionDifferentialTests asserts
-        // the answers — so what is checked here is the thing this harness is for: that the asynchronous
-        // convention gives what the synchronous one gives, mixed numeric types, strings and an empty group
-        // included.
+        // MIN, MAX, SUM and AVG over a column of type ANY, whose Java class is Object. These are implemented
+        // by ClrAnyAggImplementors rather than Calcite, and ClrCursorConventionDifferentialTests asserts their
+        // answers; here the awaiting reading must match the synchronous one, including mixed numeric types,
+        // strings and an empty group.
 
         [Fact]
         public Task ShouldAgreeOnAggregatingAnAnyColumn() => SameThrough("ClrCursorAggregate", "SELECT MIN(V), MAX(V), SUM(V), AVG(V) FROM ANYS");
@@ -470,7 +494,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public Task ShouldAgreeOnFilteringAnAggregateOverAnAnyColumn() => Same("SELECT MIN(V) FILTER (WHERE ID > 1), SUM(V) FILTER (WHERE K = 'EAST') FROM ANYS");
 
-        // and the same column read every way that already worked
+        // the same column read without an ANY aggregate implementor: scanned, counted and cast
 
         [Fact]
         public Task ShouldAgreeOnScanningAnAnyColumn() => Same("SELECT K, V, S FROM ANYS");
@@ -527,10 +551,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public Task ShouldAgreeOnANestedLoopJoin() => Same("SELECT s.ID, t.V FROM SALES s JOIN SORTED t ON s.ID > t.K");
 
-        // A right and a full join over twelve build-side keys with no ORDER BY. The rows that matched nothing
-        // come out at the end, and twelve is the one size at which the collection they are walked from
-        // decides their order: the lookup is a table of 16 and the HashSet copied from its key set is a table
-        // of 32.
+        // A right and a full join over twelve build-side keys with no ORDER BY. The unmatched rows come last,
+        // and at twelve keys their order depends on which collection they are read from: the lookup has 16
+        // buckets and a HashSet copied from its key set has 32.
 
         [Fact]
         public Task ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
@@ -553,10 +576,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnACorrelatedSubQuery() =>
             Same("SELECT ID, (SELECT COUNT(*) FROM SORTED t WHERE t.K = s.ID) FROM SALES s");
 
+        /// <summary>
+        /// A merge join over two sorted inputs gives the same rows read either way.
+        /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// A merge join is only ever chosen over a hash join where both inputs carry a collation, and only
-        /// where the hash join is not available to be cheaper — VolcanoCost compares the row count and
-        /// nothing else, so the planner keeps whichever it saw first.
+        /// The hash join rule is removed, because otherwise the planner may keep the hash join: a merge join
+        /// needs both inputs sorted, and <c>VolcanoCost</c> compares row counts only, so of two equal plans the
+        /// planner keeps the one it registered first.
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnAMergeJoin() =>
@@ -594,8 +621,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnACube() =>
             Same("SELECT REGION, LABEL, COUNT(*) FROM SALES GROUP BY CUBE(REGION, LABEL) ORDER BY 1, 2");
 
-        // Eight key fields, which is the arity that builds the key through FlatLists.copyOf over an array of
-        // Comparable. See ClrCursorConventionDifferentialTests.ShouldAgreeOnARollupOverEveryColumn.
+        // Enough key fields that the key is built through FlatLists.copyOf over an array of Comparable. See
+        // ClrCursorConventionDifferentialTests.ShouldAgreeOnARollupOverEveryColumn.
 
         [Fact]
         public Task ShouldAgreeOnARollupOverEveryColumn() =>
@@ -618,11 +645,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
 
         // UNNEST over a column of type ANY, whose element type is not known until a row is read. Calcite
-        // cannot answer this — ClrCursorUncollect says why and ClrCursorConventionDifferentialTests asserts
-        // the answers by hand — so what is checked here is that the awaiting open gives what the synchronous
-        // one gives, through this convention's node. The plan is a correlate over the uncollect, because
-        // decorrelation cannot take an UNNEST of a correlation variable apart. Calcite's uncollect rule is
-        // taken away, because the planner otherwise keeps Calcite's node, which fails at implement over ANY.
+        // cannot run this (ClrCursorUncollect explains why) and ClrCursorConventionDifferentialTests asserts
+        // the answers by hand; here the awaiting reading must match the synchronous one through this
+        // convention's node. The plan is a correlate over the uncollect, because decorrelation cannot remove
+        // an UNNEST of a correlation variable. Calcite's uncollect rule is removed, because otherwise the
+        // planner may keep Calcite's node, which fails to implement over ANY.
 
         static readonly RelOptRule[] TheirUncollect = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
 
@@ -675,8 +702,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Same("SELECT a.ID FROM SALES a JOIN SALES b ON a.ID = b.ID + 1000");
 
 
-        // ASOF join. Its rule is in both conventions' default lists, so nothing has to be turned on; what it
-        // needs is a match condition and a key, and SALES has both.
+        // ASOF join. Its rule is in both conventions' default rules, so none needs adding.
 
         [Fact]
         public Task ShouldAgreeOnAnAsofJoin() =>
@@ -690,9 +716,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnAnAsofJoinLookingForward() =>
             Same("SELECT a.ID, b.ID FROM SALES a ASOF JOIN SALES b MATCH_CONDITION b.ID > a.ID ON a.REGION = b.REGION ORDER BY a.ID");
 
+        /// <summary>
+        /// An ASOF join with no ORDER BY gives the same rows in the same order read either way.
+        /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The order an ASOF join produces is the order of the map it indexes its left input by, so a query
-        /// without an ORDER BY compares that order too.
+        /// An ASOF join emits rows in the order of the map it indexes its left input by, so with no ORDER BY
+        /// this compares that order too.
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnAnAsofJoinsOwnOrder() =>
@@ -702,7 +732,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnALeftAsofJoinWithANullKey() =>
             Same("SELECT a.ID, b.ID FROM SALES a LEFT ASOF JOIN SALES b MATCH_CONDITION b.ID <= a.ID ON a.AMOUNT = b.AMOUNT ORDER BY a.ID");
 
-        // the mark join paths, which the ordinary sub-query pass never reaches.
+        // the mark join paths, which only MarkJoinSubQueryProgram reaches
 
         [Fact]
         public Task ShouldAgreeOnAMarkedExists() =>
@@ -716,8 +746,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnAMarkedCorrelatedExists() =>
             Same("SELECT ID FROM SALES S1 WHERE EXISTS (SELECT 1 FROM SALES S2 WHERE S2.REGION = S1.REGION AND S2.ID > 3) ORDER BY ID", markJoin: true);
 
-        // A join of two cross-input inequalities. Calcite's rule is taken away, because registerDefaultRules
-        // registers it and the planner keeps whichever equal-cost node it saw first.
+        // A join on two cross-input inequalities. Calcite's IE join rule is removed, because registerDefaultRules
+        // registers it and the planner keeps whichever equal-cost node it registered first.
 
         static readonly RelOptRule[] TheirIeJoin = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_IE_JOIN_RULE];
 
@@ -726,9 +756,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT ORDER BY 1, 2", remove: TheirIeJoin);
 
         /// <summary>
-        /// The order of an IE join's rows is the order of its two sorts, and both inputs are drained before
-        /// either sort runs, at the open whichever way it is opened.
+        /// With no ORDER BY, the IE join's own row order agrees; that order comes from its two sorts, which run
+        /// at the open after both inputs are drained, whichever open is used.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public Task ShouldAgreeOnAnIeJoinsOwnOrder() =>
             SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT", remove: TheirIeJoin);
@@ -737,12 +768,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnAnIeJoinWithAResidualInequality() =>
             SameThrough("ClrCursorIEJoin", "SELECT a.ID, b.ID FROM SALES a JOIN SALES b ON a.ID < b.ID AND a.AMOUNT > b.AMOUNT AND a.LABEL < b.LABEL ORDER BY 1, 2", remove: TheirIeJoin);
 
-        // A recursive query: the repeat union and the table spool are this convention's own, and only the
-        // transient scan is Calcite's, under the converter in, because no scan of this convention reads a
-        // transient table (CALCITE-3673) and this harness does not add the interpreter rule. The
-        // iterative part is opened afresh each round, inside whichever advance started the round, so this
-        // is the query that exercises both openers of a deferred input. SameThrough is what says the node
-        // is ours; without it these would pass on a plan carried wholly by Calcite too.
+        // A recursive query: the repeat union and the table spool are this convention's, and only the
+        // transient scan is Calcite's, under a converter, because this convention's scan does not read a
+        // transient table and this harness does not add the interpreter rule. The iterative part is opened
+        // afresh each round inside whichever advance started the round, so both openers of a deferred input
+        // are exercised. SameThrough checks that the nodes are this convention's.
 
         [Fact]
         public Task ShouldAgreeOnARecursiveQuery() =>
@@ -760,16 +790,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A recursive query whose step aggregates the working table rather than reading it row by row.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The shape this harness was built for, and the only one that tells <c>repeatUnion</c>'s termination
-        /// test apart from "stop after a round that produced nothing": the sentinel is never restored across
-        /// the seed/iteration boundary, so a seed that emitted a row leaves the first empty round
-        /// non-terminating. An aggregate step makes the extra round visible, because <c>COUNT(*)</c> yields a
-        /// row over no rows; a step that reads the table row by row cannot see it.
+        /// <c>repeatUnion</c> does not restore its sentinel between the seed and the first round, so after a
+        /// seed that emitted a row the first empty round does not stop the sequence. An aggregate step makes
+        /// the extra round visible, because <c>COUNT(*)</c> yields a row over no rows; a step that reads the
+        /// table row by row cannot show it.
         ///
-        /// <para>UNION rather than UNION ALL, and that is what makes it terminate — the spool is cleared by
-        /// the round that wrote nothing, so the step oscillates, and deduplication is what ends it. Under
-        /// UNION ALL this runs forever in every convention including Calcite's.</para>
+        /// <para>The query must be a UNION rather than a UNION ALL to terminate: the spool is cleared by a round
+        /// that wrote nothing, so the step oscillates, and deduplication ends it. Under UNION ALL it never
+        /// ends, under Calcite as well.</para>
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnARecursiveQueryWhoseStepAggregates() =>
@@ -785,10 +815,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A recursive query whose step reads the working table a row at a time.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The ordinary shape, which SQL can express and this suite already runs as
-        /// <c>ShouldAgreeOnARecursiveQuery</c>. Here to show the two routes agree on it, so that a failure of
-        /// the one above is read as being about the aggregate rather than about the harness.
+        /// The ordinary shape, which SQL can express and <c>ShouldAgreeOnARecursiveQuery</c> runs. Built by hand
+        /// here so that a failure of the aggregating test above can be attributed to the aggregate rather than
+        /// to building by hand.
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnARecursiveQueryBuiltByHand() =>
@@ -803,10 +834,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A scan and a filter built by hand, planned through this convention's own nodes.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The harness proving itself: that a rel built rather than parsed reaches this convention at all,
-        /// and reaches it through <c>ClrCursorCalc</c> rather than through a converter. Without this
-        /// a failure anywhere above is ambiguous between the shape and the route.
+        /// Checks the hand-built route itself: a rel built rather than parsed is planned into this convention,
+        /// through <c>ClrCursorCalc</c> rather than a converter.
         /// </remarks>
         [Fact]
         public Task ShouldPlanAHandBuiltScanThroughThisConvention() =>
@@ -822,17 +853,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A window table function over a table whose rows are awaited.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The one node whose two bodies differ in <em>what they do with the input</em> rather than in which
-        /// operator set they name. Everything that builds a window is Calcite's and is linq4j, and a linq4j
-        /// <c>Enumerable</c> has nowhere to suspend, so the awaiting body pulls its input and blocks a thread
-        /// per row before handing it over. The rows above the node are awaited again, which is why this is a
-        /// differential test like the rest rather than a plan assertion.
-        ///
-        /// <para>Written because the pull was lost once. The node inherited the default
-        /// <c>ImplementAsync</c>, which handed <c>JavaSequences.ToJava</c> an <c>IAsyncEnumerable</c>, and
-        /// <c>Expression.Call</c> refused it. Nothing in the suite reached a window table function over an
-        /// awaited input, so the whole suite stayed green over it.</para>
+        /// The window table function scan's two bodies differ in how they read their input rather than only in
+        /// which operators they call. The window is built by Calcite's linq4j code, and a linq4j
+        /// <c>Enumerable</c> cannot suspend, so the awaiting body reads its input synchronously, blocking a
+        /// thread per row, before handing it over; the rows above the node are awaited again. The node
+        /// therefore needs its own <c>ImplementAsync</c> rather than the default.
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnAWindowTableFunction() =>
@@ -841,35 +868,31 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A window table function whose rows are then aggregated.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The window's output crosses back to awaited and an aggregate of this convention reads it, so the
-        /// crossing is exercised in both directions in one plan.
+        /// The window's output is awaited again by an aggregate of this convention, so one plan crosses between
+        /// awaiting and synchronous reading in both directions.
         /// </remarks>
         [Fact]
         public Task ShouldAgreeOnAnAggregateOverAWindowTableFunction() =>
             Same("SELECT \"window_start\", COUNT(*) FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) GROUP BY \"window_start\" ORDER BY 1");
 
         /// <summary>
-        /// A table function joined to a table is refused while the plan is implemented, and named.
+        /// A table function joined to a table, sorted for a merge join, is refused while the plan is
+        /// implemented, naming the sort and both types.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The same defect of Calcite's that <c>ShouldRefuseATableFunctionInAJoin</c> records:
-        /// <c>EnumerableSort</c> optimises the scan's ARRAY format to SCALAR and hands the <c>Object[]</c>
-        /// rows on unchanged, so the sequence carries arrays where its row type says
-        /// <c>java.lang.Integer</c>.
-        ///
-        /// <para><b>It surfaces here exactly as it does in a plan opened synchronously.</b> The sort is this
-        /// convention's node whichever way the plan is opened, so <c>RequireRowType</c> catches it while the
-        /// plan is being implemented and says which node handed up what.</para>
-        ///
-        /// <para>Nothing to fix on this side: the convention does what Calcite does, and the check that
-        /// would catch it is a check on Calcite's own answer about its own rows.</para>
+        /// This is the Calcite defect <c>ShouldRefuseATableFunctionInAJoin</c> records: <c>EnumerableSort</c>
+        /// optimises the scan's ARRAY format to SCALAR but passes the <c>Object[]</c> rows on unchanged, so the
+        /// rows are arrays where the row type says <c>java.lang.Integer</c>. The implementor's row type check
+        /// catches it here exactly as it does for a plan opened synchronously. The convention reproduces
+        /// Calcite; the fix belongs in <c>EnumerableSort</c>.
         /// </remarks>
         [Fact]
         public async Task ShouldRefuseATableFunctionJoinedToATable()
         {
-            // the hash join taken away, because with it the planner hashes and there is no sort to show the
-            // defect — this convention sorted here only while its merge join cost its output alone
+            // the hash join rule is removed; with it the planner chooses a hash join and there is no sort
             var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true, excludeHashJoin: true);
 
             (await act.Should().ThrowAsync<java.lang.IllegalStateException>())
@@ -878,17 +901,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// MATCH_RECOGNIZE over a table that only yields its rows asynchronously plans, and runs.
+        /// MATCH_RECOGNIZE over a table that yields its rows only asynchronously plans and runs.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// <b>It runs, and it blocks.</b> This convention has no MATCH_RECOGNIZE node yet, so the node is
-        /// Calcite's, and Calcite's node needs its input in <c>EnumerableConvention</c>, which the scan reaches
-        /// through the converter out.
-        ///
-        /// <para>Calcite compiles its side with Janino and generated Java cannot await, so the sub-plan
-        /// under that converter is opened synchronously and the asynchronous leaf inside it is read across,
-        /// <b>blocking a thread per row</b>. That is the cost, and it is paid only by a query of this
-        /// shape.</para>
+        /// This convention does not yet have a MATCH_RECOGNIZE node, so the node is Calcite's, and its input
+        /// reaches <c>EnumerableConvention</c> through the converter out of this convention. Generated Java
+        /// cannot await, so the sub-plan under that converter is opened synchronously and the asynchronous leaf
+        /// inside it is read by blocking a thread per row.
         /// </remarks>
         [Fact]
         public async Task ShouldRunAMatchRecognizeOverAnAsyncTable()

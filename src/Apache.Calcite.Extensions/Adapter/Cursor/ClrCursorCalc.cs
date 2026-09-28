@@ -21,20 +21,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// Implementation of <see cref="Calc"/> in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     /// <remarks>
-    /// Calcite fuses the filter and the projection into one anonymous <c>Enumerator</c>, because generated
-    /// Java source is the only place it can put a custom enumerator. <see cref="ClrCursorDefaults.Calc"/> is that
-    /// enumerator, written once as a cursor and called from the tree, so the plan is the same one pass over
-    /// the input.
+    /// Mirrors <c>EnumerableCalc</c>, which generates one anonymous <c>Enumerator</c> that filters and projects
+    /// in a single pass. <see cref="ClrCursorDefaults.Calc"/> is that enumerator as a cursor, given the
+    /// translated condition and projection as delegates.
     /// </remarks>
     public class ClrCursorCalc : Calc, ClrCursorRel
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorCalc"/>.
+        /// Creates a <see cref="ClrCursorCalc"/>, deriving its collation and distribution from the program.
         /// </summary>
-        /// <param name="input"></param>
-        /// <param name="program"></param>
-        /// <returns></returns>
+        /// <param name="input">The input.</param>
+        /// <param name="program">The program: projections and an optional condition.</param>
+        /// <returns>The new node.</returns>
         public static ClrCursorCalc Create(RelNode input, RexProgram program)
         {
             var cluster = input.getCluster();
@@ -48,12 +47,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Initializes a new instance. Use <see cref="Create"/> unless you know what you are doing.
+        /// Initializes a new instance. <see cref="Create"/> is preferred, as it derives the trait set.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="program"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The trait set, which carries <see cref="ClrCursorConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="program">The program: projections and an optional condition.</param>
         public ClrCursorCalc(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RexProgram program) :
             base(cluster, traitSet, com.google.common.collect.ImmutableList.of(), input, program)
         {
@@ -67,10 +66,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         }
 
         /// <summary>
-        /// Returns the program's projections with their local references expanded, which is what a collation
-        /// is decided against.
+        /// Returns the program's projections with their local references expanded, for trait propagation.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The expanded projections.</returns>
         java.util.List Exps()
         {
             var program = getProgram();
@@ -112,9 +110,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var result = implementor.VisitChild(this, 0, child, pref);
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
-            // a calc is Rex and nothing else: the condition and the projects are both Calcite's to
-            // translate, and each takes its own physical type -- one to read a field of the input with, one
-            // to read the storage types of the output off. So both are built here, where they are used.
+            // the condition and projections are translated by Calcite's Rex translator, which takes Calcite's
+            // physical types: the input's to read fields, the output's for storage types
             var inputCalcite = PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
@@ -133,7 +130,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (program.getCondition() != null)
             {
-                // one row parameter per lambda, where Calcite has one for the whole enumerator
+                // each lambda has its own row parameter, where Calcite's enumerator shares one
                 var row = J.Expressions.parameter(inputJavaType, "row");
                 var parameter = Expression.Parameter(inputType, "row");
                 implementor.Translator.Bind(row, parameter);
@@ -189,9 +186,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var result = implementor.VisitChildAsync(this, 0, child, pref);
             var physType = ClrPhysTypeImpl.Of(typeFactory, getRowType(), pref.Prefer(result.Format));
 
-            // a calc is Rex and nothing else: the condition and the projects are both Calcite's to
-            // translate, and each takes its own physical type -- one to read a field of the input with, one
-            // to read the storage types of the output off. So both are built here, where they are used.
+            // the condition and projections are translated by Calcite's Rex translator, which takes Calcite's
+            // physical types: the input's to read fields, the output's for storage types
             var inputCalcite = PhysTypeImpl.of(typeFactory, result.PhysType.RelRowType, result.PhysType.Format, false);
             var outputCalcite = PhysTypeImpl.of(typeFactory, physType.RelRowType, physType.Format, false);
 
@@ -210,7 +206,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             if (program.getCondition() != null)
             {
-                // one row parameter per lambda, where Calcite has one for the whole enumerator
+                // each lambda has its own row parameter, where Calcite's enumerator shares one
                 var row = J.Expressions.parameter(inputJavaType, "row");
                 var parameter = Expression.Parameter(inputType, "row");
                 implementor.Translator.Bind(row, parameter);

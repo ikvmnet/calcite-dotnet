@@ -16,24 +16,24 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// What the validator makes of a call over a geography column.
+    /// Tests how the validator resolves and types calls to the operators, over the fixture's two geometry
+    /// columns.
     /// </summary>
     /// <remarks>
-    /// The central property is the first test here. Calcite's spatial library is a set of reflective bindings
-    /// over <c>org.locationtech.jts.geom.Geometry</c>, and routine resolution refuses to pass a geography to
-    /// one — the harmless accessors included. Without that, a geodesic value would answer in degrees, in a
-    /// different ordering, with no error anywhere.
+    /// Both columns have the same type, so Calcite's planar functions and this package's geodesic ones each
+    /// accept either column; only the operator's name says how a value is read.
     /// </remarks>
     public class GeographyValidationTests
     {
 
         /// <summary>
-        /// Validates the given query, requires it to be refused, and returns every message in the chain.
+        /// Validates a query, requires it to throw, and returns the messages of the exception and all its
+        /// causes.
         /// </summary>
         /// <remarks>
-        /// The chain, because the validator wraps: a signature error from an operand checker arrives inside a
-        /// <c>ValidationException</c> and names the operator only further down. IKVM makes a Java throwable a
-        /// <see cref="Exception"/>, so its cause is the inner exception.
+        /// A signature error from an operand checker arrives wrapped in a <c>ValidationException</c>, and only
+        /// an inner exception names the operator. IKVM exposes a Java throwable's cause as
+        /// <see cref="Exception.InnerException"/>.
         /// </remarks>
         static string Refuse(string sql)
         {
@@ -47,10 +47,10 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Validates the given query and returns the type of the one column it selects.
+        /// Validates a query that selects one column and returns that column's type.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">A query that selects exactly one column.</param>
+        /// <returns>The type of that column.</returns>
         static RelDataType Column(string sql)
         {
             var row = GeographyFixture.Validate(sql);
@@ -59,13 +59,11 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Every operator the table declares is also an operator the table hands out.
+        /// Every operator field <see cref="GeographyOperatorTable"/> declares is in its operator list.
         /// </summary>
         /// <remarks>
-        /// The declarations are one list and the registrations are another, and nothing but this connects
-        /// them. A field added without its line in the second list is an operator that exists, compiles,
-        /// resolves nowhere and fails only as <c>No match found for function signature</c> in whichever query
-        /// reaches for it first.
+        /// The fields and the registrations are separate lists. An operator declared but not registered
+        /// compiles and then fails only as <c>No match found for function signature</c> when a query uses it.
         /// </remarks>
         [Fact]
         public void ShouldRegisterEveryDeclaredOperator()
@@ -86,13 +84,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An accessor takes either column, there being one type.
+        /// An accessor accepts the <c>GEOM</c> column as well as <c>GEOG</c>, both having the same type.
         /// </summary>
-        /// <remarks>
-        /// It used to refuse a geometry, on the grounds that <c>CLR_ST_GEOG_ASTEXT</c> over one would be a second
-        /// way to spell <c>ST_ASTEXT</c> and every such way is a place the two readings can be confused. That
-        /// refusal is gone with the type it rested on, and this is here to say so out loud.
-        /// </remarks>
         [Fact]
         public void ShouldAcceptAnAccessorOverEitherColumn()
         {
@@ -125,7 +118,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The same goes for the accessors: every one of Calcite's spatial functions takes the column.
+        /// Calcite's spatial accessors accept the <c>GEOG</c> column too.
         /// </summary>
         [Fact]
         public void ShouldAcceptCalcitesStSridOverAGeographyColumn()
@@ -146,8 +139,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// And it runs both ways: a geodesic operator takes a plane's coordinates too, and answers metres
-        /// over them as though they were degrees. Nothing here can tell.
+        /// A geodesic operator accepts the <c>GEOM</c> column and reads its coordinates as degrees of longitude
+        /// and latitude; the validator cannot tell planar coordinates apart.
         /// </summary>
         [Fact]
         public void ShouldAcceptStGeogDistanceOverAGeometryColumn()
@@ -156,8 +149,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The operand checker is what decides the error a caller sees, and a checker that took anything
-        /// would let this validate.
+        /// Character arguments are refused by the operand checker, with an error naming the operator and
+        /// <c>GEOMETRY</c>.
         /// </summary>
         [Fact]
         public void ShouldRejectStGeogDistanceOverCharacterArguments()
@@ -187,8 +180,8 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Calcite declares two arities for each WKT constructor, and so do we; the routine lookup picks
-        /// between them by argument count.
+        /// Each WKT constructor has a one- and a two-argument form, as Calcite's do, and the lookup chooses by
+        /// argument count.
         /// </summary>
         [Fact]
         public void ShouldTypeTheWktConstructorWithAnSridAsGeography()
@@ -204,7 +197,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A constructed geography goes into a geodesic operator without a column to hold it.
+        /// A constructed value can be passed straight to a geodesic operator.
         /// </summary>
         [Fact]
         public void ShouldAcceptAConstructedGeography()
@@ -213,8 +206,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// The crossing is deliberate and explicit: having said so, Calcite's planar functions will take the
-        /// value.
+        /// A value passed through <c>CLR_ST_GEOG_ASGEOM</c> is accepted by Calcite's planar functions.
         /// </summary>
         [Fact]
         public void ShouldCarryAGeographyIntoCalcitesStDistanceThroughAsGeom()
@@ -229,11 +221,10 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Either crossing takes either column, and neither converts anything.
+        /// <c>CLR_ST_GEOM_ASGEOG</c> and <c>CLR_ST_GEOG_ASGEOM</c> each accept either column.
         /// </summary>
         /// <remarks>
-        /// They were re-typings when there were two types to cross between. With one they are documentation:
-        /// a place in the SQL text where the author says which reading they mean.
+        /// Both return their argument unchanged; they mark in the SQL which reading the author intends.
         /// </remarks>
         [Fact]
         public void ShouldAcceptEitherCrossingOverEitherColumn()
@@ -256,7 +247,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A geodesic predicate in a WHERE clause, which is where one is actually written.
+        /// A geodesic predicate validates in a <c>WHERE</c> clause.
         /// </summary>
         [Fact]
         public void ShouldAcceptAPredicateInAWhereClause()

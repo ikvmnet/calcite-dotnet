@@ -10,25 +10,26 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
 {
 
     /// <summary>
-    /// The metadata Calcite answers for an <c>Enumerable*</c> node by a handler keyed on that node's class,
-    /// answered for the <see cref="ClrCursorConvention"/> node that ports it.
+    /// Metadata handlers for <see cref="ClrCursorConvention"/> nodes, where Calcite keys a handler on the
+    /// corresponding <c>Enumerable*</c> class.
     /// </summary>
     /// <remarks>
-    /// A handler is chosen by the rel's class, so a node of this convention with the same base class as its
-    /// Calcite counterpart reaches the handler for that base and not the one Calcite wrote for the node. Each
-    /// method here is the Calcite method of the same name with the node's class swapped, and nothing else.
+    /// Calcite chooses a metadata handler by the node's class, so a node of this convention would otherwise
+    /// reach the handler for its base class rather than the one Calcite has for its <c>Enumerable*</c>
+    /// counterpart. Each handler method here is Calcite's method of the same name with the node class
+    /// replaced.
     ///
-    /// <para>What an override on the node can carry is carried there instead, because it holds whichever
-    /// provider the cluster has: <c>ClrCursorLimit.estimateRowCount</c> is
-    /// <c>RelMdRowCount.getRowCount(EnumerableLimit)</c>, reached through the handler for
-    /// <c>SingleRel</c>. The rest has no hook on the node and needs <see cref="Provider"/> on the cluster —
-    /// <c>ClrPrepareImpl</c> puts it there, and a caller driving its own planner has to do the same.</para>
+    /// <para>Where the node can override a method instead, it does, so that it holds under any provider
+    /// (<c>ClrCursorLimit.estimateRowCount</c>, for example). The handlers here take effect only when
+    /// <see cref="Provider"/> is the cluster's metadata provider. <c>ClrPrepareImpl</c> sets it; a caller
+    /// driving its own planner passes it to <c>Programs.standard</c> and to the calc pass.</para>
     /// </remarks>
     public static class ClrCursorRelMetadata
     {
 
         /// <summary>
-        /// The handlers here, ahead of Calcite's own.
+        /// A metadata provider that consults the handlers of this class first and then
+        /// <c>DefaultRelMetadataProvider.INSTANCE</c>.
         /// </summary>
         public static readonly RelMetadataProvider Provider = ChainedRelMetadataProvider.of(ImmutableList.of(
             ReflectiveRelMetadataProvider.reflectiveSource(new PercentageOriginalRows(), typeof(BuiltInMetadata.CumulativeCost.Handler)),
@@ -43,7 +44,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// <c>RelMdPercentageOriginalRows</c>'s cumulative cost for the interpreter.
+        /// The cumulative-cost handler <c>RelMdPercentageOriginalRows</c> has for the interpreter.
         /// </summary>
         public sealed class PercentageOriginalRows : MetadataHandler
         {
@@ -52,12 +53,12 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             public MetadataDef getDef() => BuiltInMetadata.CumulativeCost.DEF;
 
             /// <summary>
-            /// <c>getCumulativeCost(EnumerableInterpreter, RelMetadataQuery)</c>: the node's own cost, its
-            /// input's left out.
+            /// Mirrors <c>getCumulativeCost(EnumerableInterpreter, RelMetadataQuery)</c>: the node's own cost,
+            /// excluding its input's.
             /// </summary>
-            /// <param name="rel"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="rel">The node.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The metadata value.</returns>
             public RelOptCost? getCumulativeCost(ClrCursorInterpreter rel, RelMetadataQuery mq)
             {
                 return mq.getNonCumulativeCost(rel);
@@ -66,7 +67,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// <c>RelMdMaxRowCount</c> for the limit.
+        /// The maximum-row-count handler <c>RelMdMaxRowCount</c> has for the limit.
         /// </summary>
         public sealed class MaxRowCount : MetadataHandler
         {
@@ -75,11 +76,11 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             public MetadataDef getDef() => BuiltInMetadata.MaxRowCount.DEF;
 
             /// <summary>
-            /// <c>getMaxRowCount(EnumerableLimit, RelMetadataQuery)</c>.
+            /// Mirrors <c>getMaxRowCount(EnumerableLimit, RelMetadataQuery)</c>.
             /// </summary>
-            /// <param name="rel"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="rel">The node.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The metadata value.</returns>
             public java.lang.Double getMaxRowCount(ClrCursorLimit rel, RelMetadataQuery mq)
             {
                 var rowCount = mq.getMaxRowCount(rel.getInput());
@@ -95,7 +96,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// <c>RelMdMinRowCount</c> for the limit.
+        /// The minimum-row-count handler <c>RelMdMinRowCount</c> has for the limit.
         /// </summary>
         public sealed class MinRowCount : MetadataHandler
         {
@@ -104,11 +105,11 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             public MetadataDef getDef() => BuiltInMetadata.MinRowCount.DEF;
 
             /// <summary>
-            /// <c>getMinRowCount(EnumerableLimit, RelMetadataQuery)</c>.
+            /// Mirrors <c>getMinRowCount(EnumerableLimit, RelMetadataQuery)</c>.
             /// </summary>
-            /// <param name="rel"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="rel">The node.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The metadata value.</returns>
             public java.lang.Double getMinRowCount(ClrCursorLimit rel, RelMetadataQuery mq)
             {
                 var rowCount = mq.getMinRowCount(rel.getInput());
@@ -124,7 +125,7 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
         }
 
         /// <summary>
-        /// <c>RelMdCollation</c> for the nodes it names.
+        /// The collation handlers <c>RelMdCollation</c> has for <c>Enumerable*</c> nodes.
         /// </summary>
         public sealed class Collation : MetadataHandler
         {
@@ -133,46 +134,46 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             public MetadataDef getDef() => BuiltInMetadata.Collation.DEF;
 
             /// <summary>
-            /// <c>collations(EnumerableMergeJoin, RelMetadataQuery)</c>: in general a join is not sorted, but a
-            /// merge join preserves the sort order of the left and right sides.
+            /// Mirrors <c>collations(EnumerableMergeJoin, RelMetadataQuery)</c>: a merge join preserves the sort
+            /// order of its inputs.
             /// </summary>
-            /// <param name="join"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="join">The join.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The collations, or <see langword="null"/>.</returns>
             public ImmutableList? collations(ClrCursorMergeJoin join, RelMetadataQuery mq)
             {
                 return CopyOf(RelMdCollation.mergeJoin(mq, join.getLeft(), join.getRight(), join.analyzeCondition().leftKeys, join.analyzeCondition().rightKeys, join.getJoinType()));
             }
 
             /// <summary>
-            /// <c>collations(EnumerableHashJoin, RelMetadataQuery)</c>.
+            /// Mirrors <c>collations(EnumerableHashJoin, RelMetadataQuery)</c>.
             /// </summary>
-            /// <param name="join"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="join">The join.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The collations, or <see langword="null"/>.</returns>
             public ImmutableList? collations(ClrCursorHashJoin join, RelMetadataQuery mq)
             {
                 return CopyOf(RelMdCollation.enumerableHashJoin(mq, join.getLeft(), join.getRight(), join.getJoinType()));
             }
 
             /// <summary>
-            /// <c>collations(EnumerableNestedLoopJoin, RelMetadataQuery)</c>.
+            /// Mirrors <c>collations(EnumerableNestedLoopJoin, RelMetadataQuery)</c>.
             /// </summary>
-            /// <param name="join"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="join">The join.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The collations, or <see langword="null"/>.</returns>
             public ImmutableList? collations(ClrCursorNestedLoopJoin join, RelMetadataQuery mq)
             {
                 return CopyOf(RelMdCollation.enumerableNestedLoopJoin(mq, join.getLeft(), join.getRight(), join.getJoinType()));
             }
 
             /// <summary>
-            /// <c>collations(EnumerableMergeUnion, RelMetadataQuery)</c>: a merge union guarantees order, like a
-            /// sort.
+            /// Mirrors <c>collations(EnumerableMergeUnion, RelMetadataQuery)</c>: a merge union guarantees its
+            /// collation, as a sort does.
             /// </summary>
-            /// <param name="mergeUnion"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="mergeUnion">The merge union.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The collations, or <see langword="null"/>.</returns>
             public ImmutableList? collations(ClrCursorMergeUnion mergeUnion, RelMetadataQuery mq)
             {
                 var collation = mergeUnion.getTraitSet().getCollation();
@@ -183,22 +184,22 @@ namespace Apache.Calcite.Extensions.Rel.Metadata
             }
 
             /// <summary>
-            /// <c>collations(EnumerableCorrelate, RelMetadataQuery)</c>.
+            /// Mirrors <c>collations(EnumerableCorrelate, RelMetadataQuery)</c>.
             /// </summary>
-            /// <param name="join"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="join">The join.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The collations, or <see langword="null"/>.</returns>
             public ImmutableList? collations(ClrCursorCorrelate join, RelMetadataQuery mq)
             {
                 return CopyOf(RelMdCollation.enumerableCorrelate(mq, join.getLeft(), join.getRight(), join.getJoinType()));
             }
 
             /// <summary>
-            /// <c>collations(EnumerableLimit, RelMetadataQuery)</c>.
+            /// Mirrors <c>collations(EnumerableLimit, RelMetadataQuery)</c>: the input's collations.
             /// </summary>
-            /// <param name="rel"></param>
-            /// <param name="mq"></param>
-            /// <returns></returns>
+            /// <param name="rel">The node.</param>
+            /// <param name="mq">The metadata query.</param>
+            /// <returns>The metadata value.</returns>
             public ImmutableList? collations(ClrCursorLimit rel, RelMetadataQuery mq)
             {
                 return mq.collations(rel.getInput());

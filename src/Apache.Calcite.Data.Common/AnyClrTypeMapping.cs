@@ -11,28 +11,21 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// A type that says nothing about what it holds, read on the strength of the value's own class.
+    /// The mapping for <c>ANY</c> and <c>OTHER</c>, types that do not say what they hold, which converts each
+    /// value according to its own runtime class.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// <c>ANY</c> is <c>java.lang.Object</c> and carries nothing, so the value is whatever a table, a
-    /// user-defined function or a schema put there. <c>OTHER</c> and a type a schema supplied itself arrive
-    /// here for the same reason. There is nothing in the type to read, so the value's class decides.
+    /// Reading converts a Java value with <see cref="CalciteValues.FromShape"/>. A <c>java.util.Map</c> becomes
+    /// a <see cref="Dictionary{TKey, TValue}"/>, a <c>java.util.Collection</c> an array, and an
+    /// <c>Object[]</c> an <c>object[]</c>, with their contents converted the same way; the element, key and
+    /// value types of the result are the single runtime type all the values share, or <see cref="object"/>
+    /// where they share none. A <c>VariantValue</c> is read through the chain's <c>VARIANT</c> mapping. A value
+    /// of a class with no .NET counterpart is returned unchanged.
     /// </para>
     /// <para>
-    /// <b>It still recurses.</b> A value reaching here may be a collection, a map or a row, and each of
-    /// those holds values that also have no declared type — a map in an <c>ANY</c> column has no key or
-    /// value type either. So the contents are read the same way, one level at a time, and the element type
-    /// of what comes back is measured from the values because nothing declares it. That measurement is the
-    /// only thing available here and is exactly what a declared type replaces everywhere else.
-    /// </para>
-    /// <para>
-    /// <b>No Java object leaves.</b> That is the rule this class exists to keep, and the reason it lists
-    /// every class Calcite's runtime can produce rather than falling through: a value with no case would be
-    /// handed back as the Java object it is. The last arm hands back what it was given, which is the only
-    /// answer for a class nothing corresponds to — a user-defined function returning its own type reaches
-    /// it — and a value that is already a .NET one falls through it unchanged, which is what a table of
-    /// this runtime supplies.
+    /// Writing is the reverse: a dictionary becomes a <c>java.util.LinkedHashMap</c>, any other sequence a
+    /// <c>java.util.ArrayList</c>, and a scalar is converted with <see cref="CalciteValues.ToShape"/>.
     /// </para>
     /// </remarks>
     public sealed class AnyClrTypeMapping : ClrTypeMapping
@@ -43,8 +36,8 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="context"></param>
-        /// <param name="relType">The type that says nothing, which is <c>ANY</c> or one like it.</param>
+        /// <param name="context">The context the mapping is resolved in.</param>
+        /// <param name="relType">The type, typically <c>ANY</c> or <c>OTHER</c>.</param>
         public AnyClrTypeMapping(ClrTypeContext context, RelDataType relType) :
             base(context, relType, typeof(object))
         {
@@ -53,33 +46,24 @@ namespace Apache.Calcite.Data.Common
 
         /// <inheritdoc />
         /// <remarks>
-        /// This is the mapping for the types that say nothing — <c>ANY</c>, and <c>OTHER</c>, which is what
-        /// Calcite names a class it has no SQL name for — so the value's own class stands in for the
-        /// column's type, here and in every accessor that asks.
+        /// Always <see langword="false"/>: the value's own class stands in for the column's type.
         /// </remarks>
         public override bool DescribesValue => false;
 
         /// <inheritdoc />
-        /// <remarks>
-        /// The value's own class decides here too: there is no declared type to write it as, so what goes
-        /// in is whatever Calcite holds a value of that .NET type as.
-        /// </remarks>
         public override object? ToCalcite(object value)
         {
             return Write(value);
         }
 
         /// <summary>
-        /// Writes a value by its runtime type, descending into anything that holds other values.
+        /// Converts a value by its runtime type, converting the contents of a dictionary or sequence as well.
         /// </summary>
         /// <param name="value">The .NET value.</param>
         /// <returns>The value as Calcite's runtime holds it.</returns>
         /// <remarks>
-        /// The mirror of <see cref="Read"/>, and necessary for the same reason: a dictionary or a sequence
-        /// handed over as it stood would be a .NET object loose in a plan whose row types are Java classes,
-        /// and the first thing to compare it against something would fail. A <see cref="string"/> is
-        /// answered by the scalar case before the sequence one, being a sequence of characters that is not
-        /// a collection.
+        /// A <see cref="string"/> is matched before the sequence case, so it is written as a string rather
+        /// than as a list of characters.
         /// </remarks>
         object? Write(object? value)
         {
@@ -93,9 +77,7 @@ namespace Apache.Calcite.Data.Common
 
                 case IDictionary dictionary:
                     {
-                        // a LinkedHashMap because Calcite's own SqlFunctions.map builds one: the entries of
-                        // a map come out in the order they went in, and a HashMap would reorder a value on
-                        // its way through a parameter
+                        // insertion-ordered, as the map Calcite's SqlFunctions.map builds is
                         var map = new java.util.LinkedHashMap();
                         for (var i = dictionary.GetEnumerator(); i.MoveNext();)
                             map.put(Write(i.Key), Write(i.Value));
@@ -124,7 +106,7 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Reads a value by its runtime class, descending into anything that holds other values.
+        /// Converts a value by its runtime class, converting the contents of a map, collection or row as well.
         /// </summary>
         /// <param name="value">The value as Calcite produced it.</param>
         /// <returns>The .NET value.</returns>
@@ -135,8 +117,7 @@ namespace Apache.Calcite.Data.Common
                 case null:
                     return null;
 
-                // a variant carries its payload's type with it, which is the whole of what it is for, and
-                // is read through the chain so a caller's mapping applies inside one
+                // read through the chain, so that a caller's mappings apply to the variant's payload
                 case org.apache.calcite.runtime.variant.VariantValue variant:
                     return _context.Registry.RequireMapping(null,
                         _context.TypeFactory.createSqlType(org.apache.calcite.sql.type.SqlTypeName.VARIANT)).FromCalcite(variant);
@@ -147,8 +128,7 @@ namespace Apache.Calcite.Data.Common
                 case java.util.Collection collection:
                     return Elements(collection);
 
-                // an Object[] is heterogeneous by construction, so its elements are read and its shape is
-                // not unified the way a collection's is
+                // a row: its fields stay an object[] rather than being unified to a common element type
                 case object[] row when value.GetType() == typeof(object[]):
                     return Fields(row);
 
@@ -158,10 +138,11 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns a collection's elements, read and packed as the type they share.
+        /// Returns a collection's elements, converted, in an array of the type they share.
         /// </summary>
-        /// <param name="source"></param>
-        /// <returns>The array.</returns>
+        /// <param name="source">The Java collection Calcite produced.</param>
+        /// <returns>An array of the elements in iteration order, each converted as <see cref="Read"/>
+        /// converts a value.</returns>
         Array Elements(java.util.Collection source)
         {
             var items = new List<object?>(source.size());
@@ -172,14 +153,14 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns a row's fields, read one at a time.
+        /// Returns a row's fields, converted, in an <c>object[]</c>.
         /// </summary>
-        /// <param name="row"></param>
-        /// <returns>The fields.</returns>
         /// <remarks>
-        /// A row stays <c>object[]</c> however alike its fields happen to be: <c>ROW(1, 2)</c> is two fields
-        /// and not an array of two, and unifying its element type would say otherwise.
+        /// A row stays <c>object[]</c> even where its fields share a type: <c>ROW(1, 2)</c> is two fields, not
+        /// an array of two integers.
         /// </remarks>
+        /// <param name="row">The row as Calcite holds it.</param>
+        /// <returns>A new array holding each field converted, in field order.</returns>
         object?[] Fields(object[] row)
         {
             var fields = new object?[row.Length];
@@ -190,16 +171,17 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns a map's entries, read and packed as the types they share.
+        /// Returns a map's entries, converted, in a dictionary whose key and value types are those the keys
+        /// and values share.
         /// </summary>
-        /// <param name="source"></param>
-        /// <returns>A dictionary, or an array of pairs where a key is null.</returns>
+        /// <returns>A dictionary, or an array of <see cref="KeyValuePair{TKey, TValue}"/> where a key is
+        /// null.</returns>
         /// <remarks>
-        /// A map holding a null key becomes an array of pairs: no dictionary the framework ships accepts
-        /// one — <see cref="Dictionary{TKey, TValue}"/> throws for a null key whatever its key type is — and
-        /// dropping the entry would lose a row's contents. Calcite reaches the case, as
-        /// <c>MAP[CAST(NULL AS VARCHAR), 1]</c> validates and runs.
+        /// <see cref="Dictionary{TKey, TValue}"/> does not accept a null key, and Calcite can produce one (for
+        /// example <c>MAP[CAST(NULL AS VARCHAR), 1]</c>), so such a map is returned as an array of pairs rather
+        /// than losing the entry.
         /// </remarks>
+        /// <param name="source">The Java map Calcite produced.</param>
         object Entries(java.util.Map source)
         {
             var count = source.size();
@@ -233,10 +215,10 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns read values as an array of the type they share.
+        /// Returns values in an array of the type they share.
         /// </summary>
-        /// <param name="items"></param>
-        /// <returns>The array.</returns>
+        /// <param name="items">The converted values, in order; any may be <see langword="null"/>.</param>
+        /// <returns>A new array whose element type is what <see cref="Unify"/> answers for the values.</returns>
         static Array Pack(List<object?> items)
         {
             var element = Unify(items);
@@ -248,15 +230,15 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the type every value has, or <see cref="object"/> where they do not agree on one.
+        /// Returns the runtime type every non-null value has, or <see cref="object"/> where they differ or
+        /// there are none.
         /// </summary>
-        /// <param name="items"></param>
-        /// <returns>The shared type.</returns>
         /// <remarks>
-        /// A null among values of a value type makes the type nullable rather than <see cref="object"/>, so
-        /// a sequence holding a null still names what it holds. An empty sequence has no type to read and
-        /// is <see cref="object"/>.
+        /// Where the shared type is a value type and a value is null, the result is the nullable form of that
+        /// type.
         /// </remarks>
+        /// <param name="items">The converted values; any may be <see langword="null"/>.</param>
+        /// <returns>The shared runtime type, its nullable form, or <see cref="object"/>.</returns>
         static Type Unify(List<object?> items)
         {
             Type? common = null;

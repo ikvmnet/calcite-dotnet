@@ -12,8 +12,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="AggregateFactory"/> implementation that creates <see cref="AdoAggregate"/> nodes
-    /// during relational-algebra construction in the <see cref="AdoConvention"/>.
+    /// An <see cref="AggregateFactory"/> that creates an <see cref="AdoAggregate"/> in its input's convention.
     /// </summary>
     public class AdoAggregateFactory : AggregateFactory
     {

@@ -8,16 +8,18 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
 {
 
     /// <summary>
-    /// Rule to convert a relational expression from <see cref="AdoConvention"/> to <see cref="EnumerableConvention"/>.
+    /// The rule that puts an <see cref="AdoToEnumerableConverter"/> over a node of an <see cref="AdoConvention"/>,
+    /// so that Calcite's <see cref="EnumerableConvention"/> can read its rows. Mirrors
+    /// <c>JdbcToEnumerableConverterRule</c>.
     /// </summary>
     public class AdoToEnumerableConverterRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a rule instance bound to the specified <see cref="AdoConvention"/>.
+        /// Creates the rule for a convention.
         /// </summary>
-        /// <param name="convention">The ADO convention whose nodes will be converted to <see cref="EnumerableConvention"/>.</param>
-        /// <returns>A configured <see cref="AdoToEnumerableConverterRule"/> instance.</returns>
+        /// <param name="convention">The convention converted from.</param>
+        /// <returns>The rule.</returns>
         public static AdoToEnumerableConverterRule Create(AdoConvention convention)
         {
             return (AdoToEnumerableConverterRule)Config.INSTANCE
@@ -27,16 +29,20 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.Convert
         }
 
         /// <summary>
-        /// Initializes a new instance using the supplied rule configuration.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="config">The rule configuration produced by <see cref="Create"/>.</param>
+        /// <param name="config">The configuration <see cref="Create"/> builds.</param>
         public AdoToEnumerableConverterRule(Config config) :
             base(config)
         {
 
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns an <see cref="AdoToEnumerableConverter"/> over <paramref name="rel"/>.
+        /// </summary>
+        /// <param name="rel">The node of the <see cref="AdoConvention"/>.</param>
+        /// <returns>The converter.</returns>
         public override RelNode? convert(RelNode rel)
         {
             return new AdoToEnumerableConverter(rel.getCluster(), rel.getTraitSet().replace(getOutConvention()), rel);

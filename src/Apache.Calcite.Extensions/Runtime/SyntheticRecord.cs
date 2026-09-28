@@ -4,19 +4,15 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// Base of the record classes emitted for <c>JavaRowFormat.CUSTOM</c>.
+    /// Base of the record classes emitted for <c>JavaRowFormat.CUSTOM</c> rows.
     /// </summary>
     /// <remarks>
-    /// Calcite's generated record declares <c>equals</c>, <c>hashCode</c>, <c>compareTo</c> and
-    /// <c>toString</c> itself, and implements <c>Serializable</c> and nothing else. So does the type
-    /// <c>SyntheticRecordEmitter.ClassDecl</c> emits: the four are on the record, not here.
-    ///
-    /// <para>What is here is the base a CLR type needs so that those four are reachable by the names the two
-    /// runtimes call them by. <c>equals</c> and <c>hashCode</c> are <see cref="Equals(object)"/> and
-    /// <see cref="GetHashCode"/>, which are what IKVM maps a Java call onto, and the record overrides those.
-    /// <c>compareTo</c> is <see cref="IComparable.CompareTo"/>, because <c>java.lang.Comparable</c> is a ghost
-    /// deriving from it and declares no method of its own — a value reaches it through
-    /// <c>Comparable.__Helper.compareTo</c>, which calls <see cref="IComparable.CompareTo"/>.</para>
+    /// Like Calcite's generated record, an emitted record defines equality, hashing, ordering and
+    /// <c>toString</c> itself; this base makes each reachable under both its Java and its CLR name. IKVM
+    /// maps a Java <c>equals</c> or <c>hashCode</c> call onto <see cref="Equals(object)"/> and
+    /// <see cref="GetHashCode"/>. <c>java.lang.Comparable</c> is an IKVM ghost interface over
+    /// <see cref="IComparable"/>, so a Java <c>compareTo</c> call arrives at
+    /// <see cref="IComparable.CompareTo"/>, which forwards to <see cref="compareTo"/>.
     /// </remarks>
     public abstract class SyntheticRecord : java.lang.Comparable
     {
@@ -47,8 +43,9 @@ namespace Apache.Calcite.Extensions.Runtime
         /// <summary>
         /// Orders this record against another, field by field.
         /// </summary>
-        /// <param name="other"></param>
-        /// <returns></returns>
+        /// <param name="other">The record to compare with.</param>
+        /// <returns>A negative number, zero or a positive number as this record orders before, equal to or
+        /// after <paramref name="other"/>.</returns>
         public abstract int compareTo(object? other);
 
         /// <inheritdoc />

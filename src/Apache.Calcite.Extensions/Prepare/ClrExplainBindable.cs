@@ -12,11 +12,11 @@ namespace Apache.Calcite.Extensions.Prepare
 {
 
     /// <summary>
-    /// The one row an <c>EXPLAIN</c> produces.
+    /// A plan that returns the single row of an <c>EXPLAIN</c>.
     /// </summary>
-    /// <param name="explanation">The plan, rendered.</param>
-    /// <param name="cursorFactory">How the row is read back, which decides whether it is an array or the
-    /// text itself.</param>
+    /// <param name="explanation">The rendered plan.</param>
+    /// <param name="cursorFactory">How the row is read back: with style <c>ARRAY</c> the row is a
+    /// one-element array holding the text, and otherwise the text itself.</param>
     sealed class ClrExplainBindable(string explanation, Meta.CursorFactory cursorFactory) : IClrCursorFactory
     {
 
@@ -44,12 +44,12 @@ namespace Apache.Calcite.Extensions.Prepare
         public Type ElementType => IsArray ? typeof(string[]) : typeof(string);
 
         /// <summary>
-        /// Returns the row, which is the text or an array holding it.
+        /// Gets the row: the text, or an array holding it.
         /// </summary>
         object Row => IsArray ? new[] { explanation } : explanation;
 
         /// <summary>
-        /// Returns whether the row is an array holding the text rather than the text itself.
+        /// Gets whether the row is an array holding the text rather than the text itself.
         /// </summary>
         bool IsArray => cursorFactory.style.name() == nameof(Meta.Style.ARRAY);
 

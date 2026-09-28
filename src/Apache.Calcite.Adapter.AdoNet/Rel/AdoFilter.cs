@@ -8,7 +8,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
 {
 
     /// <summary>
-    /// Implementation of <see cref="Filter"/> in <see cref="AdoConvention"/> calling convention.
+    /// A filter pushed down to the source as <c>WHERE</c> or <c>HAVING</c>. Mirrors <c>JdbcRules.JdbcFilter</c>.
     /// </summary>
     public class AdoFilter : Filter, AdoRel
     {
@@ -16,10 +16,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="cluster"></param>
-        /// <param name="traitSet"></param>
-        /// <param name="input"></param>
-        /// <param name="condition"></param>
+        /// <param name="cluster">The cluster.</param>
+        /// <param name="traitSet">The traits, whose convention is an <see cref="AdoConvention"/>.</param>
+        /// <param name="input">The input.</param>
+        /// <param name="condition">The condition.</param>
         public AdoFilter(RelOptCluster cluster, RelTraitSet traitSet, RelNode input, RexNode condition) :
             base(cluster, traitSet, input, condition)
         {

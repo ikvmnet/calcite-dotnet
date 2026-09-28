@@ -11,39 +11,38 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Calcite calling convention that identifies relational nodes whose results are produced
-    /// by executing SQL against a specific ADO.NET data source.
+    /// The calling convention of the nodes that run as SQL against one ADO.NET data source. The counterpart of
+    /// Calcite's <c>JdbcConvention</c>.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Unlike most Calcite conventions, <see cref="AdoConvention"/> is not a singleton: each
-    /// instance is bound to a particular <see cref="AdoDataSource"/> and its <see cref="SqlDialect"/>.
-    /// When a query touches two different ADO.NET databases, the planner uses two separate convention
-    /// instances and inserts the necessary converter nodes between them.
+    /// Each <see cref="AdoSchema"/> has its own instance, so nodes over two different sources are in different
+    /// conventions and are never combined into one statement. The planner joins them in process, through the
+    /// converters into <c>EnumerableConvention</c> or <c>ClrCursorConvention</c>.
     /// </para>
     /// <para>
-    /// Use <see cref="Create"/> to obtain an instance. Converter rules that push relational
-    /// operators into the ADO layer are registered per-instance at the start of planning.
+    /// When the planner first meets a node of this convention, <see cref="register"/> adds the rules of
+    /// <see cref="AdoRules.GetRules(AdoConvention)"/> for this instance.
     /// </para>
     /// </remarks>
     public class AdoConvention : Convention.Impl
     {
 
         /// <summary>
-        /// Relative cost multiplier applied to ADO relational nodes during planning.
-        /// A value below 1.0 makes the planner prefer pushing operations into the ADO layer
-        /// over equivalent in-memory implementations.
+        /// The factor <see cref="Rel.AdoProject"/> and <see cref="Rel.AdoUnion"/> multiply their cost by, so that the
+        /// planner prefers them to an equivalent node in process. Mirrors <c>JdbcConvention.COST_MULTIPLIER</c>.
         /// </summary>
         public const double CostMultiplier = .8d;
 
         /// <summary>
-        /// Creates a new <see cref="AdoConvention"/> for the given database, schema expression and name.
+        /// Creates a convention.
         /// </summary>
-        /// <param name="dialect">The SQL dialect used to generate SQL for the target database.</param>
-        /// <param name="syntax">How the target's driver names a query parameter.</param>
-        /// <param name="expression">The LINQ expression that represents the schema root at planning time.</param>
-        /// <param name="name">A short display name appended to the convention identifier.</param>
-        /// <returns>A new <see cref="AdoConvention"/> instance.</returns>
+        /// <param name="dialect">The dialect SQL is written in.</param>
+        /// <param name="syntax">How the driver names a parameter, and any rewrite the statement needs.</param>
+        /// <param name="expression">The linq4j expression that reaches the schema at run time, from which generated
+        /// code obtains the <see cref="AdoDataSource"/>.</param>
+        /// <param name="name">The schema's name. The convention is named <c>ADO.</c> followed by it.</param>
+        /// <returns>The convention.</returns>
         public static AdoConvention Create(SqlDialect dialect, IAdoSqlSyntax syntax, Expression expression, string name)
         {
             return new AdoConvention(dialect, syntax, expression, name);
@@ -54,16 +53,16 @@ namespace Apache.Calcite.Adapter.AdoNet
         readonly Expression _expression;
 
         /// <summary>
-        /// Initializes a new instance. Prefer <see cref="Create"/> over calling this constructor directly.
+        /// Initializes a new instance.
         /// </summary>
-        /// <param name="dialect">The SQL dialect used to generate SQL for the target database.</param>
-        /// <param name="syntax">How the target's driver names a query parameter.</param>
-        /// <param name="expression">The LINQ expression that represents the schema root at planning time.</param>
-        /// <param name="name">A short display name appended to the convention identifier.</param>
-        /// <remarks>
-        /// Both are required. A convention holding a dialect alone could write SQL but could not issue a
-        /// plan carrying a parameter, which is a half-built object rather than a choice.
-        /// </remarks>
+        /// <param name="dialect">The dialect SQL is written in.</param>
+        /// <param name="syntax">How the driver names a parameter, and any rewrite the statement needs.</param>
+        /// <param name="expression">The linq4j expression that reaches the schema at run time, from which generated
+        /// code obtains the <see cref="AdoDataSource"/>.</param>
+        /// <param name="name">The schema's name. The convention is named <c>ADO.</c> followed by it.</param>
+        /// <exception cref="ArgumentException"><paramref name="name"/> is null or empty.</exception>
+        /// <exception cref="ArgumentNullException"><paramref name="dialect"/>, <paramref name="syntax"/> or
+        /// <paramref name="expression"/> is <see langword="null"/>.</exception>
         public AdoConvention(SqlDialect dialect, IAdoSqlSyntax syntax, Expression expression, string name) :
             base("ADO." + name, typeof(AdoRel))
         {
@@ -76,26 +75,24 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Gets the SQL dialect used when generating SQL for the target ADO.NET database.
+        /// Gets the dialect SQL is written in.
         /// </summary>
         public SqlDialect Dialect => _dialect;
 
         /// <summary>
-        /// Gets the LINQ expression that represents the schema root for this convention at planning time.
+        /// Gets the linq4j expression that reaches the schema at run time.
         /// </summary>
         public Expression Expression => _expression;
 
         /// <summary>
-        /// Gets how the target's driver names a query parameter.
+        /// Gets how the driver names a parameter, and any rewrite the statement needs.
         /// </summary>
-        /// <remarks>
-        /// The convention carries this and not the whole <see cref="Metadata.AdoDatabaseMetadata"/>: writing
-        /// a statement needs the dialect and the driver's parameter naming, and nothing about which
-        /// databases, schemas or tables exist.
-        /// </remarks>
         public IAdoSqlSyntax Syntax => _syntax;
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Adds this convention's rules, and <c>CoreRules.PROJECT_REMOVE</c>, to the planner.
+        /// </summary>
+        /// <param name="planner">The planner.</param>
         public override void register(RelOptPlanner planner)
         {
             foreach (var rule in AdoRules.GetRules(this))

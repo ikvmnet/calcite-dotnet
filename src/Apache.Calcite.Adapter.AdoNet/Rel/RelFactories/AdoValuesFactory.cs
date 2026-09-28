@@ -11,8 +11,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Rel.RelFactories
 {
 
     /// <summary>
-    /// <see cref="ValuesFactory"/> implementation for the <see cref="AdoConvention"/>.
-    /// Inline values are handled by the converter rule; this factory always throws.
+    /// A <see cref="ValuesFactory"/> that throws. An <see cref="AdoValues"/> is created by <c>AdoValuesRule</c>.
     /// </summary>
     public class AdoValuesFactory : ValuesFactory
     {

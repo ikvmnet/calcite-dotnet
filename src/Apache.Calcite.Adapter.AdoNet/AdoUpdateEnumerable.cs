@@ -9,7 +9,9 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Implements an enumerable that executes a statement and reports a single value for the updated record count.
+    /// An <see cref="AdoEnumerable"/> that runs a statement returning no rows and yields a single row holding the
+    /// affected row count as a <see cref="java.lang.Integer"/>. Created by
+    /// <see cref="AdoEnumerable.CreateUpdate(AdoDataSource, string)"/> and its overloads.
     /// </summary>
     public class AdoUpdateEnumerable : AdoEnumerable
     {
@@ -17,9 +19,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rowBuilderFactory">Required by the base class and not used.</param>
         internal AdoUpdateEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory) :
             base(dataSource, sql, rowBuilderFactory)
         {
@@ -29,10 +31,10 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dataSource"></param>
-        /// <param name="sql"></param>
-        /// <param name="rowBuilderFactory"></param>
-        /// <param name="dbCommandEnricher"></param>
+        /// <param name="dataSource">The data source to run the statement against.</param>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rowBuilderFactory">Required by the base class and not used.</param>
+        /// <param name="dbCommandEnricher">Called with each command before it executes.</param>
         internal AdoUpdateEnumerable(AdoDataSource dataSource, string sql, Function1 rowBuilderFactory, DbCommandEnricher dbCommandEnricher) :
             base(dataSource, sql, rowBuilderFactory, dbCommandEnricher)
         {
@@ -58,9 +60,9 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Attempts to dispose the instance, ignoring any exceptions.
+        /// Disposes an object, ignoring any exception it throws.
         /// </summary>
-        /// <param name="disposable"></param>
+        /// <param name="disposable">The object to dispose.</param>
         void TryDispose(IDisposable disposable)
         {
             try

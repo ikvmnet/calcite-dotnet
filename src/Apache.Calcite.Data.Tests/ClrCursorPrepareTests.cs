@@ -7,13 +7,11 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// The ADO.NET surface driven by the CLR calling convention, from an assembly that sees only the public
-    /// API of <c>Apache.Calcite.Extensions</c>.
+    /// Runs queries through the ADO.NET surface on the CLR cursor convention.
     /// </summary>
     /// <remarks>
-    /// This project has no <c>InternalsVisibleTo</c> from <c>Apache.Calcite.Extensions</c>, so it reaches
-    /// the engine exactly as a consumer of the two packages would — through <c>CalciteConnection</c> and
-    /// nothing else. That is the point of the tests as much as the queries are.
+    /// <c>Apache.Calcite.Extensions</c> grants this project no <c>InternalsVisibleTo</c>, so these tests reach
+    /// the engine only as a consumer of the published packages would, through <c>CalciteConnection</c>.
     /// </remarks>
     public class ClrCursorPrepareTests
     {
@@ -70,10 +68,9 @@ namespace Apache.Calcite.Data.Tests
         [Fact]
         public void Window_aggregate_should_run_through_the_clr_convention()
         {
-            // This project resolves calcite-core 1.43, and 1.43's WinAggContext has a member 1.42's does
-            // not. The class the convention hands to a window implementor is written against 1.42, so a
-            // member it does not carry is a type that will not load here at all, and every window query
-            // fails before it runs. Any window query is the guard.
+            // the convention's implementation of Calcite's WinAggContext must carry every member of the
+            // Calcite version this project resolves, or the type fails to load and every window query fails
+            // before it runs; any window query detects that
             using var c = Open();
             using var cmd = c.CreateCommand();
             cmd.CommandText = "SELECT x, SUM(x) OVER (ORDER BY x) FROM (VALUES (1), (2), (4)) AS t(x) ORDER BY x";

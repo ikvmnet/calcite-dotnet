@@ -9,13 +9,12 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
     /// <summary>
     /// A <see cref="java.util.Comparator"/> backed by a delegate.
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="comparison"></param>
+    /// <typeparam name="T">The type compared.</typeparam>
+    /// <param name="comparison">The comparison.</param>
     /// <remarks>
-    /// <c>PhysType</c> yields a comparator by two routes. For one collation it calls a method that returns
-    /// one; for several it declares an anonymous class, which an expression tree cannot do and which becomes
-    /// the lambda its compare method already was. Both have to arrive at an operator as the same thing, so the
-    /// lambda is wrapped rather than the operator overloaded.
+    /// For a multi-field collation <c>PhysType</c> generates an anonymous <c>Comparator</c> class, which is
+    /// translated to a lambda and wrapped in this so that operators receive a <c>Comparator</c> either way.
+    /// Arguments are converted with <see cref="JavaValues.As{T}"/>.
     /// </remarks>
     sealed class DelegateComparator<T>(Func<T, T, int> comparison) : java.util.Comparator
     {
@@ -34,7 +33,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
             return ReferenceEquals(this, obj);
         }
 
-        // C# does not inherit the defaults of an interface IKVM compiled, so each is forwarded
+        // C# does not inherit the default methods of an interface IKVM compiled, so each is forwarded
 
         /// <inheritdoc />
         public java.util.Comparator reversed() => java.util.Comparator.__DefaultMethods.reversed(this);

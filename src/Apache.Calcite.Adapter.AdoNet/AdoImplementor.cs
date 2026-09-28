@@ -18,12 +18,22 @@ namespace Apache.Calcite.Adapter.AdoNet
 {
 
     /// <summary>
-    /// Translates a tree of <see cref="AdoConvention"/> relational nodes into a SQL statement
-    /// that can be executed against an ADO.NET data source.
+    /// Translates a tree of <see cref="AdoRel"/> nodes into a SQL statement. The counterpart of Calcite's
+    /// <c>JdbcImplementor</c>.
     /// </summary>
+    /// <remarks>
+    /// A correlation variable that the tree reads from an enclosing query, rather than from a correlation set up
+    /// inside the tree, is written as a dynamic parameter. Each is registered with the
+    /// <see cref="IAdoCorrelationDataContextBuilder"/>, which assigns its index, and its SQL type is recorded for
+    /// <see cref="GetDynamicParamType"/>.
+    /// </remarks>
     public class AdoImplementor : RelToSqlConverter
     {
 
+        /// <summary>
+        /// Numbers correlation variables from 1 without recording them, for an implementor constructed without a
+        /// builder.
+        /// </summary>
         class _Builder : IAdoCorrelationDataContextBuilder
         {
 
@@ -37,7 +47,8 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// We need to provide a context which also includes the correlation variables as dynamic parameters.
+        /// The alias context of a correlation variable from outside the tree, which writes each field it is asked
+        /// for as a dynamic parameter.
         /// </summary>
         class _Context : Context
         {
@@ -49,9 +60,9 @@ namespace Apache.Calcite.Adapter.AdoNet
             /// <summary>
             /// Initializes a new instance.
             /// </summary>
-            /// <param name="implementor"></param>
-            /// <param name="variable"></param>
-            /// <param name="fieldList"></param>
+            /// <param name="implementor">The implementor.</param>
+            /// <param name="variable">The correlation variable.</param>
+            /// <param name="fieldList">The variable's fields.</param>
             public _Context(AdoImplementor implementor, RexCorrelVariable variable, List fieldList) :
                 base(implementor.dialect, fieldList.size())
             {
@@ -70,9 +81,8 @@ namespace Apache.Calcite.Adapter.AdoNet
                 var field = (RelDataTypeField)_fieldList.get(ordinal);
                 var index = _implementor._dataContextBuilder.Add(_variable.id, ordinal, _implementor._typeFactory.getJavaClass(field.getType()));
 
-                // the SQL type is recorded here because this is the last place it exists: the value will
-                // leave the plan in Calcite's internal representation — a DATE as a day count in an Integer —
-                // and the Java class alone cannot tell that from an INTEGER when the parameter is bound
+                // the value arrives in Calcite's representation (a DATE is a day count in an Integer), and only
+                // the SQL type tells the binder how to decode it
                 _implementor._dynamicParamTypes[index] = field.getType().getSqlTypeName();
 
                 return new SqlDynamicParam(index, SqlParserPos.ZERO);
@@ -85,11 +95,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         readonly System.Collections.Generic.Dictionary<int, SqlTypeName> _dynamicParamTypes = [];
 
         /// <summary>
-        /// Returns the SQL type of the correlation variable behind a dynamic parameter, or
+        /// Returns the SQL type of the correlation variable written as a dynamic parameter, or
         /// <see langword="null"/> for an index that is not one.
         /// </summary>
-        /// <param name="index"></param>
-        /// <returns></returns>
+        /// <param name="index">The parameter's variable index.</param>
+        /// <returns>The SQL type, or <see langword="null"/>.</returns>
         public SqlTypeName? GetDynamicParamType(int index)
         {
             return _dynamicParamTypes.TryGetValue(index, out var type) ? type : null;
@@ -98,9 +108,12 @@ namespace Apache.Calcite.Adapter.AdoNet
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="typeFactory"></param>
-        /// <param name="dataContextBuilder"></param>
+        /// <param name="dialect">The dialect SQL is written in.</param>
+        /// <param name="typeFactory">The type factory, which gives each correlation variable field its Java class.</param>
+        /// <param name="dataContextBuilder">Registers each correlation variable the statement reads and assigns its
+        /// index.</param>
+        /// <exception cref="ArgumentNullException"><paramref name="typeFactory"/> or
+        /// <paramref name="dataContextBuilder"/> is <see langword="null"/>.</exception>
         public AdoImplementor(SqlDialect dialect, JavaTypeFactory typeFactory, IAdoCorrelationDataContextBuilder dataContextBuilder) :
             base(dialect)
         {
@@ -109,10 +122,11 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Initializes a new instance.
+        /// Initializes a new instance that numbers correlation variables from 1 and registers them nowhere, so a
+        /// statement it writes cannot be given their values.
         /// </summary>
-        /// <param name="dialect"></param>
-        /// <param name="typeFactory"></param>
+        /// <param name="dialect">The dialect SQL is written in.</param>
+        /// <param name="typeFactory">The type factory.</param>
         public AdoImplementor(SqlDialect dialect, JavaTypeFactory typeFactory) :
             this(dialect, typeFactory, new _Builder())
         {
@@ -120,26 +134,33 @@ namespace Apache.Calcite.Adapter.AdoNet
         }
 
         /// <summary>
-        /// Intercepts calls to visitInput and directs them to the <see cref="AdoRel"/> implementation.
+        /// Sends an <see cref="AdoRel"/> to its own <see cref="AdoRel.implement"/>, and any other node to Calcite's
+        /// translation.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
+        /// <param name="rel">The node.</param>
+        /// <returns>The node's SQL.</returns>
         protected override Result dispatch(RelNode rel)
         {
             return rel is AdoRel ado ? ado.implement(this) : base.dispatch(rel);
         }
 
         /// <summary>
-        /// Invoked by a <see cref="AdoRel"/> node to dispatch to the default implementation.
+        /// Translates an <see cref="AdoRel"/> with Calcite's own translation for its node type. The default
+        /// <see cref="AdoRel.implement"/> calls this.
         /// </summary>
-        /// <param name="rel"></param>
-        /// <returns></returns>
+        /// <param name="rel">The node.</param>
+        /// <returns>The node's SQL.</returns>
         public Result implement(AdoRel rel)
         {
             return base.dispatch(rel);
         }
 
-        /// <inheritdoc />
+        /// <summary>
+        /// Returns the alias context of a correlation variable: the one registered where the tree sets up the
+        /// correlation, or otherwise one that writes the variable's fields as dynamic parameters.
+        /// </summary>
+        /// <param name="variable">The correlation variable.</param>
+        /// <returns>The context.</returns>
         protected override Context getAliasContext(RexCorrelVariable variable)
         {
             var context = (Context)correlTableMap.get(variable.id);

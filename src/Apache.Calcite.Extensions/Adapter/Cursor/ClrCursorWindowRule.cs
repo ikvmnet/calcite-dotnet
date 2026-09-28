@@ -11,13 +11,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <summary>
     /// Rule that converts a <see cref="LogicalWindow"/> to a <see cref="ClrCursorWindow"/>.
     /// </summary>
+    /// <remarks>
+    /// Mirrors <c>EnumerableWindowRule</c>.
+    /// </remarks>
     public class ClrCursorWindowRule : ConverterRule
     {
 
         /// <summary>
-        /// Creates a <see cref="ClrCursorWindowRule"/>.
+        /// Creates the rule with its default configuration.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>The rule.</returns>
         public static ClrCursorWindowRule Create()
         {
             return (ClrCursorWindowRule)Config.INSTANCE
@@ -29,7 +32,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The rule's configuration.</param>
         public ClrCursorWindowRule(Config config) :
             base(config)
         {

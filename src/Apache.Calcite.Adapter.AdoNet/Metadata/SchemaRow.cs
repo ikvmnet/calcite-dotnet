@@ -6,39 +6,37 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
 {
 
     /// <summary>
-    /// Reads a row of a provider's <see cref="System.Data.Common.DbConnection.GetSchema(string)"/> collection
-    /// without insisting on the CLR type the driver chose to carry a value in.
+    /// Reads values from a row of a <see cref="System.Data.Common.DbConnection.GetSchema(string)"/> collection,
+    /// converting rather than unboxing.
     /// </summary>
     /// <remarks>
-    /// A driver builds its schema <see cref="DataTable"/> from whatever its catalog gave it, and the widths
-    /// are neither uniform across drivers nor across the columns of one collection: SQL Server's
-    /// <c>NUMERIC_PRECISION</c> arrives as a <see cref="byte"/> and its <c>NUMERIC_SCALE</c> as an
-    /// <see cref="int"/>; OLE DB's <c>CHARACTER_MAXIMUM_LENGTH</c> is a <see cref="decimal"/> and its
-    /// <c>NUMERIC_SCALE</c> a <see cref="short"/>; ODBC's <c>DECIMAL_DIGITS</c> is a <see cref="short"/>.
-    /// <see cref="DataRowExtensions.Field{T}(DataRow, string)"/> unboxes rather than converts and throws on
-    /// every one of those that is not the width asked for — which is how every query against SQL Server came
-    /// to fail. These are counts and codes, so widening one is exact.
+    /// Drivers carry the same column in different CLR types: SQL Server's <c>NUMERIC_PRECISION</c> is a
+    /// <see cref="byte"/> and its <c>NUMERIC_SCALE</c> an <see cref="int"/>; OLE DB's
+    /// <c>CHARACTER_MAXIMUM_LENGTH</c> is a <see cref="decimal"/> and its <c>NUMERIC_SCALE</c> a <see cref="short"/>;
+    /// ODBC's <c>DECIMAL_DIGITS</c> is a <see cref="short"/>. <see cref="DataRowExtensions.Field{T}(DataRow, string)"/>
+    /// unboxes and throws on any width but the one asked for. The values are counts and codes, so converting them
+    /// is exact. A column the collection does not have reads as <see langword="null"/>.
     /// </remarks>
     static class SchemaRow
     {
 
         /// <summary>
-        /// Reads a count or a type code, whatever integral width the driver declared it in.
+        /// Reads a count or a type code, whatever integral type the driver used.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="row">The row.</param>
+        /// <param name="columnName">The column.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static int? Int32(DataRow row, string columnName)
         {
             return Value(row, columnName) is object value ? Convert.ToInt32(value, CultureInfo.InvariantCulture) : null;
         }
 
         /// <summary>
-        /// Reads a flags word, whatever integral width the driver declared it in.
+        /// Reads a flags word, whatever integral type the driver used.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="row">The row.</param>
+        /// <param name="columnName">The column.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static long? Int64(DataRow row, string columnName)
         {
             return Value(row, columnName) is object value ? Convert.ToInt64(value, CultureInfo.InvariantCulture) : null;
@@ -47,21 +45,21 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// <summary>
         /// Reads a name.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="row">The row.</param>
+        /// <param name="columnName">The column.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static string? String(DataRow row, string columnName)
         {
             return Value(row, columnName) is object value ? Convert.ToString(value, CultureInfo.InvariantCulture) : null;
         }
 
         /// <summary>
-        /// Reads a flag, whether the driver stated it as a <see cref="bool"/> or as the <c>YES</c> / <c>NO</c>
-        /// text the information schema and ODBC both use.
+        /// Reads a flag stated as a <see cref="bool"/> or as <c>YES</c>/<c>NO</c> text. Any text but <c>YES</c> reads
+        /// as <see langword="false"/>.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="row">The row.</param>
+        /// <param name="columnName">The column.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         public static bool? Boolean(DataRow row, string columnName)
         {
             return Value(row, columnName) switch
@@ -77,13 +75,12 @@ namespace Apache.Calcite.Adapter.AdoNet.Metadata
         /// Returns the value of a column, or <see langword="null"/> where the column is absent from the
         /// collection or holds no value.
         /// </summary>
-        /// <param name="row"></param>
-        /// <param name="columnName"></param>
-        /// <returns></returns>
+        /// <param name="row">The row.</param>
+        /// <param name="columnName">The column.</param>
+        /// <returns>The value, or <see langword="null"/>.</returns>
         /// <remarks>
-        /// Absent rather than throwing, because which columns a schema collection carries is the driver's
-        /// choice: ODBC's <c>Columns</c> collection has no <c>NUMERIC_PRECISION</c> at all, and one driver's
-        /// extension columns are another's absence.
+        /// A missing column does not throw, because which columns a collection has is up to the driver: ODBC's
+        /// <c>Columns</c> collection has no <c>NUMERIC_PRECISION</c>.
         /// </remarks>
         static object? Value(DataRow row, string columnName)
         {

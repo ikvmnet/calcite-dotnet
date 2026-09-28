@@ -22,20 +22,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs the same query through the cursor convention and through Calcite's, and requires the same rows
-    /// however the cursor is opened and however each row is advanced to.
+    /// Runs the same query through this convention and through Calcite's, and requires the same rows however
+    /// the cursor is opened and however it is advanced.
     /// </summary>
     /// <remarks>
-    /// The oracle is Calcite, as it is for <c>ClrCursorConventionDifferentialTests</c>. What is
-    /// different here is that one plan is read four ways — opened synchronously and read with
-    /// <see cref="ClrCursor.Read"/>, opened with await and read with
-    /// <see cref="ClrCursor.ReadAsync"/>, and each open read with the other advance, including
-    /// alternating the two advances row by row — because the whole claim of the convention is that a
-    /// cursor has one position and two ways to move it.
-    ///
-    /// <para>A query the convention has no node for is planned by Calcite's rules and a converter carries
-    /// its rows, so an aggregate and a join are here as well: they hold the converter into the convention,
-    /// and <see cref="ShouldCarryACursorPlanUnderACalciteNode"/> holds the one out of it.</para>
+    /// Calcite's rows are the expected answer, as in <c>ClrCursorConventionDifferentialTests</c>. Each plan is
+    /// read four ways: opened synchronously and read with <see cref="ClrCursor.Read"/>; opened with await and
+    /// read with <see cref="ClrCursor.ReadAsync"/>; opened with await and read synchronously; and opened
+    /// synchronously with the two advances alternating row by row. A cursor has one position, which either
+    /// advance moves.
     /// </remarks>
     public class ClrCursorReadModeTests
     {
@@ -48,6 +43,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map the implementor stashed values into, which <c>get</c> answers from.</param>
         sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
 
@@ -68,11 +65,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The tables every query here runs over.
         /// </summary>
+        /// <returns>A new root schema holding <c>SALES</c>, <c>SORTED</c> and <c>ASALES</c>.</returns>
         /// <remarks>
-        /// <c>SALES</c> and <c>SORTED</c> are tables of Calcite's SPI, which both conventions read;
-        /// <c>ASALES</c> is the same rows as <c>SALES</c> behind this project's own SPI, with a scan that
-        /// suspends on every row. Calcite cannot read that one, so a query over it is checked against the
-        /// same query over <c>SALES</c>.
+        /// <c>SALES</c> and <c>SORTED</c> implement Calcite's table SPI, which both conventions read.
+        /// <c>ASALES</c> holds the same rows as <c>SALES</c> behind this project's table SPI, with a scan that
+        /// suspends on every row. Calcite cannot read it, so a query over it is compared with the same query over
+        /// <c>SALES</c>.
         /// </remarks>
         static SchemaPlus Schema()
         {
@@ -85,9 +83,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Plans a statement into a convention, with the cursor convention's rules on the planner beside
-        /// Calcite's.
+        /// Plans a statement with its root in the given convention, with this convention's rules registered
+        /// beside Calcite's.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <param name="rootSchema">The schema to plan against.</param>
+        /// <param name="root">The convention the plan's root is requested in.</param>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The physical root the planner chose.</returns>
         static RelNode Plan(string sql, SchemaPlus rootSchema, Convention root, RelOptRule[]? remove = null)
         {
             var rules = new java.util.ArrayList();
@@ -121,6 +124,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Runs a statement through Calcite's convention and returns its rows rendered as text.
         /// </summary>
+        /// <param name="sql">The statement, which must not name <c>ASALES</c>.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> Calcite(string sql)
         {
             var rootSchema = Schema();
@@ -139,6 +144,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Plans a statement into the cursor convention and implements it.
         /// </summary>
+        /// <param name="sql">The statement.</param>
+        /// <returns>The implemented plan, and the context to open it with.</returns>
         static (ClrCursorFactory Factory, DataContext Context) Cursor(string sql)
         {
             var rootSchema = Schema();
@@ -153,8 +160,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Renders a row so that two conventions can be compared without caring which object holds a value.
+        /// Renders a row as text, so that rows from the two conventions compare by value.
         /// </summary>
+        /// <param name="row">A row, an <c>object[]</c> for a multi-column result or the value itself for one column.</param>
+        /// <returns>The fields' text joined with <c>|</c>, with a null written as <c>&lt;null&gt;</c>.</returns>
         static string Render(object? row)
         {
             if (row is object[] array)
@@ -166,6 +175,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens synchronously and reads with <see cref="ClrCursor.Read"/>.
         /// </summary>
+        /// <param name="factory">The implemented plan.</param>
+        /// <param name="context">The context to open the plan with.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> OpenAndRead(ClrCursorFactory factory, DataContext context)
         {
             var rows = new List<string>();
@@ -180,6 +192,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens with await and reads with <see cref="ClrCursor.ReadAsync"/>.
         /// </summary>
+        /// <param name="factory">The implemented plan.</param>
+        /// <param name="context">The context to open the plan with.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static async Task<List<string>> OpenAsyncAndReadAsync(ClrCursorFactory factory, DataContext context)
         {
             var rows = new List<string>();
@@ -194,6 +209,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens synchronously and alternates the two advances, row by row.
         /// </summary>
+        /// <param name="factory">The implemented plan.</param>
+        /// <param name="context">The context to open the plan with.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static async Task<List<string>> OpenAndAlternate(ClrCursorFactory factory, DataContext context)
         {
             var rows = new List<string>();
@@ -214,6 +232,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opens with await and reads with <see cref="ClrCursor.Read"/>.
         /// </summary>
+        /// <param name="factory">The implemented plan.</param>
+        /// <param name="context">The context to open the plan with.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static async Task<List<string>> OpenAsyncAndRead(ClrCursorFactory factory, DataContext context)
         {
             var rows = new List<string>();
@@ -226,7 +247,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The statements compared, each reaching a node the convention has or a converter into it.
+        /// The statements compared.
         /// </summary>
         public static TheoryData<string> Queries =>
         [
@@ -258,13 +279,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         ];
 
         /// <summary>
-        /// Returns the statement Calcite answers, which is the same statement over the table it can read.
+        /// Returns the statement Calcite runs as the expected answer: the same statement over <c>SALES</c> in
+        /// place of <c>ASALES</c>.
         /// </summary>
+        /// <param name="sql">A statement from <c>Queries</c>.</param>
+        /// <returns>The statement with every <c>ASALES</c> replaced by <c>SALES</c>.</returns>
         static string Oracle(string sql) => sql.Replace("ASALES", "SALES");
 
         /// <summary>
         /// Opened synchronously and read synchronously, the rows are Calcite's.
         /// </summary>
+        /// <param name="sql">A statement from <c>Queries</c>.</param>
         [Theory]
         [MemberData(nameof(Queries))]
         public void ShouldAgreeWhenOpenedAndReadSynchronously(string sql)
@@ -277,6 +302,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Opened with await and read with await, the rows are Calcite's.
         /// </summary>
+        /// <param name="sql">A statement from <c>Queries</c>.</param>
+        /// <returns>A task that completes when the test has run.</returns>
         [Theory]
         [MemberData(nameof(Queries))]
         public async Task ShouldAgreeWhenOpenedAndReadWithAwait(string sql)
@@ -289,6 +316,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// One cursor advanced by either member on alternate rows reads every row once, in order.
         /// </summary>
+        /// <param name="sql">A statement from <c>Queries</c>.</param>
+        /// <returns>A task that completes when the test has run.</returns>
         [Theory]
         [MemberData(nameof(Queries))]
         public async Task ShouldAgreeWhenTheTwoAdvancesAlternate(string sql)
@@ -301,6 +330,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// A cursor opened with await can still be read synchronously.
         /// </summary>
+        /// <param name="sql">A statement from <c>Queries</c>.</param>
+        /// <returns>A task that completes when the test has run.</returns>
         [Theory]
         [MemberData(nameof(Queries))]
         public async Task ShouldAgreeWhenOpenedWithAwaitAndReadSynchronously(string sql)
@@ -313,6 +344,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// One factory opens the same plan again and again, and each open is a fresh cursor.
         /// </summary>
+        /// <returns>A task that completes when the test has run.</returns>
         [Fact]
         public async Task ShouldOpenTheSamePlanRepeatedly()
         {
@@ -326,16 +358,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A plan of this convention under a node of Calcite's is read across by the converter out, and the
-        /// rows are the same.
+        /// A plan of this convention under a node of Calcite's is read through the converter out, and the rows
+        /// are Calcite's.
         /// </summary>
         /// <remarks>
-        /// The root is asked to end in <c>EnumerableConvention</c> over a table of this project's SPI, which
-        /// no rule of Calcite's can scan — neither <c>EnumerableTableScan.canHandle</c> nor the bindable
-        /// scan's admits it — so the scan can only be ours and the aggregate above it can only be Calcite's.
-        /// The plan then has to hold the converter, and the test checks that it does rather than trusting
-        /// that it might. Taking Calcite's scan rule away instead does not force it: the planner then
-        /// routes the scan through its interpreter, whose cost ties ours and which it saw first.
+        /// The root is requested in <c>EnumerableConvention</c> over a table of this project's SPI, which neither
+        /// <c>EnumerableTableScan.canHandle</c> nor the bindable scan accepts, so the scan must be this
+        /// convention's and the plan must hold a converter out of it; the test checks the plan for both.
+        /// Removing Calcite's scan rule instead would not force the shape: the planner would route the scan
+        /// through its interpreter, whose cost ties this convention's scan and which it registers first.
         /// </remarks>
         [Fact]
         public void ShouldCarryACursorPlanUnderACalciteNode()

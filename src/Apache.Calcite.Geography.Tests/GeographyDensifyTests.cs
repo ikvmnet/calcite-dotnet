@@ -14,17 +14,13 @@ namespace Apache.Calcite.Geography.Tests
 {
 
     /// <summary>
-    /// Putting points on a geodesic: <c>CLR_ST_GEOG_DENSIFY</c> along one, <c>CLR_ST_GEOG_PROJECTPOINT</c> onto one.
+    /// Tests <c>CLR_ST_GEOG_DENSIFY</c> and <c>CLR_ST_GEOG_PROJECTPOINT</c>, which place points on the geodesic
+    /// between two vertices.
     /// </summary>
     /// <remarks>
-    /// Densifying is usually done to hand a planar consumer something that follows the true path — a map, an
-    /// index, a store that only draws straight lines. Calcite's inserts its vertices along a straight line in
-    /// degrees, which is exactly the path that consumer would have drawn anyway, so the operation buys
-    /// nothing. These vertices are on the geodesic.
-    ///
-    /// <para>Between two points on a parallel away from the equator a geodesic bows poleward, and that is
-    /// what every test here turns on. It is not a small effect: across ten degrees of longitude at 60°N the
-    /// bow is about seven kilometres.</para>
+    /// Calcite's <c>ST_DENSIFY</c> inserts vertices along a straight line in degrees. Between two points on a
+    /// parallel away from the equator the geodesic bows toward the pole, and these tests rely on that
+    /// difference.
     /// </remarks>
     public class GeographyDensifyTests
     {
@@ -72,7 +68,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// An edge already short enough is left alone, and so is a point.
+        /// An edge already short enough, and a point, are returned unchanged.
         /// </summary>
         [Fact]
         public void ShouldLeaveWhatIsAlreadyShortEnough()
@@ -84,7 +80,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// A polygon's rings are walked too, and the result is still a polygon.
+        /// A polygon's rings are densified and the result is still a polygon.
         /// </summary>
         [Fact]
         public void ShouldWalkEveryRingOfAPolygon()
@@ -110,7 +106,7 @@ namespace Apache.Calcite.Geography.Tests
         }
 
         /// <summary>
-        /// Nothing of more than one dimension is projected onto, as Calcite declines the same way.
+        /// Projecting onto a polygon returns null, as Calcite's <c>ST_PROJECTPOINT</c> does.
         /// </summary>
         [Fact]
         public void ShouldDeclineToProjectOntoAnArea()

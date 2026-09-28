@@ -15,23 +15,20 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Requires that a cancellation reaches both of the channels a plan can read it on.
+    /// Covers cancellation reaching nodes of Calcite's <c>EnumerableConvention</c> through
+    /// <c>DataContext.Variable.CANCEL_FLAG</c>.
     /// </summary>
     /// <remarks>
-    /// A statement's plan may hold nodes of two calling conventions and they do not cancel the same way. A
-    /// node of <c>ClrCursorConvention</c> reads the <see cref="CancellationToken"/> its open and each
-    /// advance were given; a node of Calcite's <c>EnumerableConvention</c> reads
-    /// <c>DataContext.Variable.CANCEL_FLAG</c>. <c>AdoCancellationTests</c> in the adapter's suite holds the
-    /// token end, ending at a real <c>DbDataReader</c>. This holds the flag end: <c>StatementDataContext</c>
-    /// takes the statement's token and puts the flag in its map, the way it takes the connection's time zone
-    /// name and puts a <c>java.util.TimeZone</c> there.
+    /// A node of <c>ClrCursorConvention</c> reads the <see cref="CancellationToken"/> its open and each
+    /// advance were given; a node of <c>EnumerableConvention</c> reads the cancel flag instead, which
+    /// <c>StatementDataContext</c> derives from the statement's token. <c>AdoCancellationTests</c> in the
+    /// adapter's suite covers the token; this covers the flag.
     ///
     /// <para>The tables here are Calcite's <c>ScannableTable</c> rather than this convention's SPI, so the
-    /// scan really is in <c>EnumerableConvention</c> and really does read the flag.</para>
+    /// scan is in <c>EnumerableConvention</c> and reads the flag.</para>
     ///
-    /// <para>The flag is asserted directly rather than through an effect of it. A cancelled statement fails
-    /// at the reader too, the token being the same one, so a test that only required the read to throw would
-    /// pass with the flag still false.</para>
+    /// <para>The flag is asserted directly. A cancelled statement also fails at the reader, which observes
+    /// the same token, so requiring only that the read throws would pass with the flag still false.</para>
     /// </remarks>
     public class StatementCancellationTests
     {
@@ -81,17 +78,13 @@ namespace Apache.Calcite.Data.Tests
         /// A token given only to <c>ReadAsync</c> reaches a table that is already reading.
         /// </summary>
         /// <remarks>
-        /// The enumerator's own token was fixed at <c>GetAsyncEnumerator</c> and <c>MoveNextAsync</c> takes
-        /// none, so what a per-call token gets is a registration against the statement's source — which is
-        /// how <c>SqlDataReader.ReadAsync</c> reaches a command already in flight. Cancelling that source
-        /// sets the flag, because the context registered it there. Cancelling it cancels the statement
-        /// rather than the row, which is the only thing the shape allows.
+        /// <c>ReadAsync</c> registers its token against the statement's cancellation source for the length of
+        /// the call, as <c>SqlDataReader.ReadAsync</c> does, and cancelling that source sets the flag. The
+        /// cancellation therefore ends the statement, not just the read.
         ///
-        /// <para><b>The registration is scoped to the call</b>, as SqlClient's is, so this cancels while a
-        /// read is in progress rather than after one has returned: a token handed to a read that has already
-        /// finished must not reach back and kill a reader the caller went on using. So the table blocks and
-        /// another thread cancels, which is the arrangement the flag exists for — a <c>ScannableTable</c>
-        /// holds its thread while it reads and cannot observe anything itself.</para>
+        /// <para>Because the registration lasts only for the call, the cancel has to arrive while a read is in
+        /// progress. The table blocks on its second row and another thread cancels: a <c>ScannableTable</c>
+        /// holds its thread while it reads, and the flag is how it learns of the cancel.</para>
         /// </remarks>
         [Fact]
         public async Task Should_reach_a_reading_table_from_a_per_read_token()
@@ -120,14 +113,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And over a plan opened synchronously, because the flag is the context's rather than the open's.
+        /// A token given to <c>ReadAsync</c> sets the flag over a plan opened synchronously too.
         /// </summary>
         /// <remarks>
-        /// <c>ExecuteReader</c> opens the plan with no token to give it, but the flag does not come from the
-        /// open. It comes from <c>StatementDataContext</c>, which every statement has and which knows nothing
-        /// about how its rows will be read, and a token given to a later <c>ReadAsync</c> is registered
-        /// against the statement's cancellation for the length of that call — so a table of Calcite's
-        /// convention polls a flag the per-read token can still set, whichever way the reader was opened.
+        /// <c>ExecuteReader</c> opens the plan with no token, but the flag belongs to the statement's
+        /// <c>StatementDataContext</c> rather than to the open, and <c>ReadAsync</c> registers its token
+        /// against the statement's cancellation whichever way the reader was opened.
         /// </remarks>
         [Fact]
         public async Task Should_set_calcites_cancel_flag_from_a_per_read_token_over_a_synchronous_open()
@@ -148,8 +139,8 @@ namespace Apache.Calcite.Data.Tests
 
             cancellation.Cancel();
 
-            // a cancelled token given to a read kills the statement before the read is declined, as
-            // SqlDataReader.ReadAsync registers before it checks
+            // a cancelled token given to a read cancels the statement before the read throws, because the
+            // registration is made before the token is checked, as in SqlDataReader.ReadAsync
             await Assert.ThrowsAnyAsync<OperationCanceledException>(async () => await reader.ReadAsync(cancellation.Token));
 
             Assert.True(table.CancelFlag.get());
@@ -159,10 +150,9 @@ namespace Apache.Calcite.Data.Tests
         /// A table of Calcite's own SPI that keeps the cancel flag it was scanned with.
         /// </summary>
         /// <remarks>
-        /// <c>ScannableTable</c> rather than <c>IClrScannableTable</c> deliberately: it puts the scan in
-        /// <c>EnumerableConvention</c> with a converter above it, which is the arrangement the flag has to
-        /// cross. Reading the flag at <c>scan</c> is what <c>ListTransientTable</c> does, and the CSV, file
-        /// and Kafka adapters' tables; nothing polls it on a table's behalf.
+        /// <c>ScannableTable</c> rather than <c>IClrScannableTable</c>, so the scan is in
+        /// <c>EnumerableConvention</c> under a converter. It reads the flag at <c>scan</c>, as Calcite's own
+        /// tables that honour cancellation do; nothing polls the flag on a table's behalf.
         /// </remarks>
         sealed class FlagCapturingTable : AbstractTable, ScannableTable
         {
@@ -196,10 +186,9 @@ namespace Apache.Calcite.Data.Tests
         /// A table of Calcite's own SPI that yields one row and then waits on the cancel flag.
         /// </summary>
         /// <remarks>
-        /// The shape of <c>ListTransientTable</c> and of the CSV adapter's enumerators, which poll the flag
-        /// between rows: a table of Calcite's convention holds the reading thread, so this is the only way
-        /// it learns anything. Ends its rows when the flag is set, so a cancelled read finishes rather than
-        /// hanging.
+        /// Polls the flag between rows, as Calcite's cancellable enumerators do: a table of Calcite's
+        /// convention holds the reading thread, so the flag is its only signal. Ends its rows when the flag
+        /// is set, so a cancelled read finishes rather than hanging.
         /// </remarks>
         sealed class BlockingFlagTable : AbstractTable, ScannableTable
         {

@@ -15,42 +15,37 @@ namespace Apache.Calcite.FullText.Rel.Rules
 {
 
     /// <summary>
-    /// Rules that simplify <c>CLR_FT_*</c> expressions.
+    /// Rules that simplify <c>CLR_FT_*</c> expressions in filters, projections and join conditions.
     /// </summary>
     /// <remarks>
-    /// <para>A host sequences the pass in front of whatever program it runs:</para>
+    /// <para>The rewrites are:</para>
+    /// <list type="bullet">
+    /// <item><c>CLR_FT_CONTAINS_ALL</c> or <c>CLR_FT_CONTAINS_ANY</c> with a repeated keyword loses the
+    /// repeat, and with a single keyword becomes <c>CLR_FT_CONTAINS</c>.</item>
+    /// <item><c>CLR_FT_FUZZY(t, 0)</c> becomes <c>t</c>.</item>
+    /// <item><c>CLR_FT_WEIGHT(s, 1)</c> becomes <c>s</c> where <c>s</c> has the call's own type, a nullable
+    /// <c>DOUBLE</c>.</item>
+    /// <item>Within one <c>AND</c>, <c>CLR_FT_CONTAINS</c> and <c>CLR_FT_CONTAINS_ALL</c> calls over the same
+    /// searched expression merge into one <c>CLR_FT_CONTAINS_ALL</c>; within one <c>OR</c>,
+    /// <c>CLR_FT_CONTAINS</c> and <c>CLR_FT_CONTAINS_ANY</c> calls merge into one
+    /// <c>CLR_FT_CONTAINS_ANY</c>.</item>
+    /// </list>
+    ///
+    /// <para>Each rewrite preserves the value, nulls included: a store's null answer is a property of the
+    /// row, so every call over one searched expression is null on the same rows.
+    /// <c>CLR_FT_PHRASE</c> of a single word is not unwrapped, because whether text is one token is the
+    /// store's analyzer's decision, and <c>CLR_FT_RRF</c> of one score is not unwrapped, because fusion
+    /// preserves an ordering rather than a value.</para>
+    ///
+    /// <para>Run the rules as a separate pass, <see cref="Program"/>, ahead of the host's own program:</para>
     ///
     /// <code>
     /// Programs.sequence(FullTextRules.Program(), Programs.standard())
     /// </code>
     ///
-    /// <para><b>A pass and not rules on the planner.</b> <c>VolcanoCost.isLt</c> compares the row count and
-    /// nothing else, so a filter whose condition was simplified is never <em>cheaper</em> than the same
-    /// filter unsimplified and the planner keeps whichever it registered first — which is the original. This
-    /// is the same argument that keeps <c>Programs.calc</c> a hep pass, and it was measured against the
-    /// sibling package before either was written this way.</para>
-    ///
-    /// <para><b>Every rewrite here is an equality of values</b>, so each is valid wherever an expression can
-    /// stand. That includes the two that merge calls, and the reason is worth stating because it is not
-    /// obvious: these operators are nullable so that a store can have nothing to say about a row a plan
-    /// keeps — an outer join's unmatched side, a row outside the searched partition — and that is a property
-    /// of the row rather than of the keyword. So every call over one searched expression is null on the same
-    /// rows, and <c>CLR_FT_CONTAINS(x, a) AND CLR_FT_CONTAINS(x, b)</c> is null exactly where
-    /// <c>CLR_FT_CONTAINS_ALL(x, a, b)</c> is. The merge needs no filter context to be sound.</para>
-    ///
-    /// <para><b>What is deliberately not here.</b> <c>CLR_FT_PHRASE('steel')</c> is not unwrapped to
-    /// <c>'steel'</c>, though a single-token phrase is the same search in every store surveyed. Whether that
-    /// text is one token is the analyzer's answer, not this package's — <c>'red-bicycle'</c> is two tokens
-    /// under some and one under others — and deciding it here is the in-process approximation the package
-    /// exists to refuse. Nor is <c>CLR_FT_RRF</c> of a single score unwrapped: reciprocal rank fusion is a
-    /// rank transform, so it preserves an ordering and not a value, and these rewrites are value
-    /// equalities.</para>
-    ///
-    /// <para><b>No strictness is declared on these operators</b>, unlike the sibling package's. A
-    /// <c>Strong.Policy.ANY</c> would let <c>RexSimplify</c> rewrite
-    /// <c>CLR_FT_CONTAINS(BODY, 'a') IS NULL</c> into <c>BODY IS NULL</c>, which is a claim about the store:
-    /// Cosmos answers false for a missing property and PostgreSQL answers null. The package cannot know
-    /// which, so it says nothing.</para>
+    /// <para>They are not effective on a <c>VolcanoPlanner</c>: <c>VolcanoCost.isLt</c> compares row counts only,
+    /// so a simplified filter is never cheaper than the original and the planner keeps whichever it
+    /// registered first.</para>
     /// </remarks>
     public static class FullTextRules
     {
@@ -76,16 +71,19 @@ namespace Apache.Calcite.FullText.Rel.Rules
         /// <summary>
         /// Returns every rule in this set.
         /// </summary>
-        /// <returns></returns>
+        /// <returns><see cref="Filter"/>, <see cref="Project"/> and <see cref="Join"/>.</returns>
         public static IReadOnlyList<RelOptRule> Rules()
         {
             return [Filter, Project, Join];
         }
 
         /// <summary>
-        /// Returns these rules as a pass a host sequences in front of its own program.
+        /// Returns these rules as a program for a host to sequence ahead of its own.
         /// </summary>
-        /// <returns></returns>
+        /// <returns>
+        /// A <c>Programs.hep</c> program over <see cref="Rules"/>, run to a fixed point with Calcite's default
+        /// metadata provider. It builds its own <c>HepPlanner</c> and ignores the planner it is passed.
+        /// </returns>
         public static Program Program()
         {
             var rules = new java.util.ArrayList();
@@ -96,15 +94,17 @@ namespace Apache.Calcite.FullText.Rel.Rules
         }
 
         /// <summary>
-        /// Returns the given expression with every <c>CLR_FT_</c> simplification applied.
+        /// Returns the given expression with the <c>CLR_FT_*</c> simplifications applied in one bottom-up pass.
         /// </summary>
-        /// <param name="rexBuilder"></param>
-        /// <param name="node"></param>
-        /// <returns>The simplified expression, or the one given where nothing applied.</returns>
+        /// <param name="rexBuilder">The builder used to create rewritten calls.</param>
+        /// <param name="node">The expression to simplify.</param>
+        /// <returns>The simplified expression, or <paramref name="node"/> where nothing applied.</returns>
         /// <remarks>
-        /// Public because the rules are not the only way to want this: an adapter walking a plan to render it
-        /// wants the canonical form of a call before it starts matching names.
+        /// For an adapter that wants the simplified form of an expression before rendering it, without running
+        /// the rules. One pass does not reach a fixed point: a merge that repeats a keyword is not deduplicated
+        /// until the expression is simplified again.
         /// </remarks>
+        /// <exception cref="ArgumentNullException"><paramref name="rexBuilder"/> or <paramref name="node"/> is <c>null</c>.</exception>
         public static RexNode Simplify(RexBuilder rexBuilder, RexNode node)
         {
             ArgumentNullException.ThrowIfNull(rexBuilder);
@@ -114,18 +114,16 @@ namespace Apache.Calcite.FullText.Rel.Rules
         }
 
         /// <summary>
-        /// Returns a configuration matching the given node class.
+        /// Returns a rule configuration whose operand matches any node of the given class.
         /// </summary>
-        /// <param name="description"></param>
-        /// <param name="relClass"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// <c>FilterToCalcRule</c>'s configuration is borrowed and re-pointed because there is no neutral one
-        /// to start from: <c>RelRule.Config</c> is an interface with no instance of its own, and every
-        /// concrete configuration is generated by immutables from some rule's own sub-interface. Only
-        /// <c>operandSupplier</c>, <c>description</c> and <c>relBuilderFactory</c> are ever read from it, and
-        /// <c>toRule</c> is never called, the rule being constructed directly.
+        /// Starts from <c>FilterToCalcRule.Config.DEFAULT</c> because <c>RelRule.Config</c> has no instance of
+        /// its own; every concrete configuration is generated for some rule's sub-interface. Only the operand
+        /// supplier, description and rel builder factory are read from it, and <c>toRule</c> is never called.
         /// </remarks>
+        /// <param name="description">The name the rule is reported under in planner traces.</param>
+        /// <param name="relClass">The class of node the operand matches, subclasses included.</param>
+        /// <returns>A configuration to construct a <see cref="FullTextRule"/> from.</returns>
         static RelRule.Config Config(string description, java.lang.Class relClass)
         {
             return ((RelRule.Config)FilterToCalcRule.Config.DEFAULT)
@@ -136,7 +134,7 @@ namespace Apache.Calcite.FullText.Rel.Rules
         /// <summary>
         /// A <see cref="RelRule.OperandTransform"/> backed by a delegate.
         /// </summary>
-        /// <param name="transform"></param>
+        /// <param name="transform">Builds the operand from the builder it is given.</param>
         sealed class OperandTransform(Func<RelRule.OperandBuilder, RelRule.Done> transform) : RelRule.OperandTransform
         {
 
@@ -148,8 +146,8 @@ namespace Apache.Calcite.FullText.Rel.Rules
 
             /// <inheritdoc />
             /// <remarks>
-            /// C# does not inherit the defaults of an interface IKVM compiled, so composition is forwarded
-            /// rather than left to <see cref="java.util.function.Function"/>.
+            /// IKVM does not expose a Java default method as a C# default interface member, so this forwards to
+            /// the interface's default body.
             /// </remarks>
             public java.util.function.Function andThen(java.util.function.Function after)
             {
@@ -165,9 +163,10 @@ namespace Apache.Calcite.FullText.Rel.Rules
         }
 
         /// <summary>
-        /// Runs the shuttle over whatever expressions the matched node holds.
+        /// Runs <see cref="Shuttle"/> over the expressions of the matched node, and registers the result where
+        /// anything changed.
         /// </summary>
-        /// <param name="config"></param>
+        /// <param name="config">The configuration carrying the rule's operand and description.</param>
         sealed class FullTextRule(RelRule.Config config) : RelRule(config)
         {
 
@@ -187,9 +186,9 @@ namespace Apache.Calcite.FullText.Rel.Rules
         }
 
         /// <summary>
-        /// The simplifications themselves.
+        /// Applies the simplifications to each call, operands first, taking the first rewrite that applies.
         /// </summary>
-        /// <param name="rexBuilder"></param>
+        /// <param name="rexBuilder">Builds the calls that replace the rewritten ones.</param>
         sealed class Shuttle(RexBuilder rexBuilder) : RexShuttle
         {
 
@@ -217,14 +216,11 @@ namespace Apache.Calcite.FullText.Rel.Rules
             }
 
             /// <summary>
-            /// Drops a fuzzy term of no edits, which is the term.
+            /// Rewrites <c>CLR_FT_FUZZY(t, 0)</c> to <c>t</c>; zero edits is an exact match in every store
+            /// with fuzzy search.
             /// </summary>
-            /// <param name="call"></param>
-            /// <returns></returns>
-            /// <remarks>
-            /// The edit count is Levenshtein in every store that has one, and zero edits is an exact match in
-            /// all of them. What is left is the bare keyword, which is what a keyword position means.
-            /// </remarks>
+            /// <returns>The rewritten expression, or <c>null</c> where the rewrite does not apply.</returns>
+            /// <param name="call">The call, its operands already rewritten.</param>
             static RexNode? Fuzzy(RexCall call)
             {
                 if (FullTextOperatorTable.Matches(call.getOperator(), FullTextOperatorTable.ClrFtFuzzy) == false)
@@ -236,17 +232,14 @@ namespace Apache.Calcite.FullText.Rel.Rules
             }
 
             /// <summary>
-            /// Drops a weight of one, which counts for nothing.
+            /// Rewrites <c>CLR_FT_WEIGHT(s, 1)</c> to <c>s</c>.
             /// </summary>
-            /// <param name="call"></param>
-            /// <returns></returns>
             /// <remarks>
-            /// <c>CLR_FT_WEIGHT</c>'s own declaration says it: a store with no weighting renders the inner
-            /// score and declines only where the weight is not one. The type has to agree, because the
-            /// operator answers <c>DOUBLE</c> and the score it wraps need not be one — an adapter's own
-            /// vector distance may be anything numeric — and dropping the call would then hand the
-            /// expression above a differently typed value.
+            /// Only where <c>s</c> has the call's own type. The score may be any numeric type, and the call
+            /// answers a nullable <c>DOUBLE</c>, so dropping it otherwise would change the expression's type.
             /// </remarks>
+            /// <returns>The rewritten expression, or <c>null</c> where the rewrite does not apply.</returns>
+            /// <param name="call">The call, its operands already rewritten.</param>
             static RexNode? Weight(RexCall call)
             {
                 if (FullTextOperatorTable.Matches(call.getOperator(), FullTextOperatorTable.ClrFtWeight) == false)
@@ -261,17 +254,11 @@ namespace Apache.Calcite.FullText.Rel.Rules
             }
 
             /// <summary>
-            /// Removes a keyword a call already carries, and names a one-keyword call as itself.
+            /// Removes repeated keywords from <c>CLR_FT_CONTAINS_ALL</c> or <c>CLR_FT_CONTAINS_ANY</c>, and
+            /// rewrites a call left with one keyword to <c>CLR_FT_CONTAINS</c>.
             /// </summary>
-            /// <param name="call"></param>
-            /// <returns></returns>
-            /// <remarks>
-            /// Asking for every one of a list that names a keyword twice is asking for it once, and asking
-            /// for any of it likewise. What remains may be a single keyword, and
-            /// <c>CLR_FT_CONTAINS_ALL(x, k)</c> and <c>CLR_FT_CONTAINS_ANY(x, k)</c> both mean
-            /// <c>CLR_FT_CONTAINS(x, k)</c> — which <c>CLR_FT_CONTAINS</c>'s own declaration says, and is why
-            /// a single-keyword search reads better written as itself.
-            /// </remarks>
+            /// <returns>The rewritten expression, or <c>null</c> where the rewrite does not apply.</returns>
+            /// <param name="call">The call, its operands already rewritten.</param>
             RexNode? Keywords(RexCall call)
             {
                 if (FullTextOperatorTable.Matches(call.getOperator(), FullTextOperatorTable.ClrFtContainsAll) == false &&
@@ -296,23 +283,17 @@ namespace Apache.Calcite.FullText.Rel.Rules
             }
 
             /// <summary>
-            /// Merges the calls of a conjunction or a disjunction that search one thing.
+            /// Merges the <c>CLR_FT_CONTAINS</c> and <c>CLR_FT_CONTAINS_ALL</c> operands of an <c>AND</c> into
+            /// one <c>CLR_FT_CONTAINS_ALL</c>, or the <c>CLR_FT_CONTAINS</c> and <c>CLR_FT_CONTAINS_ANY</c>
+            /// operands of an <c>OR</c> into one <c>CLR_FT_CONTAINS_ANY</c>, per searched expression.
             /// </summary>
-            /// <param name="call"></param>
-            /// <returns></returns>
             /// <remarks>
-            /// <para>A conjunction of <c>CLR_FT_CONTAINS</c> and <c>CLR_FT_CONTAINS_ALL</c> over one searched
-            /// expression is one <c>CLR_FT_CONTAINS_ALL</c>, and a disjunction of <c>CLR_FT_CONTAINS</c> and
-            /// <c>CLR_FT_CONTAINS_ANY</c> is one <c>CLR_FT_CONTAINS_ANY</c>. That is the form the stores
-            /// offering an all-of or any-of have — Cosmos's <c>FullTextContainsAll</c>, PostgreSQL's
-            /// <c>to_tsquery('a &amp; b')</c>, SQL Server's <c>CONTAINS('a AND b')</c> — so it is one index
-            /// lookup where the conjunction was two.</para>
-            ///
-            /// <para><b>One searched expression, compared by digest.</b> Two calls over different expressions
-            /// are two searches, and merging them would be a different question. And it is the sameness of
-            /// that expression that makes the merge exact under three-valued logic; see the remarks on this
-            /// class.</para>
+            /// Only calls whose searched expressions are equal are merged, and the merged call takes the place
+            /// of the first of them. The merged form is one search in a store that has an all-of or any-of
+            /// query, where the original was several.
             /// </remarks>
+            /// <returns>The rewritten expression, or <c>null</c> where nothing merged.</returns>
+            /// <param name="call">The call, its operands already rewritten.</param>
             RexNode? Merge(RexCall call)
             {
                 var merged = call.getKind() switch
@@ -375,8 +356,8 @@ namespace Apache.Calcite.FullText.Rel.Rules
                     if (operand is not null)
                         kept.add(operand);
 
-                // composeConjunction rather than a call, because a merge can leave one operand and neither
-                // AND nor OR takes one; and it is what decides the nullability of what is left
+                // compose rather than makeCall, because a merge can leave a single operand, which AND and OR
+                // do not take
                 return call.getKind() == SqlKind.AND
                     ? RexUtil.composeConjunction(rexBuilder, kept)
                     : RexUtil.composeDisjunction(rexBuilder, kept);
@@ -392,15 +373,15 @@ namespace Apache.Calcite.FullText.Rel.Rules
             }
 
             /// <summary>
-            /// Determines whether an operand is a literal of exactly the given value.
+            /// Determines whether an operand is a non-null literal numerically equal to the given value.
             /// </summary>
-            /// <param name="operand"></param>
-            /// <param name="value"></param>
-            /// <returns></returns>
             /// <remarks>
-            /// <c>compareTo</c> rather than <c>equals</c>, because a <c>BigDecimal</c>'s equality counts the
-            /// scale and <c>1</c>, <c>1.0</c> and <c>1.00</c> are three of them.
+            /// Uses <c>compareTo</c>, because <c>BigDecimal.equals</c> also compares scale, so <c>1</c> and
+            /// <c>1.0</c> would differ.
             /// </remarks>
+            /// <param name="operand">The operand to test; anything other than a <c>RexLiteral</c> answers <c>false</c>.</param>
+            /// <param name="value">The value to compare with.</param>
+            /// <returns><c>true</c> if <paramref name="operand"/> is a non-null literal equal to <paramref name="value"/>.</returns>
             static bool Exactly(object operand, java.math.BigDecimal value)
             {
                 if (operand is not RexLiteral literal || literal.isNull())
@@ -411,18 +392,15 @@ namespace Apache.Calcite.FullText.Rel.Rules
             }
 
             /// <summary>
-            /// Builds a call of the given operator, keeping the type the expression already had.
+            /// Builds a call of the given operator with the given type, rather than inferring the type again.
             /// </summary>
-            /// <param name="type"></param>
-            /// <param name="op"></param>
-            /// <param name="operands"></param>
-            /// <returns></returns>
             /// <remarks>
-            /// The type is carried over rather than inferred again, because the two routes into a plan do not
-            /// type a call alike: this table's operators answer <c>ReturnTypes.BOOLEAN_NULLABLE</c>, and the
-            /// ones <c>CalciteCatalogReader.toOp</c> builds around the schema declarations answer whatever
-            /// <c>FullTextSchemaFunction</c> says. A rewrite is not the place to change which a plan has.
+            /// Keeping the type of the expression being replaced guarantees the rewrite does not change it.
             /// </remarks>
+            /// <param name="type">The type of the expression being replaced.</param>
+            /// <param name="op">The operator to call.</param>
+            /// <param name="operands">The operands, in order.</param>
+            /// <returns>The new call.</returns>
             RexNode Call(org.apache.calcite.rel.type.RelDataType type, SqlOperator op, RexNode[] operands)
             {
                 var list = new java.util.ArrayList(operands.Length);

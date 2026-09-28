@@ -8,34 +8,31 @@ namespace Apache.Calcite.Tests
 {
 
     /// <summary>
-    /// Runs a compiled plan of Calcite's convention and yields its rows.
+    /// Runs a compiled plan of <c>EnumerableConvention</c> and yields its rows unconverted, as a differential
+    /// comparison against Calcite requires.
     /// </summary>
-    /// <remarks>
-    /// The rows are handed back untouched, which is what a differential comparison against Calcite
-    /// requires.
-    /// </remarks>
     static class TestRows
     {
 
         /// <summary>
-        /// Runs a plan of <c>EnumerableConvention</c>.
+        /// Binds <paramref name="bindable"/> to <paramref name="root"/> and yields its rows.
         /// </summary>
-        /// <param name="bindable"></param>
-        /// <param name="root"></param>
-        /// <returns></returns>
+        /// <param name="bindable">The compiled plan.</param>
+        /// <param name="root">The data context to bind it to.</param>
+        /// <returns>The rows, read lazily.</returns>
         public static IEnumerable<object> Of(Bindable bindable, DataContext root)
         {
             return FromJava(bindable.bind(root));
         }
 
         /// <summary>
-        /// Reads a linq4j sequence, yielding each row exactly as the enumerator gave it.
+        /// Yields each row of a linq4j sequence exactly as its enumerator returns it.
         /// </summary>
-        /// <param name="source"></param>
-        /// <returns></returns>
+        /// <param name="source">The linq4j sequence to read.</param>
+        /// <returns>The rows, each as the enumerator's <c>current()</c> returns it; the enumerator is closed at the end.</returns>
         /// <remarks>
-        /// Not <c>JavaSequences.FromJava</c>, which is an adapter and converts. A comparison wants to see
-        /// what Calcite's plan actually produced.
+        /// <c>JavaCursors.FromJava</c> is not used because it converts each row through <c>JavaValues.As</c>,
+        /// and the comparison needs what Calcite's plan produced.
         /// </remarks>
         static IEnumerable<object> FromJava(Enumerable source)
         {

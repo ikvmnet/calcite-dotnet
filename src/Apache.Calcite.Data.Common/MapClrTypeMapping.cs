@@ -8,33 +8,38 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// A <c>MAP</c>, mapped by mapping its key and its value and wrapping the result.
+    /// The mapping for a <c>MAP</c>, which converts each key and value with the key and value types' mappings.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Recursive for the same reason <see cref="CollectionClrTypeMapping"/> is: the key and the value are
-    /// resolved through the registry, so a map of arrays, or of a type a caller registered, needs nothing
-    /// here.
+    /// The key and value mappings are resolved through <see cref="ClrTypeContext.Registry"/>, so nested
+    /// types and types added by a caller's resolver are handled the same way. A nullable key or value of a
+    /// value type is presented as <see cref="Nullable{T}"/>.
     /// </para>
     /// <para>
-    /// <b>A nullable key decides the .NET shape.</b> No dictionary the framework ships accepts a null key —
-    /// <see cref="Dictionary{TKey, TValue}"/> throws for one whatever its key type is — and Calcite
-    /// validates and runs <c>MAP[CAST(NULL AS VARCHAR), 1]</c>. So a map whose key type admits a null
-    /// materializes as an array of pairs and one whose key type does not materializes as a dictionary.
-    /// Reading the declared type rather than the keys in hand is what makes the .NET type this mapping
-    /// promises hold for every row, including the row where no key happened to be null.
+    /// Where the declared key type is not nullable the map is read as a
+    /// <see cref="Dictionary{TKey, TValue}"/>. Where it is nullable the map is read as an array of
+    /// <see cref="KeyValuePair{TKey, TValue}"/>, because <see cref="Dictionary{TKey, TValue}"/> does not accept
+    /// a null key and Calcite can produce one (<c>MAP[CAST(NULL AS VARCHAR), 1]</c>). The choice follows the
+    /// declared type, so every row of a column has the same .NET type.
+    /// </para>
+    /// <para>
+    /// A value written to Calcite may be an <see cref="IDictionary"/> or a sequence of objects with
+    /// <c>Key</c> and <c>Value</c> properties, such as <see cref="KeyValuePair{TKey, TValue}"/>. Calcite holds
+    /// the map in a <c>java.util.LinkedHashMap</c>, so entries keep the order they were written in.
     /// </para>
     /// </remarks>
     public sealed class MapClrTypeMapping : ClrTypeMapping
     {
 
         /// <summary>
-        /// Resolves the key's mapping through the registry, which is half of the recursion.
+        /// Resolves the key type's default mapping.
         /// </summary>
-        /// <param name="context"></param>
+        /// <exception cref="ClrTypeMappingException">The map has no key type, or the key type has no
+        /// mapping.</exception>
+        /// <param name="context">The context whose registry resolves the key mapping.</param>
         /// <param name="relType">The <c>MAP</c> type.</param>
-        /// <returns>The mapping a key is carried across by.</returns>
-        /// <exception cref="ClrTypeMappingException">Where the map states no key type.</exception>
+        /// <returns>The key type's default mapping.</returns>
         static ClrTypeMapping Key(ClrTypeContext context, RelDataType relType)
         {
             return context.Registry.RequireMapping(null, relType.getKeyType()
@@ -42,12 +47,13 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Resolves the value's mapping through the registry, which is the other half.
+        /// Resolves the value type's default mapping.
         /// </summary>
-        /// <param name="context"></param>
+        /// <exception cref="ClrTypeMappingException">The map has no value type, or the value type has no
+        /// mapping.</exception>
+        /// <param name="context">The context whose registry resolves the value mapping.</param>
         /// <param name="relType">The <c>MAP</c> type.</param>
-        /// <returns>The mapping a value is carried across by.</returns>
-        /// <exception cref="ClrTypeMappingException">Where the map states no value type.</exception>
+        /// <returns>The value type's default mapping.</returns>
         static ClrTypeMapping Value(ClrTypeContext context, RelDataType relType)
         {
             return context.Registry.RequireMapping(null, relType.getValueType()
@@ -55,16 +61,11 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the .NET type a key or a value materializes as, carrying its nullability.
+        /// Returns the .NET type of a key or value: the mapping's CLR type, made <see cref="Nullable{T}"/>
+        /// where the Calcite type is nullable and the CLR type is a value type.
         /// </summary>
-        /// <param name="mapping"></param>
-        /// <returns>The type, made <see cref="Nullable{T}"/> where the entry admits a null and the type is
-        /// a value type.</returns>
-        /// <remarks>
-        /// A dictionary's own value type is the only place a null value can live, there being no
-        /// <see cref="DBNull"/> inside one, so nullability belongs in the type here for the same reason it
-        /// does in a collection's element.
-        /// </remarks>
+        /// <param name="mapping">The key or value mapping.</param>
+        /// <returns>The mapping's CLR type, or its <see cref="Nullable{T}"/> form.</returns>
         static Type EntryClrType(ClrTypeMapping mapping)
         {
             var clrType = mapping.ClrType;
@@ -73,12 +74,12 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Returns the .NET type a map of these keys and values materializes as.
+        /// Returns the .NET type a map with these key and value mappings is read as.
         /// </summary>
-        /// <param name="key"></param>
-        /// <param name="value"></param>
         /// <returns>A <see cref="Dictionary{TKey, TValue}"/>, or an array of
         /// <see cref="KeyValuePair{TKey, TValue}"/> where the key type admits a null.</returns>
+        /// <param name="key">The key mapping; the nullability of its Calcite type decides the shape.</param>
+        /// <param name="value">The value mapping.</param>
         static Type ShapeOf(ClrTypeMapping key, ClrTypeMapping value)
         {
             var k = EntryClrType(key);
@@ -96,8 +97,10 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="context"></param>
+        /// <param name="context">The context the mapping is resolved in.</param>
         /// <param name="relType">The <c>MAP</c> type.</param>
+        /// <exception cref="ClrTypeMappingException">The key or value type is missing or has no
+        /// mapping.</exception>
         public MapClrTypeMapping(ClrTypeContext context, RelDataType relType) :
             this(context, relType, Key(context, relType), Value(context, relType))
         {
@@ -105,17 +108,13 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Initializes a new instance from mappings already resolved.
+        /// Initializes a new instance from resolved key and value mappings, which the base constructor's CLR
+        /// type is computed from.
         /// </summary>
-        /// <param name="context"></param>
+        /// <param name="context">The context the mapping is resolved in.</param>
         /// <param name="relType">The <c>MAP</c> type.</param>
-        /// <param name="key">The mapping a key is carried across by.</param>
-        /// <param name="value">The mapping a value is carried across by.</param>
-        /// <remarks>
-        /// Private because the base constructor needs the .NET type up front, and that type is computed
-        /// from the two mappings: they have to be resolved before the chain to <c>base</c> can be written,
-        /// and resolving them twice would build each twice.
-        /// </remarks>
+        /// <param name="key">The mapping each key is converted with.</param>
+        /// <param name="value">The mapping each value is converted with.</param>
         MapClrTypeMapping(ClrTypeContext context, RelDataType relType, ClrTypeMapping key, ClrTypeMapping value) :
             base(context, relType, ShapeOf(key, value))
         {
@@ -125,20 +124,19 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Gets the mapping a key is carried across by.
+        /// Gets the mapping each key is converted with.
         /// </summary>
         public ClrTypeMapping KeyMapping => _key;
 
         /// <summary>
-        /// Gets the mapping a value is carried across by.
+        /// Gets the mapping each value is converted with.
         /// </summary>
         public ClrTypeMapping ValueMapping => _value;
 
         /// <inheritdoc />
         /// <remarks>
-        /// A <c>LinkedHashMap</c> because Calcite's own <c>SqlFunctions.map</c> builds one: the entries of a
-        /// map come out in the order they went in, and a <c>HashMap</c> would reorder a value on its way
-        /// through a parameter.
+        /// Builds a <c>LinkedHashMap</c>, as Calcite's <c>SqlFunctions.map</c> does, so that entries keep the
+        /// order they were written in.
         /// </remarks>
         public override object? ToCalcite(object value)
         {
@@ -153,7 +151,8 @@ namespace Apache.Calcite.Data.Common
                     return map;
 
                 case IEnumerable pairs:
-                    // the pairs an array of KeyValuePair reads back as, so what came out can go back in
+                    // any sequence of Key/Value pairs, so that the pair array a nullable-key map reads as can be
+                    // written back
                     foreach (var pair in pairs)
                     {
                         if (pair is null)
@@ -209,11 +208,11 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Reads one key or value back, a null staying null rather than reaching a conversion.
+        /// Converts one key or value with <paramref name="mapping"/>, leaving a null as null.
         /// </summary>
-        /// <param name="mapping"></param>
-        /// <param name="value"></param>
-        /// <returns>The converted value, or <see langword="null"/>.</returns>
+        /// <param name="mapping">The key or value mapping.</param>
+        /// <param name="value">The key or value as Calcite holds it, or <see langword="null"/>.</param>
+        /// <returns>The converted value, or <see langword="null"/> for a null.</returns>
         static object? Read(ClrTypeMapping mapping, object? value)
         {
             return value is null ? null : mapping.FromCalcite(value);

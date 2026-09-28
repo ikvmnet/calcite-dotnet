@@ -23,28 +23,27 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
 {
 
     /// <summary>
-    /// The same SQL through both prepare pipelines, required to give the same rows.
+    /// Runs the same SQL through <see cref="ClrPrepareImpl"/> and through Calcite's <c>CalcitePrepareImpl</c>,
+    /// and requires the same rows.
     /// </summary>
     /// <remarks>
-    /// <see cref="Extensions.Adapter.Cursor.Tests.ClrCursorConventionDifferentialTests"/> plans with <c>Programs.ofRules</c>, which clears the
-    /// planner, so every plan it compares is built wholly in this convention. That is what proves a node is
-    /// this convention's own, and it is not what a prepared statement does: <see cref="ClrPrepareImpl"/> leaves
-    /// Calcite's rules on the planner, so a real plan is whichever mixture of the two conventions the
-    /// planner costed cheapest, with converters where they meet. Nothing else measures that mixture.
+    /// <see cref="Extensions.Adapter.Cursor.Tests.ClrCursorConventionDifferentialTests"/> drives a
+    /// <c>Frameworks</c> planner with a program of its own; this goes through the prepare pipeline, so each
+    /// plan is whatever mixture of this convention and <c>EnumerableConvention</c> that pipeline's planner
+    /// chooses, with converters where they meet.
     ///
-    /// <para>Both sides are read at the pipeline rather than through <c>CalciteConnection</c>, so both yield
-    /// the row objects their plan produced and one renderer serves both. Reading our side through a
-    /// <c>DbDataReader</c> and Calcite's in process would compare renderers as much as engines.</para>
+    /// <para>Both sides are read at the pipeline rather than through a connection, so both yield the row
+    /// objects their plan produced and one renderer serves both.</para>
     /// </remarks>
     public class ClrPrepareImplDifferentialTests
     {
 
         /// <summary>
-        /// Prepares and runs a statement through this project's pipeline.
+        /// Prepares and runs a statement through <see cref="ClrPrepareImpl"/> and renders its rows.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="maxRowCount"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="maxRowCount">The row limit, or a negative value for none.</param>
+        /// <returns>Each row rendered as text.</returns>
         internal static List<string> RunClr(string sql, long maxRowCount = -1)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -60,10 +59,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Prepares and runs a statement through Calcite's own pipeline.
+        /// Prepares and runs a statement through Calcite's own pipeline and renders its rows.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> RunCalcite(string sql)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -89,10 +88,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Renders a row so that two engines can be compared without caring which object holds a value.
+        /// Renders a row as text, so rows from the two pipelines compare by value whatever object holds each
+        /// value.
         /// </summary>
-        /// <param name="row"></param>
-        /// <returns></returns>
+        /// <param name="row">A row, an <c>object[]</c> for a multi-column result or the value itself for one column.</param>
+        /// <returns>Each value rendered by <see cref="Cell"/>, joined with <c>|</c>.</returns>
         static string Render(object? row)
         {
             if (row is object[] array)
@@ -113,10 +113,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Renders one value.
+        /// Renders one value: a Java object by its <c>toString()</c>, anything else in the invariant culture.
         /// </summary>
-        /// <param name="value"></param>
-        /// <returns></returns>
+        /// <param name="value">The value, which may be null.</param>
+        /// <returns>The value's text, or <c>null</c> for a null.</returns>
         static string Cell(object? value) => value switch
         {
             null => "null",
@@ -125,10 +125,10 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         };
 
         /// <summary>
-        /// Every message in an exception and its causes.
+        /// The first line of the message of an exception and of each inner exception.
         /// </summary>
-        /// <param name="e"></param>
-        /// <returns></returns>
+        /// <param name="e">The outermost exception.</param>
+        /// <returns>One line per exception, outermost first.</returns>
         static IEnumerable<string> Chain(Exception e)
         {
             for (Exception? x = e; x != null; x = x.InnerException)
@@ -230,12 +230,12 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// Two rows and an array column, inline, so that the shape needs no schema.
+        /// Two rows with an array column, written inline so the statement needs no schema.
         /// </summary>
         const string Docs = "(VALUES (1, ARRAY['red','green']), (2, ARRAY['blue'])) AS d(ID, TAGS)";
 
         /// <summary>
-        /// The same, under a second alias, standing in for the view the report uses.
+        /// The same rows under a second alias, for the inner relation.
         /// </summary>
         const string Docs2 = "(VALUES (1, ARRAY['red','green']), (2, ARRAY['blue'])) AS d2(ID, TAGS)";
 
@@ -249,11 +249,11 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
             "WHERE c.PID = d.ID AND c.CITY = 'red')";
 
         /// <summary>
-        /// Prepares and runs a statement under connection properties of the caller's choosing.
+        /// Prepares and runs a statement with connection properties set by <paramref name="connectionProperties"/>.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="connectionProperties"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <param name="connectionProperties">Sets properties on the connection the statement is prepared on.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> RunClrWith(string sql, Action<java.util.Properties> connectionProperties)
         {
             return ClrPrepareFixture.WithContext(sql, (context, _) =>
@@ -272,8 +272,8 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <summary>
         /// Prepares and runs a statement with decorrelation turned off.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> RunClrWithoutDecorrelation(string sql)
         {
             return RunClrWith(sql, p => p.setProperty(CalciteConnectionProperty.FORCE_DECORRELATE.camelName(), "false"));
@@ -282,34 +282,33 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         /// <summary>
         /// Prepares and runs a statement with the top-down general decorrelator.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement.</param>
+        /// <returns>The rows, each rendered by <see cref="Render"/>.</returns>
         static List<string> RunClrWithTopDownDecorrelation(string sql)
         {
             return RunClrWith(sql, p => p.setProperty(CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED.camelName(), "true"));
         }
 
         /// <summary>
-        /// Both conventions fail a correlated <c>EXISTS</c> whose inner relation contains an
-        /// <c>UNNEST</c>, and the fault is the decorrelator's.
+        /// Both pipelines fail a correlated <c>EXISTS</c> whose inner relation contains an <c>UNNEST</c>,
+        /// because <c>RelDecorrelator</c> produces a malformed plan.
         /// </summary>
         /// <remarks>
-        /// <c>RelDecorrelator</c> rewrites the correlate into a join and leaves the correlation live inside
-        /// the right input, so the plan reaching the implementor references a variable nothing binds:
-        /// <c>Calc($cor1.ID) / NestedLoopJoin(condition=true) / [scan, Aggregate/Calc($cor1)]</c>. A join
-        /// does not bind a correlation variable; only a <c>Correlate</c> does.
+        /// <c>RelDecorrelator</c> rewrites the correlate into a join and leaves the correlation variable in
+        /// the right input, where nothing binds it:
+        /// <c>Calc($cor1.ID) / NestedLoopJoin(condition=true) / [scan, Aggregate/Calc($cor1)]</c>. Only a
+        /// <c>Correlate</c> binds a correlation variable.
         ///
-        /// <para><b>Calcite fails on the same plan</b>, so this is reproduced rather than introduced, and
-        /// the assertion is on both so that a fix upstream tells us to follow. What differs is only the
-        /// report. <c>EnumerableRelImplementor.getCorrelVariableGetter</c> guards with an <c>assert</c>,
-        /// which is off at run time, so Calcite reads null out of its map and throws a bare
-        /// <c>NullPointerException</c> — and <c>implementRoot</c> attaches it with <c>addSuppressed</c>
-        /// rather than as a cause, so it is not even in the exception chain. Ours raises the message the
-        /// assertion carries.</para>
+        /// <para>Calcite fails on the same plan, and this reproduces that; the test asserts both sides so that
+        /// an upstream fix shows up here. Only the report differs.
+        /// <c>EnumerableRelImplementor.getCorrelVariableGetter</c> guards with an <c>assert</c>, which is off at
+        /// run time, so Calcite throws a <c>NullPointerException</c> that <c>implementRoot</c> attaches with
+        /// <c>addSuppressed</c> rather than as a cause. This convention raises the message the assertion
+        /// carries.</para>
         ///
-        /// <para>Issue 125. The uncorrelated forms over the same relation run, and so does this one without
-        /// decorrelation — see <see cref="ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation"/>,
-        /// which is what says the correlate itself is sound and only the rewrite is not.</para>
+        /// <para>The statement runs without decorrelation
+        /// (<see cref="ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation"/>) and with the top-down
+        /// decorrelator (<see cref="ShouldRunACorrelatedExistsOverAnUncollectWithTopDownDecorrelation"/>).</para>
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnFailingACorrelatedExistsOverAnUncollect()
@@ -326,17 +325,12 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// And it runs, correctly, with decorrelation turned off.
+        /// The statement of <see cref="ShouldAgreeOnFailingACorrelatedExistsOverAnUncollect"/> runs correctly
+        /// with decorrelation turned off.
         /// </summary>
         /// <remarks>
-        /// The correlate the decorrelator would have removed is kept, <c>ClrCursorCorrelate</c> binds
-        /// the variable, and the answer is the one SQL says. So nothing in this convention is missing: the
-        /// plan the decorrelator produces is malformed and the plan it leaves alone is not.
-        ///
-        /// <para>It is one of the two levers a caller has —
-        /// <c>CalciteConnectionStringBuilder.ForceDecorrelate</c> set false. The other keeps the
-        /// decorrelation and changes the decorrelator, see
-        /// <see cref="ShouldRunACorrelatedExistsOverAnUncollectWithTopDownDecorrelation"/>.</para>
+        /// The correlate is kept and <c>ClrCursorCorrelate</c> binds the variable. A caller gets this by
+        /// setting <c>CalciteConnectionStringBuilder.ForceDecorrelate</c> to false.
         /// </remarks>
         [Fact]
         public void ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation()
@@ -345,17 +339,13 @@ namespace Apache.Calcite.Extensions.Prepare.Tests
         }
 
         /// <summary>
-        /// And it runs, correctly, with the top-down general decorrelator instead.
+        /// The same statement runs correctly with the top-down general decorrelator.
         /// </summary>
         /// <remarks>
         /// <c>Programs.DecorrelateProgram</c> chooses between <c>RelDecorrelator</c> and
-        /// <c>TopDownGeneralDecorrelator</c> on <c>topDownGeneralDecorrelationEnabled</c>, and the top-down
-        /// one rewrites this statement into a plan that binds what it references. So the second lever keeps
-        /// the decorrelation rather than turning it off, which is what
-        /// <see cref="ShouldRunACorrelatedExistsOverAnUncollectWithoutDecorrelation"/> costs.
-        ///
-        /// <para>1.43 and later. It is a different algorithm over every statement, so it is not on by
-        /// default here any more than it is upstream.</para>
+        /// <c>TopDownGeneralDecorrelator</c> on <c>topDownGeneralDecorrelationEnabled</c>, and the top-down one
+        /// produces a plan that binds every variable it references, so the statement is still decorrelated. It
+        /// is off by default, as it is in Calcite.
         /// </remarks>
         [Fact]
         public void ShouldRunACorrelatedExistsOverAnUncollectWithTopDownDecorrelation()

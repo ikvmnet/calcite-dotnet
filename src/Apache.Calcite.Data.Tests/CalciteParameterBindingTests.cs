@@ -14,9 +14,9 @@ namespace Apache.Calcite.Data.Tests
     /// Covers what a bound value becomes on its way into a plan.
     /// </summary>
     /// <remarks>
-    /// The rule these hold is that the placeholder's type is the constraint and the caller's word is a
-    /// preference. Calcite refuses a placeholder it cannot infer a type for, so by the time there is a plan
-    /// there is a type, and the plan reads the value as that type whatever was said about it.
+    /// The placeholder's type decides how a value is written, and the <see cref="System.Data.DbType"/> a
+    /// caller names is only a preference. Calcite refuses a placeholder it cannot infer a type for, so every
+    /// placeholder in a plan has a type, and the plan reads the value as that type.
     /// </remarks>
     public class CalciteParameterBindingTests
     {
@@ -39,8 +39,8 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// The placeholder is a <c>TIMESTAMP</c>, so the value is written as one even though the caller
-        /// named a <c>DATE</c>. Naming the date used to hand the plan a count of days where it read a count
-        /// of milliseconds, and threw partway through the scan.
+        /// named a <c>DATE</c>; the plan reads a <c>TIMESTAMP</c> as milliseconds, not the days a
+        /// <c>DATE</c> is written as.
         /// </summary>
         [Fact]
         public void A_value_should_be_written_as_the_placeholder_s_type_and_not_the_named_one()
@@ -52,9 +52,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A widening the table has no entry for is still bound, because there is nothing wrong with putting
-        /// a <see cref="ushort"/> in an <c>INTEGER</c>. Reading one back as a <see cref="ushort"/> is the
-        /// narrowing that stays refused.
+        /// A <see cref="ushort"/> is bound to an <c>INTEGER</c> placeholder although no mapping names that
+        /// pair, because the conversion widens.
         /// </summary>
         [Fact]
         public void A_named_type_the_placeholder_has_no_mapping_for_should_still_bind()
@@ -65,7 +64,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Naming nothing leaves the placeholder's own default, which is the ordinary case.
+        /// A parameter with no <c>DbType</c> set is converted by the mapping for the placeholder's own type.
         /// </summary>
         [Fact]
         public void An_unnamed_value_should_be_written_by_the_placeholder_s_default()
@@ -75,8 +74,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Both spellings of a SQL null reach the plan as one, and neither reaches a mapping. What comes
-        /// back is <see cref="DBNull"/>, which is ADO.NET's spelling of the same thing.
+        /// Both <see langword="null"/> and <see cref="DBNull"/> bind as SQL null without reaching a
+        /// mapping, and the result reads back as <see cref="DBNull"/>.
         /// </summary>
         [Fact]
         public void Either_spelling_of_null_should_bind_as_null()
@@ -86,7 +85,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <see cref="Guid"/> is a <c>UUID</c> now, so a placeholder cast to one carries it.
+        /// A <see cref="Guid"/> binds to a placeholder cast to <c>UUID</c> and reads back as the same value.
         /// </summary>
         [Fact]
         public void A_guid_should_bind_as_a_uuid()
@@ -97,12 +96,10 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The mappings a caller registers reach parameters too, which is the half of the chain that only
-        /// wiring the binder could show.
+        /// A resolver the caller registers applies to parameters as well as results.
         /// </summary>
         /// <remarks>
-        /// Registered before the connection opens, because the chain is read once and bound to the type
-        /// factory the session creates. A resolver added afterwards is registered for the next session.
+        /// Registered before the connection opens, because the session reads the chain once, at open.
         /// </remarks>
         [Fact]
         public void A_caller_mapping_should_reach_a_parameter()
@@ -119,13 +116,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And registering one after the connection opens is refused, rather than accepted and ignored.
+        /// The session reads the chain once, at open, so a resolver added afterwards would never run;
+        /// <see cref="CalciteConnection.TypeMapper"/> throws rather than hand out a chain nothing reads.
         /// </summary>
-        /// <remarks>
-        /// The session reads the chain once, at open, so a resolver added afterwards would never run. Saying
-        /// nothing about that is the worse of the two answers: a caller would have registered a conversion,
-        /// seen values come back unconverted, and had nothing to go on.
-        /// </remarks>
         [Fact]
         public void A_caller_mapping_registered_after_opening_should_be_refused()
         {

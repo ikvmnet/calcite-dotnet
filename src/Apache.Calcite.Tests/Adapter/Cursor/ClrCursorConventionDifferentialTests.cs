@@ -26,25 +26,24 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 {
 
     /// <summary>
-    /// Runs the same query through the cursor convention and through Calcite's, and requires the same rows
-    /// however the cursor is opened and advanced.
+    /// Runs the same query through this convention and through Calcite's <c>EnumerableConvention</c>, and
+    /// requires the same rows however the cursor is opened and advanced.
     /// </summary>
     /// <remarks>
-    /// A node here can be wrong in a way no assertion written by hand would catch, because the expected answer
-    /// is whatever Calcite says it is. Asking Calcite is cheap now that both conventions run side by side, and
-    /// it is the only check that scales to a node like Window, where a detail wrong gives a wrong answer rather
-    /// than a failure.
+    /// The expected answer is whatever Calcite returns, so a query is tested by adding it here rather than by
+    /// writing its result by hand. This matters most for nodes such as Window, where a wrong detail gives a
+    /// wrong answer rather than a failure.
     /// </remarks>
     public class ClrCursorConventionDifferentialTests
     {
 
         /// <summary>
-        /// Initializes the static instance.
+        /// Puts calcite-testkit and Calcite's JDBC assembly on the boot class path.
         /// </summary>
         /// <remarks>
         /// Janino resolves the names in the source Calcite generates through its parent class loader, so an
-        /// assembly the generated code mentions has to be on IKVM's boot class path. FIB is
-        /// <c>Smalls.fibonacciTableWithLimit100</c>, which lives in calcite-testkit.
+        /// assembly the generated code mentions must be on IKVM's boot class path. FIB is
+        /// <c>Smalls.fibonacciTableWithLimit100</c>, which is in calcite-testkit.
         /// </remarks>
         static ClrCursorConventionDifferentialTests()
         {
@@ -56,7 +55,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table with partitions, ties, nulls and an order, so that a window has something to disagree over.
+        /// A table with partitions, ties and a null, so that windows and aggregates have cases to get wrong.
         /// </summary>
         sealed class SalesTable : AbstractTable, ScannableTable
         {
@@ -95,14 +94,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table that says its rows arrive sorted by their first field.
+        /// A table that declares its rows sorted by their first field.
         /// </summary>
         /// <remarks>
-        /// A merge join, a merge union and a sorted aggregate are only ever chosen over their hash and
-        /// buffering counterparts when the input already carries a collation, and a table is where one comes
-        /// from: <c>getStatistic().getCollations()</c> is what both conventions' scans put in their trait set.
-        /// <c>SALES</c> advertises none, so with it Calcite picks a hash join, a union and an aggregate, and
-        /// the three sorted nodes are unreachable in either convention.
+        /// A merge join, a merge union and a sorted aggregate are chosen over their hash and buffering
+        /// counterparts only when the input already carries a collation, which a scan takes from
+        /// <c>getStatistic().getCollations()</c>. <c>SALES</c> declares none, so over it neither convention
+        /// reaches those three nodes.
         /// </remarks>
         sealed class SortedTable : AbstractTable, ScannableTable
         {
@@ -145,18 +143,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of one NOT NULL INTEGER column, which is the row shape every other fixture here avoids.
+        /// A table of one NOT NULL INTEGER column, whose rows are scalars of a primitive physical type.
         /// </summary>
         /// <remarks>
-        /// One column and NOT NULL is what makes <c>JavaRowFormat.optimize</c> answer <c>SCALAR</c>, and
-        /// <c>SCALAR.javaRowClass</c> then answers <c>int</c> rather than <c>java.lang.Integer</c>. A
-        /// sequence still carries the box — Java has no <c>Enumerable&lt;int&gt;</c> to carry anything else
-        /// — so a node that closes its operator over the physical row type instead of the boxed one builds a
-        /// tree that will not compile. Seven did, and no test had this shape: every set operation here is
-        /// over <c>REGION</c> or <c>LABEL</c>, and both are VARCHAR.
+        /// One NOT NULL column makes <c>JavaRowFormat.optimize</c> choose <c>SCALAR</c>, and
+        /// <c>SCALAR.javaRowClass</c> is then <c>int</c> rather than <c>java.lang.Integer</c>. The rows are
+        /// still boxed, since Java has no <c>Enumerable&lt;int&gt;</c>, so a node that instantiates its operator
+        /// over the physical row class instead of the boxed one builds a tree that does not compile. The other
+        /// fixtures' set operations are over VARCHAR columns and cannot show this.
         ///
-        /// <para>A collation, so that the merge union and the sorted aggregate can be reached over it as
-        /// well. <c>SALES</c> advertises none and <c>SORTED</c> has two columns.</para>
+        /// <para>The table declares a collation so that the merge union and the sorted aggregate can be reached
+        /// over it too.</para>
         /// </remarks>
         sealed class ScalarsTable : AbstractTable, ScannableTable
         {
@@ -196,16 +193,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// carry no type the plan can read.
         /// </summary>
         /// <remarks>
-        /// Not a curiosity: a provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as
-        /// ANY, so this is the shape a column of an unmapped type has. Every other fixture here declares a
-        /// concrete type, so until now nothing asked an aggregate to accumulate over a value whose type is
-        /// only known at run time.
+        /// A provider type the ADO.NET adapter has no <c>SqlTypeName</c> for arrives as ANY, so this is the shape
+        /// of a column of an unmapped type.
         ///
-        /// <para>An ordinary INTEGER key in front, so that a window over this table has something to order
-        /// by that is not itself ANY. Three shapes after it, on purpose. <c>V</c> mixes a <c>java.lang.Integer</c> with a
-        /// <c>java.lang.Double</c>, which is the ordinary case for a document store and the one a comparison
-        /// through <c>Comparable.compareTo</c> throws on; <c>S</c> holds strings, which are orderable and not
-        /// addable; and both have a null, so that an aggregate has one to skip.</para>
+        /// <para><c>ID</c> is an ordinary INTEGER, so that a window over this table has something to order by
+        /// that is not ANY. <c>V</c> mixes <c>java.lang.Integer</c> with <c>java.lang.Double</c>, as a document
+        /// store does and as a comparison through <c>Comparable.compareTo</c> throws on; <c>S</c> holds strings,
+        /// which can be ordered but not added; both have a null for an aggregate to skip.</para>
         /// </remarks>
         sealed class AnysTable : AbstractTable, ScannableTable
         {
@@ -243,18 +237,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table whose ANY columns hold collections, which is what a document store puts behind a path
-        /// that holds a JSON array.
+        /// A table whose ANY columns hold collections, as a document store returns for a JSON array.
         /// </summary>
         /// <remarks>
-        /// Its own table rather than two more columns on <c>ANYS</c>, because these values are not
-        /// aggregable and <c>ANYS</c> is read by every aggregate test there is.
+        /// A separate table from <c>ANYS</c>, because these values cannot be aggregated and <c>ANYS</c> is read
+        /// by the aggregate tests.
         ///
-        /// <para><c>TAGS</c> holds strings and has a null, which is the row an inner UNNEST drops and an
-        /// outer one keeps; <c>NUMS</c> holds two numeric classes and has an empty list, which is the other
-        /// row that produces nothing. The lists are <c>java.util.List</c> because that is what
-        /// <c>SqlFunctions.flatProduct</c> reads a collection as — an array column's value is one there
-        /// too.</para>
+        /// <para><c>TAGS</c> holds strings and has a null, the row an inner UNNEST drops and an outer one keeps;
+        /// <c>NUMS</c> holds two numeric classes and has an empty list, the other row that produces nothing.
+        /// The values are <c>java.util.List</c> because that is how <c>SqlFunctions.flatProduct</c> reads a
+        /// collection, an array column's value included.</para>
         /// </remarks>
         sealed class DocsTable : AbstractTable, ScannableTable
         {
@@ -300,34 +292,29 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table whose ANY columns hold the values a document store puts behind one — a GUID, a
-        /// timestamp and a number, each written the way JSON writes it.
+        /// A table whose ANY columns hold the values a document store returns: a GUID, a timestamp and a
+        /// number, each written as JSON writes it.
         /// </summary>
         /// <remarks>
-        /// <c>ANYS</c> asks what an aggregate does over a value of unknown type; this asks what a
-        /// <c>CAST</c> does, which is a different question with a surprising answer.
-        /// <c>RexToLixTranslator.getConvertExpression</c> switches on the target type and then on the
-        /// source, and ANY matches no source branch anywhere, so every one of these ends at
-        /// <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c> — a Java conversion
-        /// between two <em>classes</em>, with no idea that a SQL cast was asked for. What that gives
-        /// depends entirely on which class the target has:
+        /// These test what a <c>CAST</c> of an ANY value does. <c>RexToLixTranslator.getConvertExpression</c>
+        /// switches on the target type and then on the source, and ANY matches no source branch, so each cast
+        /// ends at <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c>: a Java conversion
+        /// between two classes, whose result depends on the target's class:
         ///
         /// <list type="bullet">
-        /// <item>a primitive or <c>BigDecimal</c> target reaches <c>SqlFunctions.toInt</c> and friends,
-        /// which do convert — including from a string;</item>
+        /// <item>a primitive or <c>BigDecimal</c> target reaches <c>SqlFunctions.toInt</c> and similar, which
+        /// convert, from a string too;</item>
         /// <item><c>VARCHAR</c> reaches <c>toString()</c>;</item>
-        /// <item><c>TIMESTAMP</c> and <c>DATE</c> are <c>long</c> and <c>int</c>, so the cast asks for the
-        /// <em>internal</em> value: epoch millis and epoch days, never a date parse;</item>
-        /// <item><c>UUID</c> has no case in <c>JavaTypeFactoryImpl.getJavaClass</c> at all, so its class is
-        /// <c>Object</c>, the conversion is between <c>Object</c> and <c>Object</c>, and the cast is the
-        /// identity — the value comes through as whatever it already was.</item>
+        /// <item><c>TIMESTAMP</c> and <c>DATE</c> are <c>long</c> and <c>int</c>, so the cast yields the internal
+        /// value (epoch milliseconds and epoch days) rather than parsing a date;</item>
+        /// <item><c>UUID</c> maps to <c>org.apache.calcite.util.UuidValue</c>, and converting a string to it
+        /// this way throws.</item>
         /// </list>
         ///
-        /// <para>None of that is this project's: it is Calcite's own generator, reached identically by
-        /// both conventions, and the tests below are here to hold that it stays reached identically. Where
-        /// a caller wants a conversion, the second cast is what performs it — <c>VARCHAR</c> is a source
-        /// branch that every target has, so <c>CAST(CAST(x AS VARCHAR) AS UUID)</c> reaches
-        /// <c>SqlFunctions.uuidFromString</c> and <c>… AS TIMESTAMP</c> reaches the string parser.</para>
+        /// <para>This is Calcite's generator, reached identically by both conventions. A caller wanting a
+        /// conversion casts through <c>VARCHAR</c> first, a source branch every target has:
+        /// <c>CAST(CAST(x AS VARCHAR) AS UUID)</c> reaches <c>SqlFunctions.uuidFromString</c> and
+        /// <c>... AS TIMESTAMP</c> reaches the string parser.</para>
         /// </remarks>
         sealed class CastsTable : AbstractTable, ScannableTable
         {
@@ -365,20 +352,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of twelve distinct keys, which is the one row count at which a hash join's leftovers can
-        /// come out in the wrong order.
+        /// A table of twelve distinct keys: a row count at which the order of a hash join's unmatched build rows
+        /// depends on which collection they are read from.
         /// </summary>
         /// <remarks>
-        /// A RIGHT or a FULL join ends by emitting the build rows nothing probed, and <c>hashEquiJoin_</c>
-        /// walks those by copying the lookup's key set into a <c>java.util.HashSet</c> and iterating
-        /// <em>that</em>. The copy does not have the map's iteration order:
+        /// A RIGHT or FULL join ends by emitting the build rows nothing matched, and <c>hashEquiJoin_</c> reads
+        /// them by copying the lookup's key set into a <c>java.util.HashSet</c> and iterating the copy.
         /// <c>HashSet(Collection)</c> sizes its table as <c>tableSizeFor(max((int) (n / 0.75f) + 1, 16))</c>,
-        /// while a map grown by insertion holds the smallest power of two at or above 16 that still leaves
-        /// <c>n &lt;= 0.75 * cap</c>. The two disagree exactly where <c>n = 0.75 * 2^k</c> — 12, 24, 48 — and
-        /// at twelve keys the map is a table of 16 and the copy a table of 32.
-        ///
-        /// <para>So this is the shape no other fixture here has. <c>SALES</c> has six rows, which puts both
-        /// at 16, and a right join over it agrees whichever collection the leftovers are walked from.</para>
+        /// while a map grown by insertion has the smallest power of two, at least 16, with
+        /// <c>n &lt;= 0.75 * cap</c>. The two differ where <c>n = 0.75 * 2^k</c> (12, 24, 48); at twelve keys
+        /// the map has 16 buckets and the copy 32, so their iteration orders differ. Over <c>SALES</c>'s six
+        /// rows both have 16.
         /// </remarks>
         sealed class WideTable : AbstractTable, ScannableTable
         {
@@ -416,11 +400,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table with a timestamp, which is what a window table function needs and <c>SALES</c> has not.
+        /// A table with a TIMESTAMP column, for window table functions.
         /// </summary>
         /// <remarks>
-        /// A table of its own rather than a column added to <c>SALES</c>, so that nothing already asserted
-        /// changes. A TIMESTAMP arrives as the millisecond count the type factory says it is.
+        /// A TIMESTAMP value is held as the millisecond count the type factory's Java class for it expects.
         /// </remarks>
         sealed class EventsTable : AbstractTable, ScannableTable
         {
@@ -460,13 +443,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// The context a plan is bound with.
         /// </summary>
-        /// <param name="rootSchema"></param>
+        /// <param name="rootSchema">The schema the plan was planned against.</param>
+        /// <param name="parameters">The map both implementors stash values into, which <c>get</c> answers from.</param>
         /// <remarks>
-        /// <paramref name="parameters"/> is the map both implementors stash into, and <c>get</c> has to serve
-        /// it: Calcite's generated <c>bind</c> opens with a declaration per stashed value, reading each back
-        /// with <c>root.get(name)</c>. Answering null there is answering null to
-        /// <c>EnumerableRepeatUnion</c>'s scratch table, which is how a recursive query failed on
-        /// <c>EnumerableConvention</c>'s side of this harness — the side that is supposed to be the oracle.
+        /// <c>parameters</c> is the map both implementors stash values into, and <c>get</c> must answer from it:
+        /// Calcite's generated <c>bind</c> reads each stashed value back with <c>root.get(name)</c>, including
+        /// <c>EnumerableRepeatUnion</c>'s transient table.
         /// </remarks>
         sealed class TestDataContext(SchemaPlus rootSchema, java.util.Map parameters) : DataContext
         {
@@ -486,17 +468,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Runs a query in one convention and returns its rows rendered as text.
+        /// Builds the schema every query here is planned against.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
-        /// <param name="topDown">Whether the planner optimises top down, which is what asks a node to pass a
-        /// trait down to its inputs or derive one from them.</param>
-        /// <returns></returns>
-        /// <summary>
-        /// The schema every query here is planned against.
-        /// </summary>
-        /// <returns></returns>
+        /// <returns>A new root schema holding every table and function the suite's queries name.</returns>
         internal static SchemaPlus Schema()
         {
             var rootSchema = Frameworks.createRootSchema(true);
@@ -512,31 +486,48 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             rootSchema.add("DOCS", new DocsTable());
             rootSchema.add("FIB", org.apache.calcite.schema.impl.TableFunctionImpl.create(org.apache.calcite.util.Smalls.FIBONACCI_LIMIT_100_TABLE_METHOD));
 
-            // A CUSTOM-format fixture, which every other table here is not. HrSchema's rows are instances of
-            // a Java class, so a scan of it yields a synthetic record rather than an Object[] and
-            // PhysType.record, fieldReference and the join selector all take the other branch. It is Calcite's
-            // own schema rather than one of this project's classes because Janino could not name a CLR class
-            // under IKVM 8.14.0 or 8.15.0, which left EnumerableConvention with no plan to compare against.
-            // 8.16.0 fixed that, so it is no longer a constraint on the fixture.
+            // A CUSTOM-format fixture, unlike every other table here. HrSchema's rows are instances of a Java
+            // class, so a scan of it yields a synthetic record rather than an Object[], and PhysType.record,
+            // fieldReference and the join selector take their CUSTOM branches.
             rootSchema.add("HR", new org.apache.calcite.adapter.java.ReflectiveSchema(new org.apache.calcite.test.schemata.hr.HrSchema()));
 
-            // the hierarchy CALCITE-4054 is about, which is a recursive query whose step is a correlate over
-            // the transient table. ReflectiveSchemaWithoutRowCount is Calcite's own wrapper and is what keeps
-            // the planner from costing the scan out of the plan.
+            // the hierarchy Calcite's EnumerableRepeatUnionHierarchyTest walks, including a recursive query
+            // whose step is a correlate over the transient table. Calcite's ReflectiveSchemaWithoutRowCount
+            // wrapper keeps the planner from costing the scan out of the plan.
             rootSchema.add("HIER", new org.apache.calcite.test.ReflectiveSchemaWithoutRowCount(new org.apache.calcite.test.schemata.hr.HierarchySchema()));
 
-            // a column of every type Calcite has an implementor for, which is where IS EMPTY finds a list to
-            // ask about. Calcite's own EnumerableCalcTest uses it for the same reason.
+            // a column of every type Calcite has an implementor for, including a list for IS EMPTY, as
+            // Calcite's EnumerableCalcTest uses it
             rootSchema.add("CATCHALL", new org.apache.calcite.adapter.java.ReflectiveSchema(new org.apache.calcite.test.schemata.catchall.CatchallSchema()));
 
             return rootSchema;
         }
 
+        /// <summary>
+        /// Runs a query in one convention and returns its rows rendered as text; in this convention, the rows
+        /// are read four ways by <see cref="CursorRows"/>.
+        /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
+        /// <param name="topDown">Whether the planner optimises top down, which asks a node to pass a trait down
+        /// to its inputs or derive one from them.</param>
+        /// <param name="planOnly">Whether to return the plan's text instead of its rows.</param>
+        /// <param name="sortedAggregate">Whether to add the convention's sorted aggregate rule.</param>
+        /// <param name="batchNestedLoopJoin">Whether to add the convention's batch nested loop join rule.</param>
+        /// <param name="limitSort">Whether to add the convention's limit sort rule.</param>
+        /// <param name="markJoin">Whether to rewrite sub-queries into mark correlates.</param>
+        /// <param name="excludeHashJoin">Whether to remove both conventions' hash join rules.</param>
+        /// <param name="excludeMergeJoin">Whether to remove both conventions' merge join rules.</param>
+        /// <param name="interpreter">Whether to add this convention's interpreter rule.</param>
+        /// <param name="add">Rules to register alongside the defaults.</param>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The rows rendered as text, or a single element holding the plan's text when
+        /// <paramref name="planOnly"/> is set.</returns>
         static List<string> Run(string sql, bool clr, bool topDown = false, bool planOnly = false, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeHashJoin = false, bool excludeMergeJoin = false, bool interpreter = false, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
-            // planned afresh for every reading, because a plan holding a transient table holds its rows:
-            // a recursive query that ended by deduplication leaves the row it stopped on in that table,
-            // and a second reading of the same plan starts from it
+            // planned afresh for every reading, because a plan holding a transient table keeps its rows: a
+            // recursive query that ended by deduplication leaves its last row in that table, and a second
+            // reading of the same plan starts from it
             (RelNode Physical, java.util.Map Parameters, DataContext Context) Plan()
             {
                 var rootSchema = Schema();
@@ -548,14 +539,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 {
                     foreach (var rule in ClrCursorRules.Rules())
                     {
-                        // dropped on both sides together, or the comparison is between two different plans:
-                        // DefaultRulesProgram takes Calcite's out and this takes ours
+                        // removed on both sides alike, so that both plan the same shape: DefaultRulesProgram
+                        // removes Calcite's and this removes this convention's
                         if (excludeMergeJoin && rule == ClrCursorRules.ClrCursorMergeJoinRule)
                             continue;
 
-                        // and the same for the hash join. Only Calcite's was taken out once, and the plans
-                        // agreed only because this convention's merge join cost its output alone and so beat
-                        // a hash join it ought to have lost to
+                        // likewise the hash join
                         if (excludeHashJoin && rule == ClrCursorRules.ClrCursorJoinRule)
                             continue;
 
@@ -567,35 +556,32 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 }
 
                 // Calcite's own rules are registered by DefaultRulesProgram, because RelOptUtil.registerDefaultRules
-                // registers ENUMERABLE_RULES itself. Where this convention has no node for something the planner
-                // takes Calcite's, and the converters carry the rows across.
+                // registers ENUMERABLE_RULES. Where this convention has no node, the planner takes Calcite's and a
+                // converter carries the rows across.
 
-                // Calcite turns the sorted aggregate on by configuration rather than putting it in
-                // ENUMERABLE_RULES, and this convention does the same, so a test that wants it asks for it and
-                // each side registers its own
+                // the sorted aggregate, batch nested loop join and limit sort rules are declared by both
+                // conventions but left out of their default lists, so a test that wants one asks for it and each
+                // side registers its own
                 if (sortedAggregate)
                     rules.add(clr ? ClrCursorRules.ClrCursorSortedAggregateRule : EnumerableRules.ENUMERABLE_SORTED_AGGREGATE_RULE);
 
                 if (batchNestedLoopJoin)
                     rules.add(clr ? ClrCursorRules.ClrCursorBatchNestedLoopJoinRule : EnumerableRules.ENUMERABLE_BATCH_NESTED_LOOP_JOIN_RULE);
 
-                // and the limit sort is the third of the three rules Calcite declares as fields and leaves out of
-                // ENUMERABLE_RULES. It was in this convention's default list once, which meant Calcite could
-                // never plan the node this one planned, so nothing here was comparing limit sorts at all
                 if (limitSort)
                     rules.add(clr ? ClrCursorRules.ClrCursorLimitSortRule : EnumerableRules.ENUMERABLE_LIMIT_SORT_RULE);
 
                 // Calcite registers TO_INTERPRETER from RelOptUtil.registerDefaultRules, so its side always has
-                // one; this convention's counterpart is a field a caller adds, exactly as the sorted aggregate is
+                // it; this convention's counterpart is not in its default list and a caller adds it
                 if (interpreter && clr)
                     rules.add(ClrCursorRules.ClrCursorInterpreterRule);
 
-                // AVG has no implementor of its own; a real program reduces it to SUM over COUNT first, and this
-                // rule lives in RelOptRules.BASE_RULES rather than in any convention's set
+                // AVG has no implementor; this rule, from RelOptRules.BASE_RULES rather than any convention's
+                // rules, rewrites it in terms of SUM and COUNT
                 rules.add(org.apache.calcite.rel.rules.CoreRules.AGGREGATE_REDUCE_FUNCTIONS);
 
-                // a project holding an OVER is refused by both conventions; it becomes a LogicalWindow first, and
-                // that rule likewise lives outside any convention's set
+                // both conventions refuse a project holding an OVER; this rule, also outside any convention's
+                // rules, rewrites it into a LogicalWindow
                 rules.add(org.apache.calcite.rel.rules.CoreRules.PROJECT_TO_LOGICAL_PROJECT_AND_WINDOW);
                 foreach (var rule in RelOptRules.CALC_RULES.toArray())
                     calcRules.add(rule);
@@ -613,11 +599,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 var expanded = planner.transform(0, logical.getTraitSet(), logical);
 
                 var convention = clr ? (Convention)ClrCursorConvention.Instance : EnumerableConvention.INSTANCE;
-                // Prepare.getDesiredRootTraitSet: the root's own traits with the convention replaced, then
-                // simplified. simplify() is what collapses the composite collation a VALUES of several rows
-                // carries; without it the planner casts that trait to a single RelCollation and fails. The
-                // collation has to be kept rather than dropped for an empty trait set, or SortRemoveRule — which
-                // arrives with Calcite's abstract rules — takes an ORDER BY away as unwanted.
+                // as Prepare.getDesiredRootTraitSet: the root's own traits with the convention replaced, then
+                // simplified. simplify() collapses the composite collation a VALUES of several rows carries,
+                // which the planner otherwise fails casting to a single RelCollation. The collation is kept
+                // rather than requesting an empty trait set, or SortRemoveRule, one of Calcite's rules, drops an
+                // ORDER BY.
                 var chosen = planner.transform(1, expanded.getTraitSet().replace(convention).simplify(), expanded);
                 var physical = planner.transform(2, chosen.getTraitSet(), chosen);
 
@@ -642,17 +628,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
 
         /// <summary>
-        /// Opens a cursor plan every way it can be opened and read, requires the four readings to agree,
-        /// and returns one of them rendered as text.
+        /// Reads a cursor plan four ways, requires the four readings to agree, and returns one of them rendered
+        /// as text.
         /// </summary>
+        /// <param name="plan">Plans the query afresh and returns the physical root, the parameter map its implementor
+        /// stashes into, and the context to bind it with; called once per reading.</param>
+        /// <returns>The rows of the synchronous reading, each rendered as text.</returns>
         /// <remarks>
-        /// A cursor has no mode, so the harness reads the same plan four ways — opened synchronously and advanced with <c>Read</c>, opened with await
-        /// and advanced with <c>ReadAsync</c>, opened with await and advanced synchronously, and opened
-        /// synchronously with the two advances alternating — and every query in the suite holds all four
-        /// to Calcite. The awaited readings run on the pool, because a test thread may carry a
-        /// synchronization context and a blocked wait on one is the deadlock the cursor itself avoids.
-        /// Each reading plans afresh, for the reason <see cref="Run"/> gives; that one factory can be opened
-        /// again and again is <c>ClrCursorReadModeTests</c>' to hold.
+        /// The four readings are: opened synchronously and advanced with <c>Read</c>; opened with await and
+        /// advanced with <c>ReadAsync</c>; opened with await and advanced with <c>Read</c>; and opened
+        /// synchronously with the two advances alternating. So every query in the suite compares all four with
+        /// Calcite. The awaiting readings run on the thread pool, because the test thread may have a
+        /// synchronization context, and blocking on an await under one can deadlock. Each reading plans afresh,
+        /// for the reason given in <see cref="Run"/>; reopening one factory is tested in
+        /// <c>ClrCursorReadModeTests</c>.
         /// </remarks>
         static List<string> CursorRows(Func<(ClrCursorRel Node, java.util.Map Parameters, DataContext Context)> plan)
         {
@@ -716,10 +705,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Renders a row so that two conventions can be compared without caring which object holds a value.
+        /// Renders a row as text, so that rows from the two conventions compare by value.
         /// </summary>
-        /// <param name="row"></param>
-        /// <returns></returns>
+        /// <param name="row">A row, an <c>object[]</c> for a multi-column result or the value itself for one column.</param>
+        /// <returns>The fields' text joined with <c>|</c>, with a null written as <c>&lt;null&gt;</c>.</returns>
         static string Render(object row)
         {
             if (row is object[] array)
@@ -734,25 +723,25 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <param name="build">Builds the logical plan.</param>
         /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
-        /// <param name="planOnly"></param>
+        /// <param name="planOnly">Whether to return the plan's text instead of its rows.</param>
         /// <param name="add">Rules to register alongside Calcite's.</param>
-        /// <param name="remove">Rules to take away once everything is registered.</param>
-        /// <returns></returns>
+        /// <param name="remove">Rules to remove once everything is registered.</param>
+        /// <returns>The rows rendered as text, or a single element holding the plan's text when
+        /// <paramref name="planOnly"/> is set.</returns>
         /// <remarks>
-        /// Some of what <c>EnumerableConvention</c>'s own tests reach cannot be written as SQL:
-        /// <c>Combine</c> has no syntax at all, the POSIX regex operators are not in the core parser, and a
-        /// recursive query over a transient table is built with <c>transientScan</c> and <c>repeatUnion</c>.
-        /// Calcite tests all of those through <c>CalciteAssert.withRel</c>; this is that, against both
-        /// conventions.
+        /// Some plans <c>EnumerableConvention</c>'s own tests reach cannot be written as SQL: <c>Combine</c> has
+        /// no syntax, the POSIX regex operators are not in the core parser, and a recursive query over a
+        /// transient table is built with <c>transientScan</c> and <c>repeatUnion</c>. Calcite tests these
+        /// through <c>CalciteAssert.withRel</c>; this runs them in either convention.
         ///
-        /// <para>The programs are the ones <see cref="Run"/> uses, less the sub-query pass, which has nothing
-        /// to rewrite in a plan that was never a query.</para>
+        /// <para>The programs are those of <see cref="Run"/> without the sub-query pass, which has nothing to
+        /// rewrite in a built plan.</para>
         /// </remarks>
         internal static List<string> RunRel(Func<RelBuilder, RelNode> build, bool clr, bool planOnly = false, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
-            // planned afresh for every reading, because a plan holding a transient table holds its rows:
-            // a recursive query that ended by deduplication leaves the row it stopped on in that table,
-            // and a second reading of the same plan starts from it
+            // planned afresh for every reading, because a plan holding a transient table keeps its rows: a
+            // recursive query that ended by deduplication leaves its last row in that table, and a second
+            // reading of the same plan starts from it
             (RelNode Physical, java.util.Map Parameters, DataContext Context) Plan()
             {
                 var rootSchema = Schema();
@@ -810,36 +799,31 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Returns the chosen plan, for a question about which nodes a query reaches.
+        /// Returns the text of the plan chosen for a query, to check which nodes it reaches.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="clr"></param>
-        /// <returns></returns>
+        /// <param name="sql">The query.</param>
+        /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
+        /// <param name="sortedAggregate">Whether to add the convention's sorted aggregate rule.</param>
+        /// <param name="batchNestedLoopJoin">Whether to add the convention's batch nested loop join rule.</param>
+        /// <param name="limitSort">Whether to add the convention's limit sort rule.</param>
+        /// <param name="markJoin">Whether to rewrite sub-queries into mark correlates.</param>
+        /// <param name="excludeMergeJoin">Whether to remove both conventions' merge join rules.</param>
+        /// <param name="interpreter">Whether to add this convention's interpreter rule.</param>
+        /// <returns>The physical plan as <c>RelOptUtil.toString</c> writes it.</returns>
         internal static string PlanOf(string sql, bool clr, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, bool markJoin = false, bool excludeMergeJoin = false, bool interpreter = false)
         {
             return Run(sql, clr, false, true, sortedAggregate, batchNestedLoopJoin, limitSort, markJoin, false, excludeMergeJoin, interpreter)[0];
         }
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions, with neither convention's merge
-        /// join rule registered.
-        /// </summary>
-        /// <param name="sql"></param>
-        /// <remarks>
-        /// The merge join is what both planners choose for a join of two keys over <c>SALES</c> — the scans
-        /// sort cheaply and it wins on cost — so a question about the hash join has to take it away, from
-        /// both sides at once. Without this the rows agree and prove nothing about the node they were aimed
-        /// at.
-        /// </remarks>
-        /// <summary>
         /// Requires that a query gives the same rows in both conventions, with this convention's interpreter
-        /// rule on.
+        /// rule added.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
         /// <remarks>
-        /// Both sides can interpret either way — Calcite's <c>TO_INTERPRETER</c> is registered by
-        /// <c>registerDefaultRules</c> — so what this turns on is the *choice* of which convention hosts the
-        /// interpreted node, and the rows have to be the same whichever wins.
+        /// Calcite's <c>TO_INTERPRETER</c> is always registered by <c>registerDefaultRules</c>, so adding this
+        /// convention's rule gives the planner a choice of which convention hosts the interpreted node; the rows
+        /// must be the same whichever it chooses.
         /// </remarks>
         static void SameInterpreted(string sql)
         {
@@ -849,6 +833,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             mine.Should().Equal(calcite, "'{0}' should give what EnumerableConvention gives", sql);
         }
 
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions, with neither convention's merge join
+        /// rule registered.
+        /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <remarks>
+        /// Both planners may choose a merge join for an equi-join over <c>SALES</c>, so a test aimed at the hash
+        /// join removes the merge join from both sides; otherwise agreeing rows say nothing about the hash
+        /// join.
+        /// </remarks>
         static void SameHashJoin(string sql)
         {
             var mine = Run(sql, true, false, false, false, false, false, false, false, true);
@@ -858,23 +852,38 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The metadata provider each side plans with: Calcite's own, and for this convention the same with
-        /// the handlers Calcite keys on an <c>Enumerable*</c> class answered for its nodes, as
-        /// <c>ClrPrepare.GetProgram</c> passes it.
+        /// Returns the metadata provider each side plans with: Calcite's own, or for this convention Calcite's
+        /// with handlers for this convention's nodes added in front, as <c>ClrPrepare.GetProgram</c> uses.
         /// </summary>
-        /// <param name="clr"></param>
-        /// <returns></returns>
+        /// <param name="clr">Whether the provider is for this convention's side.</param>
+        /// <returns><c>ClrCursorRelMetadata.Provider</c> for this convention, otherwise
+        /// <c>DefaultRelMetadataProvider.INSTANCE</c>.</returns>
         static org.apache.calcite.rel.metadata.RelMetadataProvider Provider(bool clr) =>
             clr ? Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider : org.apache.calcite.rel.metadata.DefaultRelMetadataProvider.INSTANCE;
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions.
+        /// Returns the text of the plan chosen for a query, optionally with both hash join rules removed.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
+        /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
+        /// <param name="excludeHashJoin">Whether to remove both conventions' hash join rules.</param>
+        /// <returns>The physical plan as <c>RelOptUtil.toString</c> writes it.</returns>
         internal static string PlanOfFib(string sql, bool clr, bool excludeHashJoin = false) => Run(sql, clr, false, true, false, false, false, false, excludeHashJoin)[0];
 
+        /// <summary>
+        /// Runs a query in one convention, optionally with both hash join rules removed.
+        /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <param name="clr">Whether to plan into this convention or into Calcite's.</param>
+        /// <param name="excludeHashJoin">Whether to remove both conventions' hash join rules.</param>
+        /// <returns>The rows rendered as text.</returns>
         internal static List<string> RunFib(string sql, bool clr, bool excludeHashJoin = false) => Run(sql, clr, false, false, false, false, false, false, excludeHashJoin);
 
+        /// <summary>
+        /// Requires that a query gives the same rows in both conventions.
+        /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <param name="limitSort">Whether to add each side's limit sort rule.</param>
         static void Same(string sql, bool limitSort = false)
         {
             var mine = Run(sql, true, limitSort: limitSort);
@@ -884,16 +893,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a query fails the same way in both conventions.
+        /// Requires that a query fails with the same innermost exception type and message in both conventions.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="message">What the exception both sides throw has to say.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="message">Part of the message Calcite's failure must contain.</param>
         /// <remarks>
-        /// A query Calcite refuses is as much a fact about Calcite as one it answers, and a convention that
-        /// answered it would be the divergence. <see cref="Same"/> cannot state that: two throws are not two
-        /// row lists, and a test that only ran the query would pass on a defect that made both sides fail
-        /// for different reasons. The message is what pins which failure, so the java.lang exception a
-        /// generated block throws is compared rather than merely counted.
+        /// A query Calcite refuses must be refused here too. Comparing the innermost exception's type and
+        /// message, rather than only that both throw, catches the two sides failing for different reasons.
         /// </remarks>
         static void SameFailure(string sql, string message)
         {
@@ -924,19 +930,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Requires that a query gives the same rows in both conventions, and that this convention really
         /// planned the node it was aimed at.
         /// </summary>
-        /// <param name="node">The node this convention must have chosen.</param>
-        /// <param name="sql"></param>
-        /// <param name="remove">Rules to take away from this convention's run alone, so that the planner has
-        /// nothing it prefers to <paramref name="node"/>.</param>
+        /// <param name="node">The node this convention's plan must contain.</param>
+        /// <param name="sql">The query.</param>
+        /// <param name="remove">Rules removed from this convention's run only, so that the planner has nothing
+        /// it prefers to <paramref name="node"/>.</param>
+        /// <param name="sortedAggregate">Whether to add each side's sorted aggregate rule.</param>
+        /// <param name="batchNestedLoopJoin">Whether to add each side's batch nested loop join rule.</param>
+        /// <param name="limitSort">Whether to add each side's limit sort rule.</param>
+        /// <param name="add">Rules to register alongside the defaults, on both sides.</param>
         /// <remarks>
-        /// Both conventions' rules are in one planner and <c>VolcanoCost</c> compares the row count and
-        /// nothing else, so a node of Calcite's and the same node of this convention never differ in cost and
-        /// the planner keeps whichever it saw first — Calcite's, which <c>registerDefaultRules</c> registers.
-        /// A test that only compares rows can therefore be comparing Calcite against Calcite. The plan
-        /// assertion is what makes the comparison mean something, and the rules taken away are what make the plan possible.
-        ///
-        /// <para>Only this convention's run loses them. Calcite's side is planned as it always is, and is the
-        /// oracle.</para>
+        /// Both conventions' rules are in one planner, and <c>VolcanoCost</c> compares row counts only, so a
+        /// node of Calcite's and the same node of this convention cost the same and the planner keeps the one it
+        /// registered first, which is Calcite's. Comparing rows alone could then compare Calcite with itself;
+        /// the plan assertion rules that out, and the removed rules make the intended plan reachable.
+        /// Calcite's side is planned without removals.
         /// </remarks>
         static void SameThrough(string node, string sql, RelOptRule[]? remove = null, bool sortedAggregate = false, bool batchNestedLoopJoin = false, bool limitSort = false, RelOptRule[]? add = null)
         {
@@ -953,9 +960,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Requires that a plan built against a <see cref="RelBuilder"/> gives the same rows in both
         /// conventions.
         /// </summary>
-        /// <param name="build"></param>
-        /// <param name="add"></param>
-        /// <param name="remove"></param>
+        /// <param name="build">Builds the logical plan; it is called once for each side.</param>
+        /// <param name="add">Rules to register alongside the defaults, on both sides.</param>
+        /// <param name="remove">Rules to remove once everything is registered, on both sides.</param>
         internal static void SameRel(Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
             var mine = RunRel(build, true, add: add, remove: remove);
@@ -966,12 +973,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         /// <summary>
         /// Requires that a plan built against a <see cref="RelBuilder"/> gives the same rows in both
-        /// conventions, and that this convention really planned the node it was aimed at.
+        /// conventions, and that this convention's plan contains the node named by <paramref name="node"/>.
         /// </summary>
-        /// <param name="node"></param>
-        /// <param name="build"></param>
-        /// <param name="add"></param>
-        /// <param name="remove"></param>
+        /// <param name="node">The node this convention's plan must contain.</param>
+        /// <param name="build">Builds the logical plan; it is called once for each side and once more for the plan text.</param>
+        /// <param name="add">Rules to register alongside the defaults, on both sides.</param>
+        /// <param name="remove">Rules to remove once everything is registered, on both sides.</param>
         internal static void SameRelThrough(string node, Func<RelBuilder, RelNode> build, RelOptRule[]? add = null, RelOptRule[]? remove = null)
         {
             RunRel(build, true, planOnly: true, add: add, remove: remove)[0]
@@ -984,12 +991,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions, with the sorted aggregate rule on.
+        /// Requires that a query gives the same rows in both conventions, with each side's sorted aggregate rule
+        /// added.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
         /// <remarks>
-        /// Neither convention registers that rule by default, because Calcite does not: a caller turns it on.
-        /// Each side gets its own.
+        /// Neither convention registers the rule by default, as Calcite does not.
         /// </remarks>
         static void SameSortedAggregate(string sql)
         {
@@ -1000,13 +1007,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions, with the batch nested loop join
-        /// rule on.
+        /// Requires that a query gives the same rows in both conventions, with each side's batch nested loop
+        /// join rule added.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
         /// <remarks>
-        /// Neither convention registers that rule by default, because Calcite does not. Each side gets its
-        /// own, at Calcite's batch size of 100.
+        /// Neither convention registers the rule by default, as Calcite does not. Both use Calcite's batch size
+        /// of 100.
         /// </remarks>
         static void SameBatchNestedLoopJoin(string sql)
         {
@@ -1017,13 +1024,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions, with the limit sort rule on.
+        /// Requires that a query gives the same rows in both conventions, with each side's limit sort rule
+        /// added.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
         /// <remarks>
-        /// Neither convention registers that rule by default, because Calcite does not: it is a field of
-        /// <c>EnumerableRules</c> left out of <c>ENUMERABLE_RULES</c>, like the sorted aggregate and the
-        /// batch nested loop join. Each side gets its own.
+        /// Neither convention registers the rule by default: Calcite's is a field of <c>EnumerableRules</c> left
+        /// out of <c>ENUMERABLE_RULES</c>, like the sorted aggregate and batch nested loop join rules.
         /// </remarks>
         static void SameLimitSort(string sql)
         {
@@ -1034,14 +1041,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// The sub-query pass that rewrites EXISTS/IN/SOME to a LEFT MARK join rather than to a correlate.
+        /// Builds the sub-query pass that rewrites EXISTS, IN and SOME into a LEFT MARK join rather than a
+        /// correlate.
         /// </summary>
-        /// <returns></returns>
+        /// <param name="provider">The metadata provider the hep pass costs with.</param>
+        /// <returns>A hep program applying Calcite's mark-correlate sub-query rules.</returns>
         /// <remarks>
         /// <c>Programs.subQuery</c> chooses between two rule sets on
-        /// <c>CalciteConnectionConfig.topDownGeneralDecorrelationEnabled</c>, which is off by default, so the
-        /// mark-join rules are not reached through it. They have the same standing as the sorted aggregate
-        /// rule: Calcite ships them and a caller turns them on. This is that second set, spelled out.
+        /// <c>CalciteConnectionConfig.topDownGeneralDecorrelationEnabled</c>, which is off by default, so it does
+        /// not reach the mark-join rules. This builds that second rule set directly.
         /// </remarks>
         static Program MarkJoinSubQueryProgram(org.apache.calcite.rel.metadata.RelMetadataProvider provider)
         {
@@ -1058,10 +1066,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// Requires that a query gives the same rows in both conventions, with the mark-join sub-query
-        /// rules on.
+        /// Requires that a query gives the same rows in both conventions, with sub-queries rewritten by
+        /// <see cref="MarkJoinSubQueryProgram"/>.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
         static void SameMarkJoin(string sql)
         {
             var mine = Run(sql, true, false, false, false, false, false, true);
@@ -1073,12 +1081,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Requires that a query gives the same rows in both conventions when the planner optimises top down.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">The query.</param>
         /// <remarks>
-        /// Top-down optimisation is the only thing that calls <c>passThroughTraits</c>, <c>deriveTraits</c>
-        /// and <c>getDeriveMode</c>. Calcite leaves it off by default, so with it off those three are dead on
-        /// both sides and a comparison says nothing about them; with it on, this convention's answers to them
-        /// are being compared against <c>EnumerableConvention</c>'s.
+        /// Only top-down optimisation calls <c>passThroughTraits</c>, <c>deriveTraits</c> and
+        /// <c>getDeriveMode</c>, and Calcite leaves it off by default, so this is what compares this
+        /// convention's implementations of them with <c>EnumerableConvention</c>'s.
         /// </remarks>
         static void SameTopDown(string sql)
         {
@@ -1091,12 +1098,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Requires that a query gives the stated rows in this convention.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <param name="expected"></param>
+        /// <param name="sql">The query.</param>
+        /// <param name="expected">The rows, each rendered as <see cref="Render"/> writes it, in the order the query returns them.</param>
         /// <remarks>
-        /// For the queries <c>EnumerableConvention</c> cannot run at all, so there is nothing to ask. Prefer
-        /// <see cref="Same"/> everywhere else: an expectation written by hand is one this convention can agree
-        /// with while both of them are wrong.
+        /// Only for queries <c>EnumerableConvention</c> cannot run. Prefer <see cref="Same"/> otherwise: a
+        /// hand-written expectation can be wrong in the same way as the code under test.
         /// </remarks>
         static void Gives(string sql, params string[] expected)
         {
@@ -1122,23 +1128,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAGroupBy() => Same("SELECT \"REGION\", COUNT(*), SUM(\"AMOUNT\"), MIN(\"AMOUNT\"), MAX(\"AMOUNT\") FROM \"SALES\" GROUP BY \"REGION\" ORDER BY \"REGION\"");
 
         /// <summary>
-        /// A GROUP BY with no ORDER BY, which is where the two conventions have to agree on an order neither
-        /// was asked for: ours groups in a <see cref="System.Collections.Generic.Dictionary{TKey, TValue}"/>
-        /// and Calcite's in a <c>java.util.HashMap</c>.
+        /// A GROUP BY with no ORDER BY, where the two conventions must agree on the order of the groups; both
+        /// group in a <c>java.util.HashMap</c>.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAGroupBysOwnOrder() => Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY \"REGION\"");
 
         // MIN, MAX, SUM and AVG over a column of type ANY, whose Java class is Object.
         //
-        // Not Same: Calcite cannot run any of these, so there is no oracle to compare against and the answers
-        // are asserted by hand, exactly as they are for a .NET user-defined function. What Calcite does with
-        // them is held separately by ShouldStillBeBeyondCalcite below, which is the test that says when to
-        // come back here — the day Calcite implements these, these answers are what its own should be
-        // compared against.
+        // Calcite cannot run these, so the answers are asserted by hand with Gives. ShouldStillBeBeyondCalcite
+        // below fails once Calcite can run them, at which point they should be compared with Same.
         //
-        // The values are BigDecimal wherever SqlFunctions.plusAny and divideAny have been through them, which
-        // is what Calcite's ANY arithmetic answers for a scalar + as well.
+        // The values are BigDecimal wherever SqlFunctions.plusAny and divideAny have produced them, as
+        // Calcite's ANY arithmetic does for a scalar + too.
 
         [Fact]
         public void ShouldAggregateAnAnyColumn() => Gives("SELECT MIN(\"V\"), MAX(\"V\"), SUM(\"V\"), AVG(\"V\") FROM \"ANYS\"", "5|30|65.5|16.375");
@@ -1150,11 +1152,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// MIN and MAX over an ANY column holding two numeric classes.
         /// </summary>
         /// <remarks>
-        /// The case that decides the comparison. <c>SqlFunctions.lesser</c>, which
-        /// <c>RexImpTable.MinMaxImplementor</c> calls, compares through <c>Comparable.compareTo</c> and throws
-        /// on an <c>Integer</c> against a <c>Double</c>; <c>ltAny</c> compares the two as BigDecimal, which is
-        /// what a scalar <c>&lt;</c> over ANY already does. A schema of ANY columns is usually a document
-        /// store, where one path holding both is the ordinary case rather than the odd one.
+        /// <c>SqlFunctions.lesser</c>, which <c>RexImpTable.MinMaxImplementor</c> calls, compares through
+        /// <c>Comparable.compareTo</c> and throws on an <c>Integer</c> against a <c>Double</c>; <c>ltAny</c>
+        /// compares them as BigDecimal, as a scalar <c>&lt;</c> over ANY does. In a document store one path
+        /// commonly holds both.
         /// </remarks>
         [Fact]
         public void ShouldAggregateAnAnyColumnOfMixedNumericTypes() => Gives("SELECT MIN(\"V\"), MAX(\"V\") FROM \"ANYS\" WHERE \"K\" = 'EAST'", "10|20.5");
@@ -1163,9 +1164,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// MIN and MAX over an ANY column holding strings.
         /// </summary>
         /// <remarks>
-        /// A <see cref="string"/> is what IKVM gives <c>java.lang.Comparable</c> to as a ghost, so a value of
-        /// one reaching a comparison is worth a test of its own. Nothing casts to <c>Comparable</c> here —
-        /// <c>ltAny</c> takes two <c>Object</c>s — which is the whole reason the ghost cannot bite.
+        /// IKVM gives <see cref="string"/> <c>java.lang.Comparable</c> as a ghost interface, which a CLR cast
+        /// does not see. The comparison here does not cast to <c>Comparable</c>, because <c>ltAny</c> takes two
+        /// <c>Object</c>s.
         /// </remarks>
         [Fact]
         public void ShouldAggregateAnAnyColumnOfStrings() => Gives("SELECT MIN(\"S\"), MAX(\"S\") FROM \"ANYS\"", "a|d");
@@ -1174,9 +1175,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// An aggregate over an ANY column of a group with no rows in it.
         /// </summary>
         /// <remarks>
-        /// <c>StrictAggImplementor</c> decides this and neither implementor here overrides it: SUM is nullable
-        /// and answers null over an empty set, and MIN and MAX do the same. The accumulator being null is also
-        /// what MIN reads as "no row yet", so the two meanings meet here.
+        /// <c>StrictAggImplementor</c> decides this and the ANY implementors do not override it: SUM, MIN and MAX
+        /// return null over an empty set. A null accumulator is also what MIN reads as "no row yet".
         /// </remarks>
         [Fact]
         public void ShouldAggregateAnEmptyAnyColumn() => Gives("SELECT MIN(\"V\"), MAX(\"V\"), SUM(\"V\"), AVG(\"V\") FROM \"ANYS\" WHERE \"K\" = 'NORTH'", "<null>|<null>|<null>|<null>");
@@ -1185,9 +1185,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// SUM over an ANY column holding something that cannot be added.
         /// </summary>
         /// <remarks>
-        /// Calcite's refusal, reached from the accumulator rather than from a scalar <c>+</c>:
-        /// <c>plusAny</c> throws for anything but two numbers, and this convention does not soften that. A
-        /// query that adds up a document path holding text should say so rather than answer.
+        /// <c>plusAny</c> throws for anything but two numbers, and the accumulator reaches it as a scalar
+        /// <c>+</c> does.
         /// </remarks>
         [Fact]
         public void ShouldRefuseToSumAnAnyColumnOfStrings()
@@ -1201,10 +1200,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// MIN, MAX and SUM over an ANY column in a window.
         /// </summary>
         /// <remarks>
-        /// The same implementors, reached the other way. <c>RexImpTable</c> answers a window context with the
-        /// regular implementor for any function that has no window implementor of its own, and none of these
-        /// three has one, so <c>ClrCursorWindow</c> asks for and gets the ANY substitution — but it asks
-        /// through its own code rather than through the aggregate's, which is why this is worth running.
+        /// <c>RexImpTable</c> uses the regular implementor in a window for a function with no window implementor,
+        /// which none of these three has, so <c>ClrCursorWindow</c> also receives the ANY implementors, through
+        /// its own code path rather than the aggregate's.
         /// </remarks>
         [Fact]
         public void ShouldWindowAnAggregateOverAnAnyColumn()
@@ -1232,10 +1230,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// ANY_VALUE over an ANY column.
         /// </summary>
         /// <remarks>
-        /// The same implementor as MAX, upstream and here: <c>RexImpTable</c> answers ANY_VALUE with
-        /// <c>MinMaxImplementor</c>, which asks whether the kind is MIN and takes the other branch when it is
-        /// not. So the value is the largest rather than an arbitrary one, and that is Calcite's choice being
-        /// followed rather than a decision made here.
+        /// <c>RexImpTable</c> implements ANY_VALUE with <c>MinMaxImplementor</c>, which takes the MAX branch for
+        /// any kind other than MIN, so the value is the largest. This follows Calcite.
         /// </remarks>
         [Fact]
         public void ShouldTakeAnyValueOfAnAnyColumn() => Gives("SELECT ANY_VALUE(\"V\"), ANY_VALUE(\"S\") FROM \"ANYS\"", "30|d");
@@ -1244,10 +1240,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// The deviations and the variances over an ANY column.
         /// </summary>
         /// <remarks>
-        /// None of these has an implementor in any convention, in any type. <c>AGGREGATE_REDUCE_FUNCTIONS</c>
-        /// rewrites each into sums of the value and of its square over a count, so they cost nothing beyond
-        /// SUM working — but that means they are only reachable while it does, and a test says so rather than
-        /// leaving it to be rediscovered.
+        /// None of these has an implementor. <c>AGGREGATE_REDUCE_FUNCTIONS</c> rewrites each in terms of sums of
+        /// the value and of its square and a count, so they work over ANY only as long as SUM does.
         /// </remarks>
         [Fact]
         public void ShouldDeviateOverAnAnyColumn() => Gives("SELECT VAR_POP(\"V\"), VAR_SAMP(\"V\") FROM \"ANYS\"", "93.171875|124.2291666666667");
@@ -1256,9 +1250,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// An aggregate over an ANY column carrying a FILTER.
         /// </summary>
         /// <remarks>
-        /// The filter is <c>StrictAggImplementor</c>'s business rather than an implementor's — it folds into
-        /// the same condition the null check builds — so this works for the same reason the null does. Worth
-        /// a row of its own because Calcite cannot run it, and so the differential suite cannot say it.
+        /// <c>StrictAggImplementor</c> handles the filter, folding it into the same condition as the null check,
+        /// rather than the ANY implementors.
         /// </remarks>
         [Fact]
         public void ShouldFilterAnAggregateOverAnAnyColumn() => Gives("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1), SUM(\"V\") FILTER (WHERE \"K\" = 'EAST') FROM \"ANYS\"", "5|30.5");
@@ -1267,22 +1260,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A DISTINCT aggregate over an ANY column.
         /// </summary>
         /// <remarks>
-        /// Both conventions refuse a distinct call outright, exactly as <c>EnumerableAggregate</c> does, and
-        /// <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c> is what takes the DISTINCT off before either sees it.
-        /// So this measures the rule reaching an ANY column rather than anything in the implementors.
+        /// Both conventions' aggregates refuse a distinct call, and <c>AGGREGATE_EXPAND_DISTINCT_AGGREGATES</c>
+        /// rewrites the DISTINCT away first, so this tests that rule over an ANY column rather than the
+        /// implementors.
         /// </remarks>
         [Fact]
         public void ShouldAggregateDistinctlyOverAnAnyColumn() => Gives("SELECT COUNT(DISTINCT \"V\"), SUM(DISTINCT \"V\") FROM \"ANYS\"", "4|65.5");
 
-        // UNNEST over a column of type ANY, which is the other half of what a schema of ANY columns needs
-        // and has the same standing as the aggregates above: EnumerableUncollect asks
-        // NonNullableAccessors.getComponentTypeOrThrow for an element type an ANY has not got and throws
-        // before a row is read, so Calcite forms these plans and cannot run them. The answers are asserted by
-        // hand for that reason, and ShouldStillBeBeyondCalcite says when to come back.
+        // UNNEST over a column of type ANY. EnumerableUncollect asks NonNullableAccessors.getComponentTypeOrThrow
+        // for an element type, which ANY lacks, and throws before a row is read, so Calcite plans these but
+        // cannot run them. As for the aggregates above, the answers are asserted by hand and
+        // ShouldStillBeBeyondCalcite fails once Calcite can run them.
         //
-        // The plan every one of these takes is a correlate whose right input is the uncollect — Calcite's
-        // decorrelation cannot take an UNNEST of a correlation variable apart, which is why the correlate
-        // survives, and why this is the shape a document store's array traversal actually reaches.
+        // Each plan is a correlate whose right input is the uncollect, because decorrelation cannot remove an
+        // UNNEST of a correlation variable; this is the shape a document store's array traversal reaches.
 
         [Fact]
         public void ShouldUncollectAnAnyColumn() =>
@@ -1292,24 +1283,22 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// UNNEST over an ANY column whose lists hold two numeric classes.
         /// </summary>
         /// <remarks>
-        /// Nothing converts an element on its way out — <c>SqlFunctions.flatProduct</c> answers a single
-        /// SCALAR field with <c>LIST_AS_ENUMERABLE</c>, which enumerates the list as it stands — so an
-        /// <c>Integer</c> and a <c>Double</c> in one column come through as themselves, which is what an ANY
-        /// column means.
+        /// No element is converted: <c>SqlFunctions.flatProduct</c> reads a single SCALAR field with
+        /// <c>LIST_AS_ENUMERABLE</c>, which enumerates the list as it is, so an <c>Integer</c> and a
+        /// <c>Double</c> in one column come through unchanged.
         /// </remarks>
         [Fact]
         public void ShouldUncollectAnAnyColumnOfMixedNumericTypes() =>
             Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"NUMS\") AS t(\"X\")", "1|1", "1|2", "3|3", "3|4.5");
 
         /// <summary>
-        /// An outer UNNEST over an ANY column, which is where a null one shows.
+        /// An outer UNNEST over an ANY column keeps a row whose collection is null, against a null.
         /// </summary>
         /// <remarks>
-        /// A null and an empty list answer alike, and for the same reason an array column's do:
-        /// <c>LIST_AS_ENUMERABLE</c> takes a null as the empty sequence, and a correlate emits nothing for an
-        /// outer row whose right side is empty. So an inner UNNEST drops the row — row 3 has a null
-        /// <c>TAGS</c> and row 2 an empty <c>NUMS</c>, and neither appears in the two tests above — and an
-        /// outer one keeps it against a null, which is what this asserts.
+        /// A null and an empty list behave alike, as for an array column: <c>LIST_AS_ENUMERABLE</c> treats a null
+        /// as the empty sequence, and an inner correlate emits nothing for an outer row whose right side is
+        /// empty. So an inner UNNEST drops the row (row 3 has a null <c>TAGS</c>, row 2 an empty <c>NUMS</c>) and
+        /// an outer one keeps it.
         /// </remarks>
         [Fact]
         public void ShouldOuterUncollectANullAnyColumn() =>
@@ -1321,8 +1310,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <remarks>
         /// <c>SqlUnnestOperator.inferReturnType</c> and <c>Uncollect.deriveUncollectRowType</c> append the
-        /// ORDINALITY column in their ANY branch as in every other (CALCITE-7776), and the node hands
-        /// <c>withOrdinality</c> to <c>FLAT_ZIP</c> as <c>EnumerableUncollect</c> does.
+        /// ORDINALITY column in their ANY branch as in the others, and the node passes <c>withOrdinality</c> to
+        /// <c>FLAT_ZIP</c> as <c>EnumerableUncollect</c> does.
         /// </remarks>
         [Fact]
         public void ShouldNumberAnUncollectedAnyColumn() =>
@@ -1333,9 +1322,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// An aggregate over the column an UNNEST of an ANY column produces, which is itself ANY.
         /// </summary>
         /// <remarks>
-        /// The two additions meeting: the element type is unknown to the uncollect, so the column it produces
-        /// is ANY, and MIN and MAX over it are <see cref="ClrAnyAggImplementors"/>'s. A document store
-        /// counting and ranging over the elements of a path is the reason either of them exists.
+        /// The uncollect does not know the element type, so the column it produces is ANY, and MIN and MAX over
+        /// it are implemented by <see cref="ClrAnyAggImplementors"/>.
         /// </remarks>
         [Fact]
         public void ShouldAggregateOverAnUncollectedAnyColumn() =>
@@ -1346,22 +1334,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A filter on the outer row of an UNNEST over an ANY column.
         /// </summary>
         /// <remarks>
-        /// The calc lands under the correlate rather than over the uncollect, so this measures that the
-        /// correlate's left input can be something other than a bare scan while its right is the ANY path.
+        /// The filter is planned under the correlate rather than over the uncollect, so the correlate's left
+        /// input is a calc rather than a bare scan.
         /// </remarks>
         [Fact]
         public void ShouldFilterTheOuterRowOfAnUncollectedAnyColumn() =>
             Gives("SELECT t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\") WHERE d.\"ID\" = 1", "red", "green");
 
         /// <summary>
-        /// Requires that these are still queries Calcite itself cannot run.
+        /// Requires that Calcite still cannot run a query.
         /// </summary>
-        /// <param name="sql"></param>
+        /// <param name="sql">A query tested with <see cref="Gives"/>.</param>
         /// <remarks>
-        /// The other half of asserting an answer by hand. The four queries above have no oracle only for as
-        /// long as <c>EnumerableConvention</c> cannot implement them, and if that changes this goes red and
-        /// says so — which is the moment to compare the two conventions row by row rather than to discover
-        /// from a user that they disagree. It is not an assertion that Calcite ought to fail.
+        /// The queries tested with <see cref="Gives"/> have no expected answer from Calcite only while
+        /// <c>EnumerableConvention</c> cannot run them. If Calcite can, this fails, and those tests should compare
+        /// the two conventions instead. It does not assert that Calcite ought to fail.
         /// </remarks>
         static void StillBeyondCalcite(string sql)
         {
@@ -1372,6 +1359,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <summary>
         /// Runs a query and returns what it threw, or null if it did not throw.
         /// </summary>
+        /// <param name="run">Runs the query.</param>
+        /// <returns>The exception <paramref name="run"/> threw, or null.</returns>
         static Exception? Failure(Func<List<string>> run)
         {
             try
@@ -1402,8 +1391,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             StillBeyondCalcite("SELECT d.\"ID\", t.\"X\", t.\"O\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\", \"O\")");
         }
 
-        // and the same column read every way that already worked, so that a change here is known to be about
-        // the aggregate rather than about the column, the fixture or the scan
+        // the same columns read without an ANY aggregate implementor, which Calcite can run, so that a failure
+        // above can be attributed to the aggregate rather than to the column, the fixture or the scan
 
         [Fact]
         public void ShouldAgreeOnScanningAnAnyColumn() => Same("SELECT \"K\", \"V\", \"S\" FROM \"ANYS\"");
@@ -1424,56 +1413,44 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnCastingAnAnyColumnToANumber() => Same("SELECT \"ID\", CAST(\"N\" AS INTEGER), CAST(\"N\" AS DECIMAL(10, 2)) FROM \"CASTS\" ORDER BY \"ID\"");
 
         /// <summary>
-        /// A TIMESTAMP whose source is ANY reads the value as the internal representation — epoch millis —
-        /// rather than parsing it, and this holds that both conventions do.
+        /// A cast of an ANY value to TIMESTAMP reads it as the internal representation, epoch milliseconds,
+        /// rather than parsing it, in both conventions.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnCastingAnAnyColumnOfMillisToATimestamp() => Same("SELECT \"ID\", CAST(\"M\" AS TIMESTAMP) FROM \"CASTS\" ORDER BY \"ID\"");
 
         /// <summary>
-        /// The other half of the same fact: a timestamp written as text is not epoch millis, so the same
-        /// cast over the same column asks <c>Long.parseLong</c> for a date and gets what it deserves.
+        /// The same cast over a timestamp written as text fails in both conventions, because the text is passed
+        /// to <c>Long.parseLong</c>.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnRefusingATimestampCastOfAnAnyColumnOfText() => SameFailure("SELECT CAST(\"T\" AS TIMESTAMP) FROM \"CASTS\"", "For input string: \"2026-01-01 00:00:00\"");
 
         /// <summary>
-        /// A UUID whose source is ANY refuses the cast, because the conversion is a Java cast rather than
-        /// a parse and a string is not a <c>UUID</c>.
+        /// A cast of an ANY value to UUID fails in both conventions, because the conversion is a Java
+        /// conversion between classes rather than a parse, and a string is not a <c>UuidValue</c>.
         /// </summary>
         /// <remarks>
-        /// The usual ANY story: <c>RexToLixTranslator.getConvertExpression</c> matches no source branch for
-        /// ANY, so the cast ends at <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c>
-        /// — a conversion between two <em>classes</em>, with no idea a SQL cast was asked for. What that
-        /// gives depends on which class the target has, and <b>1.43 gave UUID one</b>:
-        /// <c>JavaTypeFactoryImpl.getJavaClass</c> gained a <c>case UUID</c>, where 1.42 had none at all.
-        /// The class it answers is <c>UuidValue</c> rather than <c>UUID</c>: CALCITE-7716 made
-        /// <c>org.apache.calcite.util.UuidValue</c> the runtime representation of a UUID, because
-        /// <c>UUID.compareTo</c> orders its two halves as signed longs and SQL orders a UUID as an
-        /// unsigned 128-bit value.
-        ///
-        /// <para>So the same statement changed meaning between the two. Under 1.42 the target class was
-        /// <c>Object</c>, the conversion was the identity, and the string arrived at the projection wearing
-        /// a type it did not have — this test was <c>Same</c>, and named for it. Under 1.43 the conversion
-        /// is <c>Object</c> to <c>UuidValue</c> over a value that is a string, and it throws.</para>
-        ///
-        /// <para>Both conventions throw and throw alike, which is what <c>SameFailure</c> requires, so this
-        /// is Calcite's behaviour reproduced rather than ours. A parse would need a UUID source branch in
-        /// <c>getConvertExpression</c>, which is an argument to have upstream.</para>
+        /// <c>RexToLixTranslator.getConvertExpression</c> matches no source branch for ANY, so the cast ends at
+        /// <c>EnumUtils.convert(operand, typeFactory.getJavaClass(targetType))</c>. <c>getJavaClass</c> maps UUID
+        /// to <c>org.apache.calcite.util.UuidValue</c>, Calcite's runtime representation of a UUID (it orders as
+        /// an unsigned 128-bit value, where <c>UUID.compareTo</c> compares signed halves), and converting a
+        /// string to it throws. The convention reproduces Calcite; parsing would need a UUID source branch in
+        /// <c>getConvertExpression</c>.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnRefusingAUuidCastOfAnAnyColumn() =>
             SameFailure("SELECT \"ID\", CAST(\"G\" AS UUID) FROM \"CASTS\" ORDER BY \"ID\"", "to type 'org.apache.calcite.util.UuidValue'");
 
         /// <summary>
-        /// And that the second cast is what converts, VARCHAR being a source branch every target has.
+        /// Casting through VARCHAR first converts, because VARCHAR is a source branch every target has.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnCastingAnAnyColumnThroughVarcharToUuid() => Same("SELECT \"ID\", CAST(CAST(\"G\" AS VARCHAR) AS UUID) FROM \"CASTS\" ORDER BY \"ID\"");
 
         /// <summary>
-        /// The same route to a timestamp, which reaches the string parser and so wants SQL's literal
-        /// spelling rather than ISO-8601.
+        /// Casting through VARCHAR to TIMESTAMP reaches the string parser, which expects SQL's literal format
+        /// rather than ISO-8601.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnCastingAnAnyColumnThroughVarcharToATimestamp() => Same("SELECT \"ID\", CAST(CAST(\"T\" AS VARCHAR) AS TIMESTAMP) FROM \"CASTS\" ORDER BY \"ID\"");
@@ -1481,15 +1458,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnAGlobalAggregate() => Same("SELECT COUNT(*), SUM(\"AMOUNT\"), AVG(\"AMOUNT\") FROM \"SALES\"");
 
-        // An aggregate call carrying its own ordering, which holds the rows of a group and folds them once
-        // the call's ordering has been applied — LazyAggregateLambdaFactory over a SourceSorter per ordered
-        // call and a BasicLazyAccumulator per unordered one. The four cover: one ordered call, a global
-        // aggregate with no GROUP BY, an ordered and an unordered call in one aggregate, and an ordering on a
-        // nullable column.
-
-        // The three branches of the aggregate that are not a plain GROUP BY. A grouping set folds every row
-        // into one group per set in a single pass, and the group columns a set does not group by come out
-        // null however the row read — which is what the indicator field of the key decides.
+        // The three forms of aggregate that are not a plain GROUP BY. A grouping set folds every row into one
+        // group per set in a single pass, and the group columns a set does not group by come out null, as the
+        // key's indicator field decides.
 
         [Fact]
         public void ShouldAgreeOnGroupingSets() =>
@@ -1507,10 +1478,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnGroupingSetsOwnOrder() =>
             Same("SELECT \"REGION\", COUNT(*) FROM \"SALES\" GROUP BY GROUPING SETS ((\"REGION\"), ())");
 
-        // A grouping set over four columns keys on eight fields -- one per column and one indicator per column
-        // -- and a row of more than six is the only one FlatLists.copyOf builds, over an array whose element
-        // type Calcite names as Comparable. That is the arity at which a VARCHAR group column reaches the
-        // ghost interface, so no grouping set over three columns or fewer covers it.
+        // A grouping set over four columns keys on eight fields, one per column and one indicator per column.
+        // FlatLists.copyOf builds a key of more than six fields over an array whose element type Calcite names
+        // as Comparable, the ghost interface IKVM gives a string, so only at this arity does a VARCHAR group
+        // column reach it.
 
         [Fact]
         public void ShouldAgreeOnARollupOverEveryColumn() =>
@@ -1523,6 +1494,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnADistinctOverEveryColumn() =>
             Same("SELECT DISTINCT \"ID\", \"REGION\", \"AMOUNT\", \"LABEL\" FROM \"SALES\" ORDER BY 1");
+
+        // An aggregate call with its own ordering holds a group's rows and folds them once the ordering is
+        // applied: LazyAggregateLambdaFactory, with a SourceSorter per ordered call and a BasicLazyAccumulator
+        // per unordered one. These cover one ordered call, a global aggregate, an ordered and an unordered
+        // call in one aggregate, and an ordering on a nullable column.
 
         [Fact]
         public void ShouldAgreeOnAnOrderedAggregateCall() =>
@@ -1546,8 +1522,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnALeftJoin() => Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT JOIN (SELECT * FROM \"SALES\" WHERE \"AMOUNT\" > 25) b ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\", b.\"ID\"");
 
-        // A batch nested loop join, which needs its rule turned on. The right input becomes a filter over a
-        // disjunction of the batch's conditions, so one pass of it serves a hundred left rows.
+        // A batch nested loop join, whose rule must be added. The right input becomes a filter over a
+        // disjunction of the batch's conditions, so one pass of it serves up to a hundred left rows.
 
         [Fact]
         public void ShouldAgreeOnABatchNestedLoopJoin() =>
@@ -1585,8 +1561,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a ASOF JOIN \"SALES\" b MATCH_CONDITION b.\"ID\" > a.\"ID\" ON a.\"REGION\" = b.\"REGION\" ORDER BY a.\"ID\"");
 
         /// <summary>
-        /// The order of an ASOF join's rows is the order of the map it indexes the left input by, so a query
-        /// with no ORDER BY is the one that says whether ours agrees with linq4j's.
+        /// An ASOF join emits rows in the order of the map it indexes its left input by, so with no ORDER BY
+        /// this compares that order with linq4j's.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAnAsofJoinsOwnOrder() =>
@@ -1608,13 +1584,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a RIGHT JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"LABEL\" = b.\"LABEL\"");
 
         /// <summary>
-        /// The same question at the one build-side size where the collection the leftovers are walked from
-        /// decides the answer.
+        /// The same order at a build-side size where it depends on which collection the unmatched rows are read
+        /// from.
         /// </summary>
         /// <remarks>
-        /// <c>WIDE</c> has twelve keys, so the lookup is a table of 16 and the <c>HashSet</c> copied from its
-        /// key set is a table of 32; the two orders differ. <see cref="ShouldAgreeOnARightJoinsOwnOrder"/> is
-        /// over six keys, where both are 16 and either collection gives the same rows.
+        /// <c>WIDE</c> has twelve keys, so the lookup has 16 buckets and the <c>HashSet</c> copied from its key
+        /// set has 32, and their orders differ. <see cref="ShouldAgreeOnARightJoinsOwnOrder"/> is over six keys,
+        /// where both have 16.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnARightJoinsOwnOrderOverTwelveKeys() =>
@@ -1628,9 +1604,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAFullJoinsOwnOrder() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a FULL JOIN (SELECT * FROM \"SALES\" WHERE \"ID\" > 1) b ON a.\"LABEL\" = b.\"LABEL\"");
 
-        // A set operation with no ORDER BY, which is the same question as the GROUP BY above: the rows come
-        // out in the order of the collection the operator held them in, and Calcite holds them in a
-        // java.util.HashSet or a HashMultiset.
+        // Set operations with no ORDER BY: as for the GROUP BY above, the rows come out in the order of the
+        // collection the operator holds them in, which in Calcite is a java.util.HashSet or a HashMultiset.
 
         [Fact]
         public void ShouldAgreeOnUnionsOwnOrder() => Same("SELECT \"REGION\" FROM \"SALES\" UNION SELECT \"LABEL\" FROM \"SALES\"");
@@ -1657,10 +1632,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A union of many inputs is implemented as one concat over all of them, not a pairwise fold.
         /// </summary>
         /// <remarks>
-        /// The fold nested itself inside both opens of each next step, so the compiled plan doubled with
-        /// every input: twenty-four branches is some eight million copies of the first, and the process
-        /// runs out of memory rather than failing. An <c>IN</c> list of twenty dynamic parameters becomes
-        /// exactly such a union, which is how EF Core's parameter bucketization reached it.
+        /// A pairwise fold would nest each step inside both opens of the next, doubling the compiled plan with
+        /// every input, so twenty-four inputs would exhaust memory. An <c>IN</c> list of many dynamic parameters
+        /// becomes such a union.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnAUnionAllOfManyInputs() =>
@@ -1702,9 +1676,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A FETCH and an OFFSET wider than an <c>int</c>.
         /// </summary>
         /// <remarks>
-        /// The counts are read as a <c>BigDecimal</c> rather than an <c>int</c>, which is what CALCITE-7624
-        /// is for. Upstream's own sort.iq asserted <c>Integer overflow: 3000000000 is out of range for
-        /// INT</c> here and now asserts the rows.
+        /// Calcite reads the counts as <c>BigDecimal</c> rather than <c>int</c>, so both conventions return rows
+        /// rather than an overflow error.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnALimitWiderThanAnInt() =>
@@ -1714,8 +1687,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A FETCH wider than an <c>int</c>, over the bounded sort.
         /// </summary>
         /// <remarks>
-        /// The limit sort adds the offset to the fetch to size its map, so it is where a count that cannot be
-        /// an <c>int</c> is most easily read as one.
+        /// The limit sort adds the offset to the fetch to bound its map, where a count too wide for an
+        /// <c>int</c> could be mistakenly narrowed.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnALimitSortWiderThanAnInt() =>
@@ -1725,10 +1698,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A FETCH and an OFFSET that are not whole numbers.
         /// </summary>
         /// <remarks>
-        /// A count is a <c>BigDecimal</c>, and <c>rowsRequired</c> rounds it to the row it reaches into
-        /// rather than truncating: OFFSET 1.5 skips two rows and FETCH 2.5 takes three. Comparing against the
-        /// whole-number query says which way, where agreeing with the other convention alone would not — a
-        /// truncating implementation would answer OFFSET 1 FETCH 2 and both would answer it together.
+        /// A count is a <c>BigDecimal</c>, and <c>rowsRequired</c> rounds it up to the row it reaches into rather
+        /// than truncating: OFFSET 1.5 skips two rows and FETCH 2.5 takes three. The rows are also compared with
+        /// the whole-number query, because both conventions would agree on a truncating answer too.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnAFractionalLimit()
@@ -1748,9 +1720,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// over a sort.
         /// </summary>
         /// <remarks>
-        /// Without this the five tests above would agree for the wrong reason. The rule was in this
-        /// convention's default set and never in Calcite's, so a limit sort was compared against a limit over
-        /// a sort and the node had no oracle at all.
+        /// The limit sort tests above compare rows only; this checks that both sides actually plan a limit sort,
+        /// so that the node is compared with Calcite's.
         /// </remarks>
         [Fact]
         public void ShouldPlanALimitSortInBothConventions()
@@ -1761,28 +1732,28 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             PlanOf(sql, false, limitSort: true).Should().Contain("EnumerableLimitSort");
         }
 
-        // The limit sort's edges, against Calcite. OrderByWithFetchAndOffset was a full sort followed by a
-        // skip and a take, where linq4j keeps at most offset + fetch rows and evicts as it reads
-        // (CALCITE-3920, CALCITE-4157). Porting that algorithm properly means the eviction, the tie handling
-        // and the offset-past-the-end case are all newly written code, and none of it is visible in the
-        // answer to an ordinary query -- so these are the cases where a hand-rolled bound goes wrong.
+        // The limit sort's edge cases. linq4j keeps at most offset + fetch rows and evicts as it reads, so
+        // eviction, ties and an offset past the end are where a bounded sort can go wrong without an ordinary
+        // query showing it.
 
         [Fact]
         public void ShouldAgreeOnALimitSortWithTiesAcrossTheBoundary() =>
             SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
-        // descending, because SORTED is already ascending by K and with an offset Calcite then plans a bare
-        // EnumerableLimit over the scan. This convention planned a limit sort there only while its limit
-        // answered its input's row count rather than RelMdRowCount's for a limit
+        // descending, because SORTED is already ascending by K, and with an offset Calcite then plans a bare
+        // limit over the scan rather than a limit sort
         [Fact]
         public void ShouldAgreeOnALimitSortWithAnOffsetInsideATie() =>
             SameThrough("ClrCursorLimitSort", "SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY \"K\" DESC OFFSET 1 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
-        [Fact]
+        /// <summary>
+        /// A limit sort whose offset is past the last row gives no rows on either side.
+        /// </summary>
         /// <remarks>
-        /// No node assertion: an offset past the end lets the planner prune the whole thing, so there is no
-        /// limit sort in the plan to find. What is being compared is that both sides answer nothing.
+        /// No node assertion: an offset past the end lets the planner prune the plan, so there is no limit sort
+        /// to find. Both sides must return no rows.
         /// </remarks>
+        [Fact]
         public void ShouldAgreeOnALimitSortWithAnOffsetPastTheEnd() =>
             Same("SELECT \"K\" FROM \"SORTED\" ORDER BY \"K\" OFFSET 10 ROWS FETCH NEXT 2 ROWS ONLY", limitSort: true);
 
@@ -1799,8 +1770,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             SameThrough("ClrCursorLimitSort", "SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" DESC OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY", limitSort: true);
 
         /// <summary>
-        /// With neither side given the rule, both plan a limit over a sort — which is what carried a
-        /// one-column primitive result across the converter and found the cast in <c>JavaSequences.FromJava</c>.
+        /// Without the limit sort rule, this convention plans a limit over a sort rather than a limit sort.
         /// </summary>
         [Fact]
         public void ShouldPlanALimitOverASortWithoutTheRule() =>
@@ -1865,9 +1835,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnValues() => Same("SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
-        // The only query that reaches ClrCursorRepeatUnion and ClrCursorTableSpool. The transient
-        // table is scanned by neither convention — EnumerableTableScan refuses a TransientTable
-        // (CALCITE-3673) and so does ours — so both sides read it through the interpreter.
+        // Recursive queries, which reach ClrCursorRepeatUnion and ClrCursorTableSpool. Neither convention's
+        // table scan reads a TransientTable, so both sides read it through the interpreter.
 
         [Fact]
         public void ShouldAgreeOnARecursiveQuery() =>
@@ -1877,9 +1846,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnARecursiveQueryOfSeveralColumns() =>
             SameThrough("ClrCursorTableSpool", "WITH RECURSIVE t(n, m) AS (VALUES (1, 10) UNION ALL SELECT n + 1, m + 10 FROM t WHERE n < 4) SELECT n, m FROM t ORDER BY 1");
 
-        // The interpreter, which is the only way either convention reads a transient table. With the rule off
-        // the node is Calcite's under a converter; with it on it is this convention's and there is no
-        // convention boundary at all. The rows are the same either way, which is what the first two assert.
+        // The interpreter, through which either convention reads a transient table. Without this convention's
+        // interpreter rule the node is Calcite's under a converter; with it the node is this convention's and
+        // there is no converter. The first two tests require the same rows either way.
 
         [Fact]
         public void ShouldAgreeOnARecursiveQueryInterpretedHere() =>
@@ -1941,9 +1910,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// FIRST_VALUE and LAST_VALUE carrying IGNORE NULLS.
         /// </summary>
         /// <remarks>
-        /// CALCITE-7701. A window aggregate carrying IGNORE NULLS was refused outright; it is implemented for
-        /// these two, so the refusal now asks what the function is. What reads the flag is the implementor
-        /// Calcite hands us, through <c>WinAggContext.ignoreNulls</c>.
+        /// IGNORE NULLS is supported for these two functions only. The implementor Calcite supplies reads the
+        /// flag through <c>WinAggContext.ignoreNulls</c>.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnFirstValueIgnoringNulls() =>
@@ -1963,13 +1931,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// A window aggregate carrying a FILTER.
         /// </summary>
         /// <remarks>
-        /// CALCITE-7595, which is three pieces: the validator accepts the clause, <c>RexImpTable</c> gained a
-        /// FILTER implementor, and <c>WinAggAddContext.rexFilterArgument</c> stopped answering null.
-        ///
-        /// <para>These reach the first two and not the third. <c>SqlToRelConverter</c> turns the FILTER into a
-        /// <c>CASE</c> in the calc below the window, so the window's <c>AggregateCall</c> carries no filter
-        /// argument at all — measured by dumping the plan, and again by a probe that throws where one arrives
-        /// and never fired. What they do hold is that both conventions answer the query alike.</para>
+        /// <c>SqlToRelConverter</c> turns the FILTER into a <c>CASE</c> in the calc below the window, so the
+        /// window's <c>AggregateCall</c> carries no filter argument and <c>WinAggAddContext.rexFilterArgument</c>
+        /// is not exercised. These check that both conventions answer the query alike.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnAFilteredWindowCount() =>
@@ -2001,11 +1965,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <c>java.lang.Integer</c>. The <c>subtract</c> built on it then unboxes, and a null key is a
         /// <c>NullPointerException</c>.
         ///
-        /// <para>Ours is the same translation and fails the same way: IKVM maps that exception onto
-        /// <see cref="NullReferenceException"/>, and the unboxing an expression tree does for the same
-        /// arithmetic raises the same one. Both sides are asserted, because the point is not that ours throws
-        /// -- it is that neither convention answers a query the other answers. If Calcite ever fixes this,
-        /// this test fails and tells us to follow.</para>
+        /// <para>This convention uses the same translation and fails the same way: IKVM maps the Java exception
+        /// onto <see cref="NullReferenceException"/>, which is also what the expression tree's unboxing raises.
+        /// Both sides are asserted, so that if Calcite changes this the test fails and this convention should
+        /// follow.</para>
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey()
@@ -2025,8 +1988,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnFirstAndLastValue() => Same("SELECT \"ID\", FIRST_VALUE(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"ID\"), LAST_VALUE(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
-        // a running frame rather than the whole partition, because it is the one that tells the three
-        // exclusions apart: over an unbounded frame Calcite reports no row as any other's peer
+        // a running frame rather than the whole partition, because it distinguishes the three exclusions;
+        // over an unbounded frame Calcite excludes nothing after the first row (see below)
         [Fact]
         public void ShouldAgreeOnExcludingTheCurrentRow() => Same("SELECT \"ID\", COUNT(\"AMOUNT\") OVER (ORDER BY \"AMOUNT\" ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW EXCLUDE CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
 
@@ -2040,12 +2003,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// An EXCLUDE over a frame whose bounds never move.
         /// </summary>
         /// <remarks>
-        /// <c>EnumerableWindow</c> recomputes a frame only when its bounds have moved, and an exclusion is not
-        /// part of that test, so over UNBOUNDED PRECEDING to UNBOUNDED FOLLOWING the frame is computed for
-        /// the first row of a partition and never again: the exclusion depends on which row is current, and
-        /// after row 0 no row is excluded. Every row but the first therefore counts the whole partition.
-        /// <c>ClrCursorDefaults.Window</c> reproduces that at the guard rather than mending it, and this
-        /// holds the reproduction — the answer here is Calcite's, not SQL's.
+        /// <c>EnumerableWindow</c> recomputes a frame only when its bounds move, and the exclusion is not part of
+        /// that test, so over UNBOUNDED PRECEDING to UNBOUNDED FOLLOWING the frame is computed for a partition's
+        /// first row only. The exclusion depends on the current row, so after row 0 nothing is excluded and every
+        /// row but the first counts the whole partition. <c>ClrCursorDefaults.Window</c> reproduces this Calcite
+        /// defect; the expected answer is Calcite's, not SQL's.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnExcludingTheCurrentRowOverAnUnboundedFrame() => Same("SELECT \"ID\", COUNT(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"AMOUNT\" ROWS BETWEEN UNBOUNDED PRECEDING AND UNBOUNDED FOLLOWING EXCLUDE CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
@@ -2066,14 +2028,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnARangeFrameOverSeveralOrderKeys() => Same("SELECT \"ID\", COUNT(*) OVER (ORDER BY \"REGION\", \"AMOUNT\" RANGE BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
 
-        // no ORDER BY, so the rows arrive in the order the partitions do, which is a hash map's. Nothing
-        // reproduces that but the map itself: under IKVM a String hashes as .NET hashes it, which is
-        // randomised per process, so the order is not even the same run to run — both conventions read the
-        // same map in the same process, which is the only reason this can be asserted at all.
+        // no ORDER BY, so the rows come in partition order, which is a hash map's. Under IKVM a String hashes
+        // as .NET does, randomised per process, so the order varies between runs; it can be compared only
+        // because both conventions use the same kind of map in the same process.
         [Fact]
         public void ShouldAgreeOnThePartitionOrder() => Same("SELECT \"REGION\", \"ID\", COUNT(*) OVER (PARTITION BY \"REGION\") FROM \"SALES\"");
 
-        // a key that is a primitive, so it has to be boxed the way the type factory says before a map holds it
+        // a primitive key, which must be boxed as the type factory says before a map holds it
         [Fact]
         public void ShouldAgreeOnAPrimitivePartitionKey() => Same("SELECT \"ID\", COUNT(*) OVER (PARTITION BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
@@ -2088,7 +2049,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnMinAndMax() => Same("SELECT \"ID\", MIN(\"AMOUNT\") OVER (PARTITION BY \"REGION\"), MAX(\"AMOUNT\") OVER (PARTITION BY \"REGION\") FROM \"SALES\" ORDER BY \"ID\"");
 
-        // AVG has no implementor, so this only reaches a window at all once it is reduced to SUM over COUNT
+        // AVG has no implementor, so this reaches a window only after it is rewritten in terms of SUM and COUNT
         [Fact]
         public void ShouldAgreeOnAnAverageOverAWindow() => Same("SELECT \"ID\", AVG(\"AMOUNT\") OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
@@ -2105,14 +2066,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnLagWithAnOffsetAndDefault() => Same("SELECT \"ID\", LAG(\"AMOUNT\", 2, -1) OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
-        // The two below were the only ones asserted by hand, because Calcite could not answer them. A
-        // user-defined function written in C# is a class IKVM names cli.Apache.Calcite.Tests.SumAggregate;
-        // EnumerableConvention writes that name into generated Java source, and Janino resolves it through
-        // the class-loader stamp IKVM.Maven.Sdk puts on calcite-core — which IKVM 8.14.0 and 8.15.0 could
-        // not read, so the plan failed to compile. This convention holds the method itself rather than its
-        // name, so it ran either way. 8.16.0 reads the stamp again and Calcite runs the same query, measured
-        // at one commit either side, so these are differential like the rest. The hand-written rows stay as
-        // a second oracle, being SQL's answer rather than either convention's.
+        // A user-defined aggregate written in C#. EnumerableConvention writes its IKVM name
+        // (cli.Apache.Calcite.Tests.SumAggregate) into generated Java source, which Janino resolves through
+        // the class loader IKVM.Maven.Sdk stamps on calcite-core; this requires IKVM 8.16.0 or later. The
+        // hand-written rows are asserted as well, as SQL's answer independent of either convention.
 
         // running sum over ORDER BY ID, which the default RANGE frame makes a prefix, with the null skipped
         [Fact]
@@ -2134,10 +2091,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Gives(sql, "EAST|50", "WEST|35");
         }
 
-        // SORTED advertises a collation, so Calcite plans these with EnumerableMergeJoin where it plans the
-        // same query over SALES with a hash join. This convention has no merge join yet, so what these
-        // compare is our hash join against Calcite's merge join — two algorithms, one answer. They become
-        // the merge join's own tests the moment the node exists.
+        // SORTED declares a collation, so both conventions may plan these with a merge join where the same
+        // query over SALES gets a hash join.
         [Fact]
         public void ShouldAgreeOnAJoinOverSortedInputs() =>
             Same("SELECT \"S1\".\"K\", \"S2\".\"V\" FROM \"SORTED\" \"S1\" JOIN \"SORTED\" \"S2\" ON \"S1\".\"K\" = \"S2\".\"K\" ORDER BY 1, 2");
@@ -2146,10 +2101,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnALeftJoinOverSortedInputs() =>
             Same("SELECT \"S1\".\"K\", \"S2\".\"V\" FROM \"SORTED\" \"S1\" LEFT JOIN \"SORTED\" \"S2\" ON \"S1\".\"K\" = \"S2\".\"K\" AND \"S2\".\"V\" <> 'B' ORDER BY 1, 2");
 
-        // A sorted aggregate, which needs its rule turned on and is chosen where the query wants its output
-        // ordered by the group key over an input that carries that collation. A global aggregate is refused
-        // by our rule: Calcite builds the node for one and then cannot implement it, because the collation it
-        // would tell groups apart with is empty.
+        // A sorted aggregate, whose rule must be added, is chosen where the output is ordered by the group key
+        // over an input with that collation. This convention's rule refuses a global aggregate: Calcite builds
+        // the node for one and then cannot implement it, because the collation that separates groups is empty.
 
         [Fact]
         public void ShouldAgreeOnASortedAggregate() =>
@@ -2175,9 +2129,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAGroupByOverASortedInput() =>
             Same("SELECT \"K\", COUNT(*) FROM \"SORTED\" GROUP BY \"K\" ORDER BY 1");
 
-        // A merge union: an ORDER BY directly over a UNION, which is the shape its rule requires. Naming the
-        // columns instead of SELECT * puts a projection between the two and the rule never fires — that is
-        // what made this node look unreachable for a while.
+        // A merge union: an ORDER BY directly over a UNION, the shape its rule requires. Naming the columns
+        // instead of SELECT * puts a projection between the two and the rule does not fire.
 
         [Fact]
         public void ShouldAgreeOnAMergeUnionAll() =>
@@ -2203,12 +2156,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAUnionOverSortedInputs() =>
             Same("SELECT \"K\", \"V\" FROM \"SORTED\" UNION SELECT \"K\", \"V\" FROM \"SORTED\" ORDER BY 1, 2");
 
-        // A merge join is what these plan to, on both sides, over an input that advertises a collation. The
-        // four above reach it as well — they were written before the node existed, comparing our hash join
-        // against Calcite's merge join, and they now compare the two merge joins. These add the join types
-        // and the shapes the algorithm has separate paths for: a run of equal keys on both sides, a key
-        // missing from one side, several keys, an extra condition that is not an equality, and a null key,
-        // which is where the comparator refuses to call two nulls equal.
+        // Merge joins over inputs that declare a collation, covering the join types and the paths the algorithm
+        // treats separately: a run of equal keys on both sides, a key missing from one side, several keys, an
+        // extra condition that is not an equality, and a null key, which the comparator never matches.
 
         [Fact]
         public void ShouldAgreeOnASemiJoinOverSortedInputs() =>
@@ -2242,12 +2192,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnALeftJoinOnANullableKey() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a LEFT JOIN \"SALES\" b ON a.\"AMOUNT\" = b.\"AMOUNT\" ORDER BY a.\"ID\", b.\"ID\"");
 
-        // A null key, on the side the hash join builds from and under the operator that has to answer for it.
-        // The two above join on a nullable key and neither reaches this: an INNER and a LEFT join never look
-        // at the rows of the right input that matched nothing, and a plain equality never asks a null to
-        // match. `ShouldAgreeOnARightJoinsOwnOrder` and `ShouldAgreeOnAFullJoinsOwnOrder` do look, and join
-        // on REGION and LABEL, which are not nullable. The intersection of a nullable key and an outer join
-        // on the build side is what these cover.
+        // A null key on the build side of a hash join. INNER and LEFT joins never read the unmatched right
+        // rows, and a plain equality never matches a null; ShouldAgreeOnARightJoinsOwnOrder and
+        // ShouldAgreeOnAFullJoinsOwnOrder read them but join on columns that are not nullable. These cover a
+        // nullable key together with an outer join on the build side, and a null-safe key.
 
         [Fact]
         public void ShouldAgreeOnANullSafeJoinKey() =>
@@ -2261,10 +2209,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAFullJoinOnANullableKey() =>
             Same("SELECT a.\"ID\", b.\"ID\" FROM (SELECT * FROM \"SALES\" WHERE \"ID\" < 3) a FULL JOIN \"SALES\" b ON a.\"AMOUNT\" = b.\"AMOUNT\"");
 
-        // A hash join on a key of two fields, one of them nullable, which is the case the null-aware accessor
-        // nulls the whole key for and the plain accessor leaves as a list holding a null that matches another
-        // one. Both conventions plan a merge join for this query, so the merge join rule comes off both sides
-        // to reach the node the question is about.
+        // A hash join on a two-field key with one nullable field: the null-aware accessor makes the whole key
+        // null, where a plain accessor would build a list holding a null that matches another such list. Both
+        // conventions plan a merge join for this query, so the merge join rule is removed from both sides.
 
         [Fact]
         public void ShouldAgreeOnAHashJoinOnTwoKeysOneNullable() =>
@@ -2291,8 +2238,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAnAntiJoinOnANullSafeKey() =>
             Same("SELECT a.\"ID\" FROM \"SALES\" a WHERE NOT EXISTS (SELECT 1 FROM \"SALES\" b WHERE a.\"AMOUNT\" IS NOT DISTINCT FROM b.\"AMOUNT\") ORDER BY 1");
 
-        // The CUSTOM row format, over HR.emps. Everything above runs over Object[] rows, so every one of
-        // these takes a branch of PhysType that 239 tests had not.
+        // The CUSTOM row format, over HR.emps. The tests above run over Object[] rows, so these take the CUSTOM
+        // branches of the physical type.
 
         [Fact]
         public void ShouldAgreeOnACustomFormatScan() =>
@@ -2329,10 +2276,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public void ShouldAgreeOnStringFunctions() => Same("SELECT UPPER(\"LABEL\") || '-' || LOWER(\"REGION\") FROM \"SALES\" ORDER BY 1");
 
-        // Planned top down, which is the only thing that calls passThroughTraits, deriveTraits and
-        // getDeriveMode. Every node whose trait derivation is more than the default is here: a project and a
-        // calc (permutation and cast), a filter, a hash join, a nested loop join, a correlate, a scan and a
-        // VALUES, each with a collation to push down or derive.
+        // Planned top down, the only mode that calls passThroughTraits, deriveTraits and getDeriveMode. These
+        // cover each node whose trait derivation differs from the default: a project and a calc (permutation
+        // and cast), a filter, a hash join, a nested loop join, a correlate, a scan and a VALUES, each with a
+        // collation to push down or derive.
 
         [Fact]
         public void ShouldAgreeOnAProjectionSortedTopDown() =>
@@ -2378,14 +2325,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnAWindowTopDown() =>
             SameTopDown("SELECT \"ID\", SUM(\"AMOUNT\") OVER (PARTITION BY \"REGION\" ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
 
-        // MATCH_RECOGNIZE. The pattern is a plain sequence of symbols in every one of these, because that is
-        // all EnumerableMatch generates: implementPattern handles a literal and a concatenation and throws on
-        // anything else, so *, + and | never reach a plan in either convention.
-
-        // A table function is a class too, so the same thing holds as for MY_SUM: Janino could not name a CLR
-        // class under IKVM 8.14.0 or 8.15.0, so EnumerableConvention had no plan for these and there was
-        // nothing to compare against. 8.16.0 names one, so this is differential like the rest; the function
-        // yields one to n, which the hand-written rows still assert.
+        // A table function written in C#, which, as for MY_SUM, EnumerableConvention names by its IKVM class
+        // name (requires IKVM 8.16.0 or later). The function yields one to n, which the hand-written rows also
+        // assert.
         [Fact]
         public void ShouldRunATableFunction()
         {
@@ -2395,13 +2337,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Gives(sql, "1", "2", "3");
         }
 
-        // A merge join over a one-column table function puts a sort on it, and that is EnumerableSort's defect:
-        // it optimises the scan's ARRAY to SCALAR and hands the Object[] rows on unchanged. Refused rather
-        // than answered, because Calcite is wrong here in the same way and this convention does what Calcite
-        // does — ClrCursorSortTests carries the whole measurement. Restore the expected rows "1",
-        // "2" when EnumerableSort is fixed. The hash join is taken away on both sides, because left to itself
-        // Calcite hashes this join and there is no sort under it; this convention sorted and merged only while
-        // its merge join cost its output alone, and the test was holding that rather than the defect.
+        // A merge join over a one-column table function puts a sort on it, which hits EnumerableSort's defect:
+        // it optimises the scan's ARRAY format to SCALAR and passes the Object[] rows on unchanged. This
+        // convention reproduces Calcite and refuses the plan; ClrCursorSortTests has the detail. When
+        // EnumerableSort is fixed, expect the rows "1", "2" instead. The hash join rule is removed on both
+        // sides, because otherwise the planner hashes this join and there is no sort.
         [Fact]
         public void ShouldRefuseATableFunctionInAJoin()
         {
@@ -2427,9 +2367,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Gives(sql, "1", "2");
         }
 
-        // The window table functions, which are the path RexImpTable implements rather than the schema.
-        // TumbleImplementor and tumblingWindowSelector each name a parameter `_input`, and what lines the two
-        // up is the lexical scope by name that Janino gets for free.
+        // The window table functions, which RexImpTable implements rather than the schema.
+        // TumbleImplementor and tumblingWindowSelector each name a parameter _input, so the translation must
+        // resolve parameters by lexical scope, as Java source compiled by Janino does.
 
         [Fact]
         public void ShouldAgreeOnTumble() =>
@@ -2462,29 +2402,26 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
 
 
-        // MATCH_RECOGNIZE, in a plan rooted in this convention: the whole subtree stays in
-        // EnumerableConvention with one converter at the top. The node itself cannot be written here —
-        // Calcite casts its input getter to two package-private *types* — and does not have to be for the
-        // query to answer.
+        // MATCH_RECOGNIZE in a plan rooted in this convention: the whole subtree stays in EnumerableConvention
+        // under one converter. This convention has no node for it, because Calcite casts its input getter to
+        // two package-private types.
         //
-        // Three things have to be true at once for this to run. The measures row is
-        // built with Expressions.new_ on the row's Java type, so an ARRAY-format input gives "new Object[]()"
-        // — not Java, and not completable by a translator either; HR.emps is CUSTOM, so that line emits a
-        // record constructor instead. The predicate's parameter is a Memory around the row and the condition
-        // was translated against the row itself, both named row_, which is the lexical scope by name. And
-        // EnumerableMatch.implementPattern takes a symbol or a concatenation and nothing else, so PATTERN
-        // (STRT UP+) throws "unknown kind: PATTERN_QUANTIFIER" out of Calcite's own node, in either
-        // convention — a fixed pattern is what either side can run.
+        // The query is shaped to run in Calcite. The measures row is built with Expressions.new_ on the row's
+        // Java type, so an ARRAY-format input would give "new Object[]()", which is not Java; HR.emps is
+        // CUSTOM, so a record constructor is emitted instead. The predicate's parameter (a Memory around the
+        // row) and the row it was translated against are both named row_, so translation must resolve names
+        // by lexical scope. And EnumerableMatch.implementPattern accepts only a symbol or a concatenation, so
+        // a quantified pattern such as (STRT UP+) throws "unknown kind: PATTERN_QUANTIFIER" in either
+        // convention; the pattern here is a fixed sequence.
 
         [Fact]
         public void ShouldAgreeOnMatchRecognize() =>
             Same("SELECT * FROM \"HR\".\"emps\" MATCH_RECOGNIZE (ORDER BY \"empid\" MEASURES STRT.\"empid\" AS \"s\", UP.\"empid\" AS \"e\" PATTERN (STRT UP) DEFINE UP AS UP.\"salary\" > PREV(UP.\"salary\")) AS T");
 
-        // PARTITION BY has no test because it does not run in either convention. The partition key of one
-        // column has a SCALAR physical type, EnumerableMatch builds the key with Expressions.new_ on its Java
-        // row type, and that emits "new Integer()" — Janino: "No applicable constructor/method found for zero
-        // actual parameters". Measured on EnumerableConvention alone, so it is Calcite's defect, and it is the
-        // same one as "new Object[]()" a few lines further on in that node.
+        // PARTITION BY has no test because it runs in neither convention. A one-column partition key has a
+        // SCALAR physical type, and EnumerableMatch builds the key with Expressions.new_ on its Java row type,
+        // emitting "new Integer()", which Janino rejects. This is a Calcite defect, the same as the
+        // "new Object[]()" one above.
 
         [Fact]
         public void ShouldPlanMatchRecognizeUnderAConverter() =>
@@ -2493,10 +2430,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ a row that is one primitive
         //
-        // SCALARS is one NOT NULL INTEGER column, so its physical row type is int and its sequence carries
-        // java.lang.Integer. Every node below closes an operator over that row type, and seven of them used
-        // the physical one; each of these failed before the node was corrected, and every one names the node
-        // it is aimed at, because for four of them the planner would otherwise have chosen Calcite's.
+        // SCALARS is one NOT NULL INTEGER column, so its physical row type is int while its rows are
+        // java.lang.Integer. Each node below instantiates an operator over the row type and must use the boxed
+        // one. Tests that name a node remove the rules that would otherwise let the planner choose Calcite's.
 
         [Fact]
         public void ShouldAgreeOnAScalarRowScan() => Same("SELECT \"N\" FROM \"SCALARS\" ORDER BY 1");
@@ -2521,7 +2457,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 remove: [EnumerableRules.ENUMERABLE_MERGE_UNION_RULE, ClrCursorRules.ClrCursorMergeUnionRule]);
 
         // INTERSECT without ALL is rewritten to an aggregate over a union and never reaches the node; only
-        // INTERSECT ALL does, which is why no set-operation test had ever built one over a primitive row
+        // INTERSECT ALL does
         [Fact]
         public void ShouldAgreeOnAScalarRowIntersectAll() =>
             SameThrough("ClrCursorIntersect", "SELECT \"N\" FROM \"SCALARS\" INTERSECT ALL SELECT \"N\" FROM \"SCALARS\" WHERE \"N\" < 3 ORDER BY 1");
@@ -2569,10 +2505,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ EnumerableIEJoinTest
         //
-        // A join whose condition is two cross-input inequalities, which CALCITE-7755 added. Every one names
-        // the node and takes Calcite's rule away, because registerDefaultRules registers it and the planner
-        // keeps whichever equal-cost node it saw first -- which is Calcite's, under a converter that carries
-        // both scans out of this convention with it.
+        // A join whose condition is two cross-input inequalities. Each test names the node and removes
+        // Calcite's rule, because registerDefaultRules registers it and the planner keeps the equal-cost node
+        // it registered first, which is Calcite's under a converter.
 
         static readonly RelOptRule[] TheirIeJoin = [EnumerableRules.ENUMERABLE_IE_JOIN_RULE];
 
@@ -2582,23 +2517,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 remove: TheirIeJoin);
 
         /// <summary>
-        /// The order of an IE join's rows is the order of its two sorts, so a query with no ORDER BY is the
-        /// one that says whether ours agrees with linq4j's.
+        /// An IE join's row order comes from its two sorts, so with no ORDER BY this compares that order with
+        /// linq4j's.
         /// </summary>
         /// <remarks>
-        /// It does not reach the sorts' stability, which is the other thing an order depends on:
-        /// <c>SALES</c> has six rows, so this sorts twelve entries, and .NET's introsort insertion-sorts a
-        /// run of sixteen or fewer, which is stable. Measured -- an unstable sort leaves this green.
-        /// <c>ClrCursorDefaultsTests.ShouldHoldTheInputOrderOfEqualIeJoinKeys</c> is what holds that,
-        /// over enough entries to be past the threshold.
+        /// This does not test the sorts' stability: <c>SALES</c> gives twelve entries, and .NET's introsort
+        /// insertion-sorts sixteen or fewer, which is stable. <c>ClrCursorDefaultsTests.ShouldHoldTheInputOrderOfEqualIeJoinKeys</c>
+        /// tests stability over enough entries.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnAnIeJoinsOwnOrder() =>
             SameThrough("ClrCursorIEJoin", "SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"ID\" < b.\"ID\" AND a.\"AMOUNT\" > b.\"AMOUNT\"",
                 remove: TheirIeJoin);
 
-        // The strictness of each operator decides which way the entries of one key tie-break against each
-        // other, and so whether a pair of equal keys is in the answer at all. All four pairings.
+        // The strictness of each operator decides how entries with equal keys break ties, and so whether a
+        // pair of equal keys is in the result. These cover all four combinations.
 
         [Fact]
         public void ShouldAgreeOnAnIeJoinOfTwoNonStrictInequalities() =>
@@ -2656,7 +2589,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 remove: TheirIeJoin);
 
         /// <summary>
-        /// Two inequalities that contradict one another still plan, and answer nothing.
+        /// Two contradictory inequalities still plan as an IE join, and return no rows.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAnIeJoinThatMatchesNothing() =>
@@ -2665,10 +2598,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ EnumerableUncollectTest
         //
-        // Every shape UNNEST can take, which is Calcite's own list. The node had one test before this, over an
-        // array of strings, and the branch CALCITE-4063 added — one field, itself a struct of one item —
-        // had never been entered. Each of these names the node, because the planner prefers Calcite's. With
-        // Calcite's rule taken away the uncollect is this convention's wherever it sits.
+        // The shapes of UNNEST that Calcite's EnumerableUncollectTest covers. Each names the node and removes
+        // Calcite's uncollect rule, because otherwise the planner prefers Calcite's node.
 
         static readonly RelOptRule[] TheirUncollect = [EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
 
@@ -2694,8 +2625,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 "SELECT * FROM UNNEST(ARRAY[ARRAY[ARRAY[3, 4], ARRAY[4, 5]], ARRAY[ARRAY[7, 8], ARRAY[9, 10]]]) AS T2(y)",
                 remove: TheirUncollect);
 
-        // CALCITE-4063: one field, a struct of one item, and no ordinality, so the result is the item itself
-        // rather than a list holding it. That is the one branch of the node a lambda of its own stands for.
+        // one field that is a struct of one item, and no ordinality, so the result is the item itself rather
+        // than a list holding it; the node has a separate branch for this
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfOneFieldRows() =>
             SameThrough("ClrCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) AS T2(y)", remove: TheirUncollect);
@@ -2708,12 +2639,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnUnnestingWithOrdinality() =>
             SameThrough("ClrCursorUncollect", "SELECT * FROM UNNEST(ARRAY[ROW(3), ROW(4)]) WITH ORDINALITY AS T2(y, o)", remove: TheirUncollect);
 
-        // UNNEST(ARRAY[ROW(1, ROW(5, 10)), ROW(2, ROW(6, 12))]) has no test, because it does not reach a
-        // convention at all: RelStructuredTypeFlattener throws NoSuchElementException out of
-        // SqlToRelConverter.flattenTypes, which PlannerImpl.rel calls before any planning. Measured on the
-        // Calcite side of this harness as well, and the two sides run the same converter, so it is Calcite's
-        // and it is about how this harness converts rather than about either convention. A row of one field
-        // holding a row is the next test and does run.
+        // UNNEST(ARRAY[ROW(1, ROW(5, 10)), ROW(2, ROW(6, 12))]) has no test because it fails before planning:
+        // RelStructuredTypeFlattener throws NoSuchElementException from SqlToRelConverter.flattenTypes, which
+        // PlannerImpl.rel calls. Both sides share that conversion. A one-field row holding a row, the next
+        // test, does run.
 
         [Fact]
         public void ShouldAgreeOnUnnestingAnArrayOfOneFieldRowsHoldingRows() =>
@@ -2761,11 +2690,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnABatchNestedLoopJoinOnAMismatchedKey() =>
             SameBatchNestedLoopJoin("SELECT COUNT(e.\"name\") FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" = e.\"empid\"");
 
-        // an outer join whose null-generating side is a CUSTOM row with a primitive field. The selector reads
-        // `right.empid` as the int it is and Calcite writes `right == null ? null : right.empid`, which Java
-        // types as Integer; the conditional here was typed as the int and could not hold the null, so the
-        // plan could not be built. Hidden until the merge join cost what Calcite's does, because until then
-        // this convention never hashed this join
+        // an outer hash join whose null-generating side is a CUSTOM row with a primitive field. Calcite writes
+        // the selector as `right == null ? null : right.empid`, which Java types as Integer, so the translated
+        // conditional must be typed as the boxed type to hold the null
         [Fact]
         public void ShouldAgreeOnAHashLeftJoinOverAPrimitiveField()
         {
@@ -2779,9 +2706,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnABatchNestedLoopLeftJoinCount() =>
             SameBatchNestedLoopJoin("SELECT COUNT(d.\"deptno\") FROM \"HR\".\"depts\" d LEFT JOIN \"HR\".\"emps\" e ON d.\"deptno\" = e.\"deptno\"");
 
-        // two batch joins in one plan, which is where Calcite's own node has to fall back to a compact row
-        // builder or exceed what a Java method may hold. An expression tree has no such limit and builds the
-        // one form, so this is the query that says the difference does not change the answer.
+        // two batch joins in one plan, where Calcite's node falls back to a compact row builder to stay within
+        // Java's method size limit. An expression tree has no such limit and builds one form; this checks the
+        // difference does not change the result.
         [Fact]
         public void ShouldAgreeOnADoubleBatchNestedLoopJoin() =>
             SameBatchNestedLoopJoin("SELECT e.\"name\", d.\"name\", l.\"name\" FROM \"HR\".\"emps\" e JOIN \"HR\".\"depts\" d ON d.\"deptno\" <> e.\"empid\" JOIN \"HR\".\"locations\" l ON e.\"empid\" <> l.\"empid\" AND d.\"deptno\" = l.\"empid\" ORDER BY 1, 2, 3");
@@ -2792,15 +2719,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnACorrelateFromExists() =>
             Same("SELECT e.\"empid\", e.\"name\" FROM \"HR\".\"emps\" e WHERE EXISTS (SELECT 1 FROM \"HR\".\"depts\" d WHERE d.\"deptno\" = e.\"deptno\") ORDER BY 1");
 
-        // CALCITE-2930's shape: the correlated condition compares against a nullable column, so the field the
-        // sub-query reads is a box rather than a primitive
+        // the correlated condition compares against a nullable column, so the field the sub-query reads is
+        // boxed rather than primitive
         [Fact]
         public void ShouldAgreeOnACorrelateOverABoxedPrimitive() =>
             Same("SELECT e.\"empid\" FROM \"HR\".\"emps\" e WHERE NOT EXISTS (SELECT 1 FROM \"HR\".\"depts\" d WHERE d.\"deptno\" = e.\"commission\") ORDER BY 1");
 
         /// <summary>
-        /// CALCITE-5638: a scalar sub-query correlated on two columns at once, under a filter that is itself
-        /// correlated.
+        /// A scalar sub-query correlated on two columns at once, in a query with its own filter.
         /// </summary>
         [Fact]
         public void ShouldAgreeOnAComplexNestedCorrelatedSubQuery() =>
@@ -2808,8 +2734,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
         // ------------------------------------------------------------------ EnumerableMergeUnionTest
         //
-        // The order keys Calcite's own tests use and this convention had none of: a nullable column ordered
-        // with the nulls at either end, and a second key running the other way.
+        // The order keys Calcite's own tests use: a nullable column with the nulls at either end, and a second
+        // key running the other way.
 
         [Fact]
         public void ShouldAgreeOnAMergeUnionAllOrderedByANullableKeyNullsFirst() =>
@@ -2841,7 +2767,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnASemiJoinOnACompositeNullableKey() =>
             SameHashJoin("SELECT a.\"ID\" FROM \"SALES\" a WHERE (a.\"REGION\", a.\"AMOUNT\") IN (SELECT b.\"REGION\", b.\"AMOUNT\" FROM \"SALES\" b WHERE b.\"ID\" < 4) ORDER BY 1");
 
-        // an equality and something else besides, which the hash join tests on the pair it has already matched
+        // an equality plus another predicate, which the hash join tests on each pair the equality matched
         [Fact]
         public void ShouldAgreeOnAHashJoinWithAnExtraPredicate() =>
             SameHashJoin("SELECT a.\"ID\", b.\"ID\" FROM \"SALES\" a JOIN \"SALES\" b ON a.\"REGION\" = b.\"REGION\" AND a.\"ID\" < b.\"ID\" ORDER BY 1, 2");
@@ -2861,8 +2787,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         // ------------------------------------------------------------------ EnumerableLimitSortTest
         //
         // The order keys Calcite's own limit-sort tests use: a nullable column with the nulls at either end,
-        // and a second key. This convention's five limit-sort tests were all one key with the default null
-        // ordering.
+        // and a second key.
 
         [Fact]
         public void ShouldAgreeOnALimitSortWithNullsFirst() =>
@@ -2876,10 +2801,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnALimitSortWithNullsFirstAndAnOffset() =>
             SameLimitSort("SELECT \"ID\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"AMOUNT\" NULLS FIRST, \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
 
+        /// <summary>
+        /// A limit sort on one nullable key with NULLS FIRST gives the same rows on both sides.
+        /// </summary>
         /// <remarks>
-        /// A <em>single</em>-column collation over a nullable column, which is the only shape whose sort key
-        /// can itself be null: a multi-field collation key is a FlatLists row, and a row is never null even
-        /// when a field in it is. The four tests above are all two-key and therefore cannot reach it.
+        /// A single-column collation over a nullable column, the only shape whose sort key can itself be null:
+        /// a multi-field key is a FlatLists row, which is never null even when a field in it is.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnALimitSortOnOneNullableKeyNullsFirst() =>
@@ -2897,13 +2824,14 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnALimitSortOverSeveralKeysRunningBothWays() =>
             SameLimitSort("SELECT \"ID\", \"REGION\", \"AMOUNT\" FROM \"SALES\" ORDER BY \"REGION\" DESC, \"AMOUNT\" NULLS LAST, \"ID\" OFFSET 1 ROWS FETCH NEXT 4 ROWS ONLY");
 
+        /// <summary>
+        /// <c>JSON_VALUE</c> with <c>RETURNING VARCHAR ARRAY</c> over an array gives the same result on both sides.
+        /// </summary>
         /// <remarks>
-        /// Both sides answer null. The validator types the column <c>VARCHAR ARRAY</c>, and then
-        /// <c>convertJsonReturningFunction</c> removes the <c>RETURNING</c> operands, so what runs is the
-        /// scalar <c>JsonFunctions.jsonValue</c>; it refuses the array and the default <c>NULL ON ERROR</c>
-        /// turns the refusal into a null. Nothing of that is this convention's, and the query is here so
-        /// that a divergence would show if it ever became so. <c>JSON_QUERY</c> is the function that reads
-        /// an array, and does.
+        /// Both sides return null. The validator types the column <c>VARCHAR ARRAY</c>, then
+        /// <c>convertJsonReturningFunction</c> removes the <c>RETURNING</c> operands, so the scalar
+        /// <c>JsonFunctions.jsonValue</c> runs; it rejects the array, and the default <c>NULL ON ERROR</c> turns
+        /// that into a null. This is Calcite's behaviour. <c>JSON_QUERY</c> is the function that reads an array.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnJsonValueReturningAnArray() =>
@@ -2917,47 +2845,51 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Both sides refuse an integral JSON number read through <c>RETURNING DOUBLE</c>.
         /// </summary>
         /// <remarks>
-        /// <c>RETURNING</c> gives the call a type; it does not give it a conversion.
-        /// <c>JsonFunctions.jsonValue</c> answers whatever Jackson parsed -- an <c>Integer</c> for
-        /// <c>0</c> and a <c>Double</c> for <c>-83.489548</c> -- and the only thing that reads the
-        /// declared type is <c>AbstractRexCallImplementor.genValueStatement</c>, which asks
-        /// <c>EnumUtils.convert</c> for <c>Object</c> to <c>Double</c>. Neither operand is a number
-        /// statically, so every numeric branch there is missed and the method ends at
-        /// <c>Expressions.convert_</c>: a bare Java cast. An <c>Integer</c> is not a <c>Double</c>, so
-        /// the row that holds one throws and the rows either side of it do not.
+        /// <c>RETURNING</c> types the call but does not convert its value. <c>JsonFunctions.jsonValue</c> returns
+        /// what Jackson parsed, an <c>Integer</c> for <c>0</c> and a <c>Double</c> for <c>-83.489548</c>, and
+        /// <c>AbstractRexCallImplementor.genValueStatement</c> asks <c>EnumUtils.convert</c> for <c>Object</c> to
+        /// <c>Double</c>. Neither side is statically numeric, so the conversion is a bare Java cast
+        /// (<c>Expressions.convert_</c>), which fails on the <c>Integer</c> row.
         ///
-        /// <para>Nothing of this is this convention's -- Calcite's own
-        /// <c>JdbcTest.testJsonValueError</c> asserts the same cast failing over
-        /// <c>RETURNING INTEGER</c> and a string. A single literal fails the same way, so the two rows
-        /// are here to show that the one either side of it does not: what throws is the value read.</para>
+        /// <para>This is Calcite's behaviour; its <c>JdbcTest.testJsonValueError</c> asserts the same cast failing
+        /// for <c>RETURNING INTEGER</c> over a string. The two rows show that the value read, not the statement,
+        /// decides whether it throws.</para>
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnRefusingJsonValueReturningDoubleOverAnIntegralNumber() =>
             SameFailure("SELECT JSON_VALUE(\"V\", '$.c' RETURNING DOUBLE) AS \"A\" FROM (VALUES ('{\"c\":-83.489548}'), ('{\"c\":0}')) AS \"T\"(\"V\")", "Unable to cast object of type 'java.lang.Integer' to type 'java.lang.Double'");
 
+        /// <summary>
+        /// Both sides read a fractional JSON number through <c>RETURNING DOUBLE</c>.
+        /// </summary>
         /// <remarks>
-        /// The control for the test above: the same statement over a number JSON writes with a point
-        /// answers, because Jackson already made it a <c>Double</c> and the cast is the identity. It is
-        /// the value read rather than the statement that decides.
+        /// The control for the test above: over a number written with a decimal point the statement succeeds,
+        /// because Jackson parses it as a <c>Double</c> and the cast is the identity.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnJsonValueReturningDoubleOverAFractionalNumber() =>
             Same("SELECT JSON_VALUE('{\"c\":-83.489548}', '$.c' RETURNING DOUBLE) AS \"A\"");
 
+        /// <summary>
+        /// Both sides refuse a fractional JSON number read through <c>RETURNING INTEGER</c>.
+        /// </summary>
         /// <remarks>
-        /// And the mirror, so that the finding reads as the shape it is rather than as something about
-        /// DOUBLE: a fractional number through <c>RETURNING INTEGER</c> fails the same way round.
+        /// The converse: a fractional number through <c>RETURNING INTEGER</c> fails the same way, so the
+        /// behaviour is not specific to DOUBLE.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnRefusingJsonValueReturningIntegerOverAFractionalNumber() =>
             SameFailure("SELECT JSON_VALUE('{\"c\":0.5}', '$.c' RETURNING INTEGER) AS \"A\"", "Unable to cast object of type 'java.lang.Double' to type 'java.lang.Integer'");
 
+        /// <summary>
+        /// Both sides read a JSON number as a DOUBLE through <c>CAST</c>, whether or not it is written with a decimal point.
+        /// </summary>
         /// <remarks>
-        /// What does convert is a <c>CAST</c>. Without <c>RETURNING</c> the call is typed
-        /// <c>VARCHAR(2000)</c>, so <c>EnumUtils.convert</c> takes its <c>toType == String.class</c>
-        /// branch and writes <c>x == null ? null : x.toString()</c>; the cast that follows is then
-        /// VARCHAR to DOUBLE, which is <c>SqlFunctions.toDouble</c> and a parse. Both JSON spellings of
-        /// a number survive that, which is the route a caller wanting a number out of a document has.
+        /// A <c>CAST</c> does convert. Without <c>RETURNING</c> the call is typed <c>VARCHAR(2000)</c>, so
+        /// <c>EnumUtils.convert</c> takes its <c>toType == String.class</c> branch and writes
+        /// <c>x == null ? null : x.toString()</c>; the cast from VARCHAR to DOUBLE is then
+        /// <c>SqlFunctions.toDouble</c>, a parse, which accepts both forms of the number. This is how a caller
+        /// reads a number from a document.
         /// </remarks>
         [Fact]
         public void ShouldAgreeOnCastingJsonValueToADoubleWhicheverWayTheNumberIsWritten() =>

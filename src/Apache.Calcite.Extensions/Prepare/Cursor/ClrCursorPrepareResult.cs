@@ -11,8 +11,7 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
 {
 
     /// <summary>
-    /// A statement of the <see cref="ClrCursorConvention"/> calling convention, prepared and
-    /// implemented.
+    /// A statement prepared and implemented in the <see cref="ClrCursorConvention"/> calling convention.
     /// </summary>
     sealed class ClrCursorPrepareResult : ClrPrepare.PreparedResultImpl
     {
@@ -44,14 +43,13 @@ namespace Apache.Calcite.Extensions.Prepare.Cursor
         }
 
         /// <summary>
-        /// Gets the plan, which opens its cursor either way.
+        /// Gets the compiled plan.
         /// </summary>
         public ClrCursorFactory Factory { get; }
 
         /// <inheritdoc />
         /// <remarks>
-        /// The factory's answer, which is the type factory's for the physical row and the same whichever way
-        /// the plan is opened.
+        /// The factory's element type.
         /// </remarks>
         public override Type ElementType => Factory.ElementType;
 

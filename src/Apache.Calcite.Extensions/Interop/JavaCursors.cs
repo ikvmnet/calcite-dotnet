@@ -14,10 +14,9 @@ namespace Apache.Calcite.Extensions.Interop
     /// Carries rows between a linq4j <see cref="Enumerable"/> and a <see cref="ClrCursor"/>.
     /// </summary>
     /// <remarks>
-    /// This is the whole of what a converter between <c>EnumerableConvention</c> and
-    /// <c>ClrCursorConvention</c> does. The rows are not touched — both conventions ask the same
-    /// <c>JavaTypeFactory</c> what a field is, so a value a linq4j sequence yields is already the Java box
-    /// the row type declares, and one this convention yields is too.
+    /// Used by the converters between <c>EnumerableConvention</c> and <c>ClrCursorConvention</c>. Both
+    /// conventions take their field types from the same <c>JavaTypeFactory</c>, so the values in a row need
+    /// no conversion.
     /// </remarks>
     static class JavaCursors
     {
@@ -25,15 +24,15 @@ namespace Apache.Calcite.Extensions.Interop
         /// <summary>
         /// Opens a cursor over a linq4j sequence.
         /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <returns></returns>
         /// <remarks>
-        /// A linq4j sub-plan executes at <c>enumerator()</c> — <c>ResultSetEnumerable</c> runs its JDBC
-        /// statement there — so the crossing calls it here, at the open, where the rest of the plan's
-        /// acquisition happens. The cursor's <see cref="ClrCursor.ReadAsync"/> completes synchronously,
-        /// because a linq4j <see cref="Enumerator"/> is pulled and cannot be anything else.
+        /// Calls <c>enumerator()</c> immediately, since that is where a linq4j sub-plan does its work (a
+        /// <c>ResultSetEnumerable</c> executes its statement there). The cursor's
+        /// <see cref="ClrCursor.ReadAsync"/> always completes synchronously.
         /// </remarks>
+        /// <typeparam name="TSource">The CLR type of the sequence's elements.</typeparam>
+        /// <param name="source">The linq4j sequence.</param>
+        /// <returns>An open cursor over the sequence's enumerator; disposing it closes the enumerator.</returns>
+        /// <exception cref="ArgumentNullException"><paramref name="source"/> is <see langword="null"/>.</exception>
         public static IClrCursor<TSource> FromJava<TSource>(Enumerable source)
         {
             ArgumentNullException.ThrowIfNull(source);
@@ -42,14 +41,12 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// <see cref="FromJava{TSource}"/>, as an open that awaits. There is nothing to await, and that is
-        /// the honest shape of it: a plan reading a Calcite sub-plan this way is simply not asynchronous
-        /// over that part of itself, and cannot be.
+        /// <see cref="FromJava{TSource}"/> as an awaiting open, which completes synchronously.
         /// </summary>
-        /// <typeparam name="TSource"></typeparam>
-        /// <param name="source"></param>
-        /// <param name="cancellationToken"></param>
-        /// <returns></returns>
+        /// <typeparam name="TSource">The CLR type of the sequence's elements.</typeparam>
+        /// <param name="source">The linq4j sequence.</param>
+        /// <param name="cancellationToken">Not observed; the open completes before it could be.</param>
+        /// <returns>A completed task of the open cursor.</returns>
         public static ValueTask<IClrCursor<TSource>> FromJavaAsync<TSource>(Enumerable source, CancellationToken cancellationToken)
         {
             return new ValueTask<IClrCursor<TSource>>(FromJava<TSource>(source));
@@ -78,9 +75,9 @@ namespace Apache.Calcite.Extensions.Interop
 
             /// <inheritdoc />
             /// <remarks>
-            /// The per-advance token stops rows crossing once it has fired and reaches no further: a table
-            /// of Calcite's convention reads <c>DataContext.Variable.CANCEL_FLAG</c> and may be inside
-            /// <c>moveNext()</c>. Tying that flag to the statement's token is the data context's job.
+            /// The token is checked before the advance but cannot interrupt <c>moveNext()</c>. Calcite code
+            /// observes cancellation through <c>DataContext.Variable.CANCEL_FLAG</c>, which the data context
+            /// is responsible for setting.
             /// </remarks>
             public override ValueTask<bool> ReadAsync(CancellationToken cancellationToken)
             {
@@ -95,16 +92,11 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// Reads a plan of the cursor convention as a linq4j sequence, for Calcite's side of a converter
-        /// out of it.
+        /// Reads a plan of the cursor convention as a linq4j sequence.
         /// </summary>
-        /// <param name="plan">The sub-plan, which compiles itself the first time it is run.</param>
+        /// <param name="plan">The sub-plan.</param>
         /// <param name="root">The context the query is being run against.</param>
-        /// <returns></returns>
-        /// <remarks>
-        /// The sequence's <c>enumerator()</c> is the plan's synchronous open, because a linq4j
-        /// <c>Enumerator</c> is pulled and the generated source calling it cannot await.
-        /// </remarks>
+        /// <returns>A sequence whose <c>enumerator()</c> opens the plan synchronously.</returns>
         public static Enumerable ToJava(ClrPlan<IClrCursor> plan, DataContext root)
         {
             ArgumentNullException.ThrowIfNull(plan);
@@ -114,7 +106,7 @@ namespace Apache.Calcite.Extensions.Interop
         }
 
         /// <summary>
-        /// A linq4j <see cref="Enumerable"/> whose every enumerator is an open of a cursor plan.
+        /// A linq4j <see cref="Enumerable"/> that opens the plan for each enumerator.
         /// </summary>
         sealed class CursorEnumerable(ClrPlan<IClrCursor> plan, DataContext root) : AbstractEnumerable
         {
@@ -131,11 +123,8 @@ namespace Apache.Calcite.Extensions.Interop
         /// A linq4j <see cref="Enumerator"/> reading a cursor.
         /// </summary>
         /// <remarks>
-        /// linq4j positions before the first row and advances on <c>moveNext</c>, which is what a cursor
-        /// does, so the two agree except over <c>reset</c>. That is live — <c>CartesianProductEnumerator</c>
-        /// rewinds the inner side once per row of the outer — and a cursor is forward only, so the plan is
-        /// opened afresh, which is what the enumerable it stands for would do when asked for a second
-        /// enumerator.
+        /// A cursor is forward-only, so <c>reset</c>, which linq4j's <c>CartesianProductEnumerator</c> calls
+        /// once per outer row, disposes the cursor and opens the plan again.
         /// </remarks>
         sealed class CursorEnumerator(ClrPlan<IClrCursor> plan, DataContext root) : Enumerator
         {
@@ -160,7 +149,7 @@ namespace Apache.Calcite.Extensions.Interop
 
             /// <inheritdoc />
             /// <remarks>
-            /// <c>AutoCloseable</c> arrives as <see cref="IDisposable"/> under IKVM, and it is the same call.
+            /// IKVM maps <c>java.lang.AutoCloseable</c> onto <see cref="IDisposable"/>.
             /// </remarks>
             public void Dispose() => close();
 

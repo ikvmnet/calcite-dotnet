@@ -15,13 +15,11 @@ namespace Apache.Calcite.Data.Tests
     /// back end in the view tests.
     /// </summary>
     /// <remarks>
-    /// A <c>Schema</c> of <c>Table</c>s is the whole of what an adapter is to Calcite, so a view that
-    /// spans this and a table the server DDL made spans two back ends in the only sense the planner has:
-    /// two implementations of the table SPI, reached through one plan. Using a real provider — the ADO.NET
-    /// adapter over SQLite, say — would exercise more of that adapter and nothing more of the view, and
-    /// would put a database in a test suite that has none.
+    /// To the planner, an adapter is a <c>Schema</c> of <c>Table</c>s, so a view over this and a table the
+    /// server DDL made spans two back ends: two implementations of the table SPI reached through one plan.
+    /// A real provider would exercise more of that provider and nothing more of the view.
     ///
-    /// <para>Rows hold Java-boxed values, because a table is a boundary and a boundary converts.</para>
+    /// <para>Rows hold Java-boxed values, as any table's rows must.</para>
     /// </remarks>
     sealed class ViewTestBackEnd : AbstractSchema
     {

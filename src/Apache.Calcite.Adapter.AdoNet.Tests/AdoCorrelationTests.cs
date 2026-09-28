@@ -12,11 +12,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
     /// Covers sub-queries that refer to the row of the query containing them.
     /// </summary>
     /// <remarks>
-    /// A correlated sub-query is the case where the adapter cannot generate its SQL once and be done: the
-    /// inner query needs a value from the outer row, which is what <see cref="AdoCorrelationDataContext"/>
-    /// and the builder beside it exist to carry. Calcite decorrelates what it can into joins first, so some
-    /// of these arrive at the adapter as ordinary joins; the answers have to be right either way, which is
-    /// what these assert.
+    /// The inner query of a correlated sub-query needs a value from the outer row, which
+    /// <see cref="AdoCorrelationDataContext"/> carries into the pushed-down statement's parameters. By default
+    /// Calcite decorrelates these into joins; the tests under <c>Without decorrelation</c> keep the correlate.
     /// </remarks>
     public class AdoCorrelationTests : IDisposable
     {
@@ -57,10 +55,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query and returns its rows, joined by a pipe.
+        /// Runs a query and returns each row's values joined by a pipe, with <c>NULL</c> for a null.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run on the default connection, which decorrelates.</param>
+        /// <returns>One string per row, in the order the result set delivered them.</returns>
         List<string> Rows(string sql)
         {
             using var statement = _connection.createStatement();
@@ -177,11 +175,10 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A sub-query in the predicate rather than the projection, comparing against the outer row.
         /// </summary>
         /// <remarks>
-        /// Only Bob survives, and each exclusion is a different rule. In department 10 the average of 100.5
-        /// and 200.0 is 150.25, so Bob is above it and Alice is not. In department 20 Carol is the only
-        /// non-null salary, so the average is her own and <c>&gt;</c> is false against it; Dave's salary is
-        /// null, so the comparison is unknown. Erin's department is null, so the inner query matches nothing,
-        /// the average of no rows is null, and that comparison is unknown too.
+        /// Only Bob survives. In department 10 the average is 150.25, so Bob is above it and Alice is not. In
+        /// department 20 Carol is the only non-null salary, so the average is her own; Dave's salary is null,
+        /// so his comparison is unknown. Erin's department is null, so the inner query matches nothing and
+        /// the average is null.
         /// </remarks>
         [Fact]
         public void ACorrelatedComparisonFilters()
@@ -201,13 +198,14 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// <summary>
         /// Opens a second connection that leaves correlates in the plan.
         /// </summary>
-        /// <returns></returns>
         /// <remarks>
-        /// Calcite rewrites a correlated sub-query into a join wherever it can, and by default it always
-        /// tries. Every query above therefore reaches the adapter already decorrelated, which means none of
-        /// them exercise the correlation machinery at all. <c>forceDecorrelate=false</c> leaves the
-        /// <c>Correlate</c> in place, which is the only way to reach it from SQL.
+        /// By default Calcite rewrites a correlated sub-query into a join, so the queries above reach the
+        /// adapter decorrelated and never bind a correlation variable. <c>forceDecorrelate=false</c> keeps the
+        /// <c>Correlate</c>.
         /// </remarks>
+        /// <returns>
+        /// An open Calcite connection with the SQLite database mounted as <c>ADO</c>; the caller closes it.
+        /// </returns>
         java.sql.Connection Correlating()
         {
             var properties = new java.util.Properties();
@@ -223,10 +221,11 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Runs a query on a connection that does not decorrelate.
+        /// Runs a query on a connection that does not decorrelate, returning rows as <see cref="Rows"/> does.
         /// </summary>
-        /// <param name="sql"></param>
-        /// <returns></returns>
+        /// <param name="sql">The statement to run, whose correlated sub-queries stay correlates in the
+        /// plan.</param>
+        /// <returns>One pipe-joined string per row, with <c>NULL</c> for a null.</returns>
         List<string> CorrelatedRows(string sql)
         {
             using var connection = Correlating();
@@ -276,11 +275,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Correlating on an approximate column rather than an integer.
         /// </summary>
         /// <remarks>
-        /// The value bound into the inner query has to survive the trip out of the plan, where it is a boxed
-        /// Java type, and into a <see cref="System.Data.Common.DbParameter"/>, which knows nothing of those.
-        /// Every other test here correlates on <c>DEPTNO</c>, so only the integer path was ever taken.
-        /// Everyone but the highest paid has someone above them; Dave's salary is null, so the comparison is
-        /// unknown and he does not survive.
+        /// The bound value leaves the plan as a boxed Java type and has to be converted for a
+        /// <see cref="System.Data.Common.DbParameter"/>. Everyone but the highest paid has someone above them;
+        /// Dave's salary is null, so his comparison is unknown.
         /// </remarks>
         [Fact]
         public void CorrelatingOnARealIsCorrectWithoutDecorrelation()
@@ -302,7 +299,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// Correlating on a date, which Calcite carries as a day count rather than a timestamp.
+        /// Correlating on a date, which leaves the plan as a day count and is converted back to a date for the
+        /// parameter.
         /// </summary>
         [Fact]
         public void CorrelatingOnADateIsCorrectWithoutDecorrelation()
@@ -316,10 +314,9 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// Two correlation variables in one statement, of different types.
         /// </summary>
         /// <remarks>
-        /// The case that catches a parameter bound to the wrong value. Each marker is named for its position
-        /// among parameters, while the value behind it is found by a variable index that is nothing like that
-        /// position, so the writer and the enricher have to agree on the mapping between them. Swapping the
-        /// two would compare a department against a salary and give a different answer rather than an error.
+        /// Each marker is named for its position among the statement's parameters, while its value is read by
+        /// correlation variable index, so the writer and the enricher must agree on the mapping. Swapping the
+        /// two would compare a department against a salary and return a wrong answer rather than an error.
         /// Only Alice has someone in her own department earning more.
         /// </remarks>
         [Fact]
@@ -354,8 +351,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A correlated sub-query inside a correlated sub-query.
         /// </summary>
         /// <remarks>
-        /// Two contexts are live at once, each closed over a different outer row. A department survives when
-        /// it has an employee who has a colleague, so the empty one does not.
+        /// Two correlation contexts are live at once, each over a different outer row. A department survives
+        /// when it has an employee with a colleague, so the empty one does not.
         /// </remarks>
         [Fact]
         public void NestedCorrelationIsCorrectWithoutDecorrelation()
@@ -375,9 +372,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         /// A null correlation value, which is bound rather than skipped.
         /// </summary>
         /// <remarks>
-        /// Erin's department is null. The parameter is still filled — with <see cref="System.DBNull"/> — and
-        /// the inner comparison is then unknown for every row, so her count is zero rather than the query
-        /// failing on an unfilled parameter.
+        /// Erin's department is null. The parameter is bound to <see cref="System.DBNull"/>, the inner
+        /// comparison is unknown for every row, and her count is zero.
         /// </remarks>
         [Fact]
         public void ANullCorrelationValueIsBound()
@@ -404,7 +400,7 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         }
 
         /// <summary>
-        /// An outer query matching nothing never runs the inner one.
+        /// An outer query matching no rows yields no rows.
         /// </summary>
         [Fact]
         public void AnEmptyOuterYieldsNothing()
@@ -420,9 +416,8 @@ namespace Apache.Calcite.Adapter.AdoNet.Tests
         #region Uncorrelated, for contrast
 
         /// <summary>
-        /// An uncorrelated sub-query needs no value from the outer row, so it is evaluated once. It is here
-        /// to keep the correlated cases honest: if these were the only ones passing, the correlation would
-        /// not be doing anything.
+        /// An uncorrelated sub-query, which needs no value from the outer row, as a baseline for the
+        /// correlated cases.
         /// </summary>
         [Fact]
         public void AnUncorrelatedSubQueryIsEvaluatedOnce()

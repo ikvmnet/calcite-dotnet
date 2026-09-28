@@ -2,21 +2,17 @@ namespace Apache.Calcite.Extensions.Runtime
 {
 
     /// <summary>
-    /// What the pieces of a window aggregate read about the row they are being evaluated for.
+    /// The runtime state of a window frame for the row being evaluated, read by a window aggregate's
+    /// generated code.
     /// </summary>
     /// <remarks>
-    /// The values <c>WinAggFrameContext</c> describes -- index, startIndex, endIndex, hasRows and the two row
-    /// counts -- held rather than described. That interface is Calcite's at generation time, its members
-    /// answering with an <c>Expression</c> standing for each; there is no runtime counterpart to mirror,
-    /// because Janino writes them into the generated method as plain locals.
+    /// Holds the values Calcite's <c>WinAggFrameContext</c> describes at generation time: the row's index,
+    /// the frame's bounds, whether it has rows, and the frame and partition row counts. Calcite's
+    /// <c>EnumerableWindow</c> keeps them in local variables of its generated method;
+    /// <c>ClrCursorDefaults.Window</c> runs the loop itself and passes this object to the generated lambdas,
+    /// reusing one instance for every row.
     ///
-    /// <para>Calcite's <c>EnumerableWindow</c> declares these as local variables of the generated method and the
-    /// aggregate implementors write expressions naming them. <c>ClrCursorDefaults.Window</c> owns the loop
-    /// instead, so they are values it hands to the lambdas; one instance is reused for every row, exactly as
-    /// one set of variables is.</para>
-    ///
-    /// <para>Every index is into <see cref="Rows"/>, which is one partition sorted by the window's ordering.
-    /// A start of -1 means the frame is empty, which is what <see cref="HasRows"/> says.</para>
+    /// <para>Every index is into <see cref="Rows"/>, one partition sorted by the window's ordering.</para>
     /// </remarks>
     sealed class WindowFrame
     {
@@ -25,8 +21,8 @@ namespace Apache.Calcite.Extensions.Runtime
         /// Gets or sets the rows of the current partition, in the window's order.
         /// </summary>
         /// <remarks>
-        /// An object array, because Calcite's is: a partition comes out of <c>SortedMultiMap.arrays</c> and
-        /// every read of it converts to the row type.
+        /// An <c>object[]</c>, as in Calcite: a partition comes from <c>SortedMultiMap.arrays</c>, and every
+        /// read converts the element to the row type.
         /// </remarks>
         public object[] Rows { get; set; } = [];
 
@@ -46,7 +42,7 @@ namespace Apache.Calcite.Extensions.Runtime
         public int End { get; set; }
 
         /// <summary>
-        /// Gets or sets whether the frame holds any row at all.
+        /// Gets or sets whether the frame holds any rows.
         /// </summary>
         public bool HasRows { get; set; }
 
@@ -64,8 +60,8 @@ namespace Apache.Calcite.Extensions.Runtime
         /// Gets or sets the index of the row being folded into the accumulator.
         /// </summary>
         /// <remarks>
-        /// Only meaningful while the adder runs. It is the <c>j</c> of Calcite's inner loop, which is not the
-        /// row being evaluated: that is <see cref="Index"/>.
+        /// Meaningful only while the adder runs. It is the <c>j</c> of Calcite's inner loop, and differs from
+        /// <see cref="Index"/>, the row being evaluated.
         /// </remarks>
         public int Position { get; set; }
 

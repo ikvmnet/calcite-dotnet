@@ -8,32 +8,34 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 {
 
     /// <summary>
-    /// The relational factories of this convention, so that a <c>RelBuilder</c> handed this convention's
-    /// context builds nodes of it rather than logical ones.
+    /// Relational expression factories that create nodes of <see cref="ClrCursorConvention"/>, for a
+    /// <c>RelBuilder</c> that should build physical nodes rather than logical ones.
     /// </summary>
     /// <remarks>
-    /// The counterpart of <c>EnumerableRelFactories</c>, and the same four: scan, project, filter and sort.
+    /// Mirrors <c>EnumerableRelFactories</c>, with the same four factories.
     /// </remarks>
     public static class ClrCursorRelFactories
     {
 
         /// <summary>
-        /// Returns a <see cref="ClrCursorTableScan"/>.
+        /// A factory that creates a <see cref="ClrCursorTableScan"/>.
         /// </summary>
         public static readonly RelFactories.TableScanFactory ClrCursorTableScanFactory = new TableScanFactoryImpl();
 
         /// <summary>
-        /// Returns a <see cref="ClrCursorProject"/>.
+        /// A factory that creates a <see cref="ClrCursorProject"/>. It throws
+        /// <see cref="java.lang.IllegalArgumentException"/> if asked to set correlation variables.
         /// </summary>
         public static readonly RelFactories.ProjectFactory ClrCursorProjectFactory = new ProjectFactoryImpl();
 
         /// <summary>
-        /// Returns a <see cref="ClrCursorFilter"/>.
+        /// A factory that creates a <see cref="ClrCursorFilter"/>. Correlation variables passed to it are
+        /// ignored, as in <c>EnumerableRelFactories</c>.
         /// </summary>
         public static readonly RelFactories.FilterFactory ClrCursorFilterFactory = new FilterFactoryImpl();
 
         /// <summary>
-        /// Returns a <see cref="ClrCursorSort"/>.
+        /// A factory that creates a <see cref="ClrCursorSort"/>. A trait set passed to it is ignored.
         /// </summary>
         public static readonly RelFactories.SortFactory ClrCursorSortFactory = new SortFactoryImpl();
 

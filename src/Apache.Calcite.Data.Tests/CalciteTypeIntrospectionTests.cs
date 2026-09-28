@@ -12,13 +12,13 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Covers the three ways a caller can ask what a column's type is, and the one way it can change the
-    /// answer.
+    /// Covers the three ways a caller can ask what a column's type is, the Java value accessor, the type
+    /// registry as an outside caller uses it, and how a parameter's type is named.
     /// </summary>
     /// <remarks>
-    /// The three widen: <c>GetFieldType</c> is one .NET type, <c>GetCalciteDbType</c> is Calcite's own fixed
-    /// list, and <c>GetRelDataType</c> is the type itself. Only the last describes a type that nests, which
-    /// is why all three exist rather than the narrowest one.
+    /// The three widen: <c>GetFieldType</c> is one .NET type, <c>GetCalciteDbType</c> is a fixed list of
+    /// Calcite's types, and <c>GetRelDataType</c> is the type itself. Only the last describes a type that
+    /// nests.
     /// </remarks>
     public class CalciteTypeIntrospectionTests
     {
@@ -49,7 +49,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The unsigned integers are the plainest case of what ADO.NET's list cannot say and Calcite's can.
+        /// The unsigned integers are named exactly by <see cref="CalciteDbType"/>.
         /// </summary>
         [Fact]
         public void An_unsigned_column_should_be_named_by_the_calcite_list()
@@ -62,7 +62,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// One level of nesting is what the flag is for, and is where it stops.
+        /// The collection flag carries one level of nesting.
         /// </summary>
         [Fact]
         public void An_array_column_should_carry_its_element_in_the_flag()
@@ -84,8 +84,7 @@ namespace Apache.Calcite.Data.Tests
 
         /// <summary>
         /// A second level has nowhere to go in one flag, so the base is <see cref="CalciteDbType.Unknown"/>
-        /// and the type itself is the only complete answer. This is the whole reason
-        /// <c>GetRelDataType</c> exists.
+        /// and only <c>GetRelDataType</c> gives the complete type.
         /// </summary>
         [Fact]
         public void A_nested_array_column_should_be_unknown_in_the_flag_and_exact_in_the_type()
@@ -103,7 +102,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Three levels, to show the type keeps describing where the flag stopped at one.
+        /// The type describes every level, where the flag stops at one.
         /// </summary>
         [Fact]
         public void A_thrice_nested_array_column_should_still_be_described_by_the_type()
@@ -121,7 +120,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A map's key type is a fact Calcite carries and neither fixed list has room for.
+        /// A map's key and value types are on the type; neither fixed list has room for them.
         /// </summary>
         [Fact]
         public void A_map_column_should_carry_its_key_and_value_types()
@@ -137,8 +136,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Nullability is on the type, which is what a collection's element needs and a column's
-        /// <c>GetFieldType</c> deliberately does not report.
+        /// A collection element's nullability is on the type; <c>GetFieldType</c> does not report
+        /// nullability.
         /// </summary>
         [Fact]
         public void A_nullable_element_should_say_so_on_the_type()
@@ -150,14 +149,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // There is one way to reach the Java object, and it is named.
+        // GetCalciteValue is the only way to reach the Java object.
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// <c>GetFieldValue</c> answers the column's reading, a reading the chain carries under another
-        /// name, or a shape of one. Naming the class Calcite holds the value in is none of those, and used
-        /// to be answered by a last arm that handed the Java object over — a second way out of the rule that
-        /// no Java object reaches a caller, and one a caller could take without meaning to.
+        /// <c>GetFieldValue</c> answers only .NET readings of the column, so naming the Java class Calcite
+        /// holds the value in is refused rather than handing the Java object over.
         /// </summary>
         [Theory]
         [InlineData("SELECT 1")]
@@ -181,14 +178,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And the refusal names the accessor that does answer, because the value is the thing asked for
-        /// and the message that says it cannot be converted reads as a defect on its own.
+        /// The refusal names <c>GetCalciteValue</c>, the accessor that does return the Java object.
         /// </summary>
-        /// <remarks>
-        /// <c>GetFieldValue</c> answers .NET readings and nothing else, so a caller naming the class the
-        /// value arrives in is asking the one accessor that will not hand it over. What is missing from the
-        /// refusal is not the reason but the name of the one that will.
-        /// </remarks>
         [Fact]
         public void Naming_the_java_class_should_name_the_accessor_that_answers()
         {
@@ -202,7 +193,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And the one way that is left says what it is in its name.
+        /// <c>GetCalciteValue</c> returns the Java object; <c>GetFieldValue</c> returns the .NET reading.
         /// </summary>
         [Fact]
         public void The_calcite_value_should_be_the_only_way_to_the_java_object()
@@ -215,7 +206,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A collection likewise: the list is reachable, and only by asking for it.
+        /// For a collection, <c>GetCalciteValue</c> returns the Java list.
         /// </summary>
         [Fact]
         public void The_calcite_value_of_a_collection_should_be_the_list()
@@ -232,7 +223,7 @@ namespace Apache.Calcite.Data.Tests
         // ------------------------------------------------------------------------------------
 
         /// <summary>
-        /// A resolver of a caller's own, which is the whole extension point.
+        /// A caller's own resolver, mapping <c>DECIMAL</c> to <c>Money</c>.
         /// </summary>
         sealed class MoneyResolver : IClrTypeResolver
         {
@@ -253,8 +244,8 @@ namespace Apache.Calcite.Data.Tests
         readonly record struct Money(decimal Amount);
 
         /// <summary>
-        /// Built, chained and resolved without touching a connection's internals, which is what an
-        /// out-of-assembly consumer has to be able to do.
+        /// A registry is built, chained and resolved through public members only, as a consumer outside
+        /// this assembly would.
         /// </summary>
         [Fact]
         public void A_caller_should_be_able_to_build_and_chain_its_own_registry()
@@ -276,8 +267,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Resetting and not prepending leaves the built-in answer, so the chain is doing the work rather
-        /// than the entry being replaced outright.
+        /// Without a prepended resolver the built-in mapping answers, so the prepended resolver in the
+        /// previous test is what changed the answer.
         /// </summary>
         [Fact]
         public void The_built_in_chain_should_answer_where_nothing_was_prepended()
@@ -291,8 +282,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The question an introspecting caller asks, which is not the one <c>GetMapping</c> answers: which
-        /// conversions are permitted, rather than which one wins.
+        /// <c>GetClrTypes</c> lists every CLR type a Calcite type can be read as, where <c>GetMapping</c>
+        /// answers only the one that wins.
         /// </summary>
         [Fact]
         public void A_caller_should_be_able_to_enumerate_what_a_type_can_be_read_as()
@@ -350,7 +341,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // Parameters: three ways to name the type, widening.
+        // Parameters: three ways to name the type, from narrowest to widest.
         // ------------------------------------------------------------------------------------
 
         [Fact]
@@ -372,7 +363,7 @@ namespace Apache.Calcite.Data.Tests
 
             Assert.Same(type, p.RelDataType);
 
-            // the flag reads the type it was given, down to where one bit runs out
+            // the flag keeps the outer level of a nested type and loses the element
             Assert.Equal(CalciteDbType.Array, p.CalciteDbType);
 
             // and the shared list has nothing for a collection at all
@@ -380,8 +371,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// The three are views of one statement, so naming the type any of the three ways restates the
-        /// other two rather than sitting beside them.
+        /// The three describe one type, so setting any of them restates the other two.
         /// </summary>
         [Fact]
         public void Setting_the_ado_name_should_restate_the_other_two()
@@ -415,8 +405,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A name cannot state a type, so restating from one drops the exact type rather than keeping a
-        /// stale one beside a name that disagrees with it.
+        /// A name cannot state a full type, so setting one drops the stated <c>RelDataType</c> rather than
+        /// keeping one that disagrees with it.
         /// </summary>
         [Fact]
         public void Naming_a_type_after_stating_one_should_drop_the_stated_type()
@@ -433,8 +423,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Clearing the stated type leaves the parameter as though nothing had been said about it, which is
-        /// the state where the value's own type decides.
+        /// Clearing the stated type leaves the parameter untyped, so the value's own type decides.
         /// </summary>
         [Fact]
         public void Clearing_the_stated_type_should_leave_the_value_deciding()
@@ -451,7 +440,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// With nothing said, the value decides, and the Calcite name follows the same inference.
+        /// With no type set, the value's type decides the Calcite name as it does the <c>DbType</c>.
         /// </summary>
         [Fact]
         public void An_unstated_parameter_should_be_named_by_its_value()

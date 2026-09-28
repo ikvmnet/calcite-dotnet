@@ -13,13 +13,12 @@ namespace Apache.Calcite.Data.Tests
 {
 
     /// <summary>
-    /// Covers the collection accessor, which ADO.NET has none of and JDBC spells <c>getArray</c>.
+    /// Covers <see cref="CalciteDataReader.GetArray(int)"/> and <see cref="CalciteDataReader.GetArray{T}(int)"/>,
+    /// the collection accessor ADO.NET lacks and JDBC calls <c>getArray</c>.
     /// </summary>
     /// <remarks>
-    /// A collection is a core Calcite type, so reading one should not mean naming a .NET type through
-    /// <c>GetFieldValue</c> and hoping it is the one the column produces. The rule these hold is that it is
-    /// as strict as every other typed getter: a column that is not a collection is refused rather than
-    /// wrapped in an array of one.
+    /// The accessor is as strict as every other typed getter: a column that is not a collection is refused
+    /// rather than wrapped in an array of one.
     /// </remarks>
     public class CalciteGetArrayTests
     {
@@ -57,8 +56,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>MULTISET</c> differs from an <c>ARRAY</c> in whether the order of the elements means
-        /// anything, not in what holds them, so it answers here too.
+        /// A <c>MULTISET</c> differs from an <c>ARRAY</c> only in whether element order is significant, so it
+        /// reads as an array too.
         /// </summary>
         [Fact]
         public void A_multiset_column_should_read_as_an_array()
@@ -81,7 +80,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// An element that may be null makes the array nullable, an array having no other way to carry one.
+        /// A nullable element type gives an array of <see cref="Nullable{T}"/>.
         /// </summary>
         [Fact]
         public void An_array_holding_a_null_should_read_as_an_array_of_the_nullable_element()
@@ -93,7 +92,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A <c>DATE</c> inside an array is a count of days and only the element type says so.
+        /// A <c>DATE</c> element is held as a count of days, and only the element type says it is a date.
         /// </summary>
         [Fact]
         public void An_array_of_dates_should_read_as_dates()
@@ -105,12 +104,12 @@ namespace Apache.Calcite.Data.Tests
         }
 
         // ------------------------------------------------------------------------------------
-        // Strict, like every other typed getter.
+        // Columns that are not collections.
         // ------------------------------------------------------------------------------------
 
         /// <summary>
         /// A scalar is not a collection of one, a <c>MAP</c> is pairs rather than elements, and a <c>ROW</c>
-        /// is fields. None of them is what this reads.
+        /// is fields, so each is refused.
         /// </summary>
         [Theory]
         [InlineData("SELECT 1")]
@@ -136,13 +135,10 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And the refusal says the value was null, rather than rendering a class and a value it has not
-        /// got.
+        /// The refusal of a null says the value is null and points to <c>IsDBNull</c>, from both overloads.
         /// </summary>
         /// <remarks>
-        /// The message every other refusal uses quotes the value's class and the value itself. A null has
-        /// neither, so that message reads as two empty quotes and never mentions the one thing that
-        /// happened. Both spellings of the accessor go through the same guard.
+        /// The general refusal message quotes the value's class and value, which a null does not have.
         /// </remarks>
         [Fact]
         public void A_null_collection_should_be_refused_by_name()
@@ -161,8 +157,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A column whose type says nothing leaves the value's own class to decide, here as everywhere else,
-        /// so a list in an <c>ANY</c> column reads through this.
+        /// Under <c>ANY</c> the value's runtime class decides, so a list in an <c>ANY</c> column reads as an
+        /// array.
         /// </summary>
         [Fact]
         public void An_any_column_holding_a_list_should_read_as_an_array()
@@ -205,9 +201,9 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// <b>Naming the element type selects a mapping, and is not a cast of what the column reads back
-        /// as.</b> A <c>DATE</c> is a <see cref="DateTime"/> by default and a <see cref="DateOnly"/> when
-        /// asked, because the chain carries both; casting the default reading could never reach the second.
+        /// Naming the element type selects the mapping the elements are read with, rather than casting the
+        /// default reading. A <c>DATE</c> reads as a <see cref="DateTime"/> by default and as a
+        /// <see cref="DateOnly"/> when that is named.
         /// </summary>
         [Fact]
         public void Naming_an_element_type_the_chain_carries_should_run_that_conversion()
@@ -220,8 +216,8 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// And a conversion the chain carries only when both types are named, which is nobody's default,
-        /// is reached the same way.
+        /// A conversion available only when both types are named, such as <c>TIMESTAMP</c> to
+        /// <see cref="DateOnly"/>, is reached the same way.
         /// </summary>
         [Fact]
         public void Naming_an_element_type_that_is_nobody_s_default_should_still_be_reached()
@@ -233,8 +229,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// An element that may be null is refused where the named type cannot hold one, and answered where
-        /// it can.
+        /// Nullable elements are refused where the named type cannot hold a null, and read where it can.
         /// </summary>
         [Fact]
         public void Naming_a_value_type_over_nullable_elements_should_be_refused()
@@ -247,8 +242,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Naming an element type the chain does not carry to the column's is refused rather than converted
-        /// into.
+        /// An element type with no mapping to the column's element type is refused rather than converted to.
         /// </summary>
         [Fact]
         public void Naming_a_wider_element_type_should_be_refused()
@@ -269,8 +263,7 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// A table with an <c>ANY</c> column holding a scalar and one holding a list, so that the untyped
-        /// path has something to read.
+        /// A one-row table with two <c>ANY</c> columns, <c>I</c> holding an integer and <c>L</c> a list.
         /// </summary>
         sealed class ArrayAnyTable : AbstractTable, ScannableTable
         {

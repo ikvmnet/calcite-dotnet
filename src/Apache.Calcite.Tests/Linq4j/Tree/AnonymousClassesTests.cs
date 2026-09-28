@@ -13,28 +13,22 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 {
 
     /// <summary>
-    /// Requires that a lambda declared as one of linq4j's predicates is wrapped to be one.
+    /// Checks that <see cref="AnonymousClasses"/> wraps a lambda declared as linq4j's <c>Predicate1</c> or
+    /// <c>Predicate2</c> in an implementation of that interface.
     /// </summary>
     /// <remarks>
-    /// A block of Calcite's making passes a lambda to an operator of its own, whose parameter is the
-    /// functional interface the lambda was declared against. <see cref="AnonymousClasses"/> is what turns the
-    /// delegate into that interface, and an interface missing from its table is not refused: the lambda is
-    /// left a delegate and the conversion to the interface is emitted anyway, which the expression compiler
-    /// accepts — a delegate and an interface are both references — and which throws
-    /// <see cref="InvalidCastException"/> the first time the compiled plan runs.
-    ///
-    /// <para>That is how <c>Predicate1</c> and <c>Predicate2</c> were missed. They are not
-    /// <c>Function1</c> and <c>Function2</c> of <c>Boolean</c>: each declares its own <c>apply</c> returning
-    /// a primitive, so a function adapter put in their place does not implement them either. The failure has
-    /// no compile-time symptom and does not appear until a plan that mixes this convention with Calcite's own
-    /// reaches such an operator, so the table is checked here directly.</para>
+    /// The translator leaves a lambda as a delegate when <see cref="AnonymousClasses.Handles"/> does not know its
+    /// interface. The conversion to the interface still compiles, because both are reference types, and throws
+    /// <see cref="InvalidCastException"/> only when the plan runs, so the table is checked directly.
+    /// <c>Predicate1</c> and <c>Predicate2</c> each declare an <c>apply</c> returning a primitive
+    /// <c>boolean</c>, so an adapter for <c>Function1</c> or <c>Function2</c> does not implement them.
     /// </remarks>
     public class AnonymousClassesTests
     {
 
         /// <summary>
-        /// Every functional interface a linq4j tree may declare a lambda against has to be one
-        /// <see cref="AnonymousClasses"/> handles, or the conversion is emitted unwrapped.
+        /// <see cref="AnonymousClasses"/> handles both of linq4j's predicate interfaces, so a lambda declared
+        /// against either is wrapped rather than left a delegate.
         /// </summary>
         [Fact]
         public void ShouldHandleLinq4jPredicates()
@@ -44,7 +38,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// A one-argument predicate answers what its delegate answers, through the interface.
+        /// A wrapped one-argument predicate answers, through the interface, what its lambda answers.
         /// </summary>
         [Fact]
         public void ShouldWrapPredicate1()
@@ -60,8 +54,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
         }
 
         /// <summary>
-        /// A two-argument predicate is closed over both of the types it takes, neither of them its result:
-        /// the pair the join in a mixed plan hands it is a row and a key, and they are not the same type.
+        /// A two-argument predicate whose arguments have different types, as a row and a key do.
         /// </summary>
         [Fact]
         public void ShouldWrapPredicate2()

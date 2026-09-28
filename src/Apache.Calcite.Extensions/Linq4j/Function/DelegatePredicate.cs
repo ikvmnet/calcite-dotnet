@@ -7,12 +7,10 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
     /// <summary>
     /// A <see cref="java.util.function.Predicate"/> backed by a delegate.
     /// </summary>
-    /// <typeparam name="T"></typeparam>
-    /// <param name="predicate"></param>
+    /// <typeparam name="T">The argument type.</typeparam>
+    /// <param name="predicate">The predicate.</param>
     /// <remarks>
-    /// What a MATCH_RECOGNIZE pattern definition becomes. <c>Matcher.Builder.add</c> takes one of these per
-    /// symbol, so the condition is compiled as a delegate and handed over as the interface Calcite's matcher
-    /// asks for.
+    /// What a MATCH_RECOGNIZE pattern definition becomes: <c>Matcher.Builder.add</c> takes one per symbol.
     /// </remarks>
     sealed class DelegatePredicate<T>(Func<T, bool> predicate) : java.util.function.Predicate
     {
@@ -22,7 +20,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Function
         /// <inheritdoc />
         public bool test(object value) => predicate(JavaValues.As<T>(value));
 
-        // C# does not inherit the defaults of an interface IKVM compiled, so each is forwarded
+        // C# does not inherit the default methods of an interface IKVM compiled, so each is forwarded
 
         /// <inheritdoc />
         public java.util.function.Predicate and(java.util.function.Predicate other) => java.util.function.Predicate.__DefaultMethods.and(this, other);

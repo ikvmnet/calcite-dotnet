@@ -6,14 +6,12 @@ namespace Apache.Calcite.Data.Common
 {
 
     /// <summary>
-    /// What a resolver may consult while answering a lookup.
+    /// What a resolver can consult while answering a lookup.
     /// </summary>
     /// <remarks>
-    /// The type factory is here rather than reached for globally because it is the thing that decides what a
-    /// Calcite type is held in, and a session is entitled to its own — a schema that types a column with
-    /// <c>createJavaType</c>, or a factory that overrides <c>getJavaClass</c>, changes the answer a mapping
-    /// has to agree with. The registry is here so a resolver can compose: a mapping for a collection asks
-    /// for its element's mapping rather than knowing every element type itself.
+    /// The type factory decides which runtime class Calcite holds a value of each type in, and each session
+    /// has its own, so a resolver takes it from here rather than assuming one. The registry lets a resolver
+    /// compose, for example by looking up a collection's element mapping.
     /// </remarks>
     public sealed class ClrTypeContext
     {
@@ -24,8 +22,8 @@ namespace Apache.Calcite.Data.Common
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
-        /// <param name="typeFactory"></param>
-        /// <param name="registry"></param>
+        /// <param name="typeFactory">The type factory lookups are answered against.</param>
+        /// <param name="registry">The registry that owns this context.</param>
         internal ClrTypeContext(JavaTypeFactory typeFactory, ClrTypeRegistry registry)
         {
             _typeFactory = typeFactory ?? throw new ArgumentNullException(nameof(typeFactory));
@@ -33,12 +31,12 @@ namespace Apache.Calcite.Data.Common
         }
 
         /// <summary>
-        /// Gets the type factory this lookup is being answered against.
+        /// Gets the type factory the lookup is answered against.
         /// </summary>
         public JavaTypeFactory TypeFactory => _typeFactory;
 
         /// <summary>
-        /// Gets the registry the lookup was made on, for a resolver that composes.
+        /// Gets the registry the lookup was made on, through which a resolver can look up other mappings.
         /// </summary>
         public ClrTypeRegistry Registry => _registry;
 

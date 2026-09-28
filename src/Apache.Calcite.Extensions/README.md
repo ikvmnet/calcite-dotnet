@@ -2,13 +2,20 @@
 
 [![NuGet](https://img.shields.io/nuget/v/Apache.Calcite.Extensions)](https://www.nuget.org/packages/Apache.Calcite.Extensions)
 
-**Apache.Calcite.Extensions** is what .NET adds on top of [Apache Calcite](https://calcite.apache.org/) running under [IKVM](https://github.com/ikvmnet/ikvm): a calling convention that runs a query plan as compiled .NET code, the prepare pipeline that takes a statement from SQL text to such a plan, and the interop types both need.
+**Apache.Calcite.Extensions** runs [Apache Calcite](https://calcite.apache.org/) query plans as compiled .NET code. Calcite runs on .NET through [IKVM](https://github.com/ikvmnet/ikvm); this package adds:
 
-No Java compiler runs when a statement is prepared, and a .NET user-defined function can be called from SQL.
+- **`ClrCursorConvention`**, a Calcite calling convention that compiles a query plan to a `System.Linq.Expressions` tree instead of generating Java source for the Janino compiler.
+- **A prepare pipeline** (`ClrPrepareImpl`) that takes a SQL statement to such a plan.
+- **A table SPI for .NET**: tables that return `IEnumerable`, `IAsyncEnumerable`, an expression tree, or a cursor such as a `DbDataReader`.
+- **`CalciteConnectionProperties`**, typed access to Calcite's connection options.
 
-Most people get this package as a dependency of [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) or [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) and never call it directly — every statement on a `CalciteConnection` is already planned and run this way, with nothing to configure. Reference it yourself when you want to drive Calcite's planner without an ADO.NET connection, or want typed access to Calcite's connection properties.
+Most applications get this package as a dependency of [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) (the ADO.NET provider) or [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet), and never call it directly: every statement run through a `CalciteConnection` is already planned and executed this way. Reference it directly when you want to:
 
-Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
+- drive Calcite's planner yourself, without an ADO.NET connection;
+- implement tables in .NET;
+- build Calcite connection properties in code.
+
+Targets .NET 8; tested on .NET 8 and .NET 10. It references Calcite 1.43 and IKVM 8.16.1, and requires IKVM 8.16.0 or later.
 
 ## Install
 
@@ -16,61 +23,81 @@ Targets **.NET 8**, and is verified on **.NET 8** and **.NET 10**.
 dotnet add package Apache.Calcite.Extensions
 ```
 
-## Why you might want it
+## What the convention gives you
 
-Calcite normally executes a query by generating Java source and compiling it at runtime with Janino. Under IKVM that works, but a Java compiler runs every time you prepare a statement, and any function you call from SQL has to be reachable by a Java class name.
+- **No Java compiler at prepare time.** Preparing a statement builds an expression tree; each compiled plan is JIT-compiled the first time it is opened.
+- **.NET methods as SQL functions.** A static .NET method registered with Calcite's usual function API is called directly from the compiled plan:
 
-This package replaces that step. A query plan is compiled into a `System.Linq.Expressions` tree and turned into a delegate, so:
+  ```csharp
+  rootSchema.add("MY_FUNC", org.apache.calcite.schema.impl.ScalarFunctionImpl.create(
+      (java.lang.Class)typeof(MyFunctions), "myFunc"));
+  ```
 
-- **No Java compiler runs when you prepare a statement.**
-- **A .NET method can be a SQL function, and no class name is written out.** Calcite's own engine reaches one only through the class-loader stamp `IKVM.Maven.Sdk` puts on `calcite-core`, which IKVM 8.14.0 and 8.15.0 could not read — under those a .NET user-defined function had no plan under `EnumerableConvention` at all, Janino refusing the `cli.`-prefixed name IKVM gives a CLR class. IKVM 8.16.0 fixes it; here it never mattered, because nothing writes a name.
+- **Synchronous and asynchronous execution from one plan.** A compiled plan opens a forward-only cursor with `Open()` or `OpenAsync(CancellationToken)`, and the cursor advances with `Read()` or `ReadAsync(CancellationToken)`. You can choose on every row: a row read with `Read` and the next with `ReadAsync` are consecutive rows of the same result, and each `ReadAsync` token is passed down to the table the row comes from. This is the shape of `DbDataReader`.
+- **Works alongside Calcite's own engine.** `ClrCursorConvention` mirrors Calcite's `EnumerableConvention` node for node and uses the same row types. Calcite's own rules stay registered, and converters connect the two conventions, so anything this convention does not implement is planned by Calcite as usual and its rows pass between the two unchanged.
 
-`ClrCursorConvention` mirrors Calcite's `EnumerableConvention` node for node and uses the same row types, and converter rules exist in both directions. A plan may hold nodes of both conventions: anything this convention has no rule for is planned by Calcite as usual, and rows cross between the two untouched.
-
-**One plan, opened either way, read either way.** A plan of this convention is compiled to a `ClrCursorFactory`, with two members, `Open(DataContext)` and `OpenAsync(DataContext, CancellationToken)`. Both hand back the same kind of object: an `IClrCursor`, a forward-only cursor with `Read()` and `ReadAsync(CancellationToken)` over one position. A consumer chooses how to open, and then chooses again on every advance how to read, and a row read with one member and the next with the other are consecutive rows of one result.
-
-That is the shape `DbDataReader` has. A sequence cannot have it: an `IEnumerable` or an `IAsyncEnumerable` states once, at `GetEnumerator` or `GetAsyncEnumerator`, whether it will be pulled or awaited, and takes its cancellation at the same moment. A cursor takes the token per advance and hands it down to the leaf. So the same prepared statement can be read synchronously by one caller and awaited by another, and an `EXPLAIN` cannot tell you which will happen.
+The results are Calcite's: the conventions are tested against each other by running the same SQL through both and comparing the rows.
 
 ## Running a plan yourself
 
-Put this convention's rules on the planner, run `Programs.standard(ClrCursorRelMetadata.Provider)`, then build the root with `ClrCursorRelImplementor`. This example is executed by a test in the repository, so it cannot go stale silently:
+To plan and run SQL without an ADO.NET connection, use a Calcite `Frameworks` planner with this convention's rules added, then compile the physical plan with `ClrCursorRelImplementor`.
+
+A `Frameworks` planner registers only Calcite's rules, so add this convention's in a program that runs first. This one does nothing else:
+
+```csharp
+using System.Collections.Generic;
+
+using org.apache.calcite.plan;
+using org.apache.calcite.rel;
+using org.apache.calcite.tools;
+
+public sealed class AddRulesProgram(IReadOnlyList<RelOptRule> rules) : Program
+{
+    public RelNode run(RelOptPlanner planner, RelNode rel, RelTraitSet requiredOutputTraits, java.util.List materializations, java.util.List lattices)
+    {
+        foreach (var rule in rules)
+            planner.addRule(rule);
+
+        return rel;
+    }
+}
+```
+
+Then plan the statement. `rootSchema` is your Calcite root schema, `sql` the statement, and `dataContext` a `DataContext` over the same schema:
 
 ```csharp
 using Apache.Calcite.Extensions.Adapter.Cursor;
-using Apache.Calcite.Extensions.Rel.Metadata;
-using org.apache.calcite;
 using org.apache.calcite.tools;
 
 var calcRules = new java.util.ArrayList();
-foreach (var rule in ClrCursorRules.CalcRules())
+foreach (var rule in Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.CalcRules())
     calcRules.add(rule);
 
-// Programs.standard(), with this convention's rules put on the planner in front of it -- a
-// Frameworks planner carries Calcite's alone -- and its calc rules run afterwards, which is
-// Programs.calc once more over this convention's list. standard's own calc pass still runs
 var config = Frameworks.newConfigBuilder()
     .defaultSchema(rootSchema)
     .programs(
         Programs.sequence(
-            new AddRulesProgram(ClrCursorRules.Rules()),
-            Programs.standard(ClrCursorRelMetadata.Provider),
-            Programs.hep(calcRules, true, ClrCursorRelMetadata.Provider)))
+            new AddRulesProgram(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRules.Rules()),
+            Programs.standard(Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider),
+            Programs.hep(calcRules, true, Apache.Calcite.Extensions.Rel.Metadata.ClrCursorRelMetadata.Provider)))
     .build();
 
 var planner = Frameworks.getPlanner(config);
 var logical = planner.rel(planner.validate(planner.parse(sql))).project();
 
-// one sequence, so one transform, exactly as Programs.standard is driven.
-// the logical root's own traits, not an empty set: they carry the collation the ORDER BY produced,
-// and SortRemoveRule takes the sort away as unwanted if the required traits do not ask for it
-var traits = logical.getTraitSet().replace(ClrCursorConvention.Instance).simplify();
+// keep the root's own traits, which carry any ORDER BY collation, and ask for this convention
+var traits = logical.getTraitSet().replace(Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorConvention.Instance).simplify();
 var physical = planner.transform(0, traits, logical);
+```
 
-var implementor = new ClrCursorRelImplementor(
+Finally compile the plan and read it, asynchronously or synchronously:
+
+```csharp
+var implementor = new Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRelImplementor(
     physical.getCluster().getRexBuilder(), new java.util.HashMap());
-var factory = implementor.ImplementRoot((ClrCursorRel)physical, ClrCursorPrefer.Array);
+var factory = implementor.ImplementRoot((Apache.Calcite.Extensions.Adapter.Cursor.ClrCursorRel)physical, ClrCursorPrefer.Array);
 
-// opening runs the plan's acquisition -- a sort drains, a leaf executes -- and reading reads rows
+// opening does the plan's up-front work (a sort drains its input, a table runs its query); reading returns rows
 await using var cursor = await factory.OpenAsync(dataContext, cancellationToken);
 while (await cursor.ReadAsync(cancellationToken))
     Console.WriteLine(cursor.Current);
@@ -81,100 +108,119 @@ while (pulled.Read())
     Console.WriteLine(pulled.Current);
 ```
 
-A one-column result is the value itself, not a row of one.
+This code is run by a test in the repository (`ReadmeExampleTests`).
 
-`ImplementRoot` walks the tree twice, through each node's `Implement` and its `ImplementAsync`, and puts both opens on one factory; each is compiled the first time it is called. A node's two bodies differ only in what is acquired at open — one drains a sort by blocking, the other by awaiting — and produce the same cursor class, whose two advances step the same fields. An operator that acquires a source later than at its own open, as linq4j's `concat` does inside `moveNext`, takes both opens of that source and calls the one matching the advance it is in.
+Things to know about the result:
 
-Four things about this program are deliberate and worth knowing before you substitute your own:
+- **A row** is an `object[]` when you pass `ClrCursorPrefer.Array`. A result with one column is the column's value itself, not a one-element array.
+- **Values are Java values**: `java.lang.Integer`, `java.lang.String`, `java.math.BigDecimal` and so on, as Calcite's type factory declares them.
+- **A factory can be opened any number of times.** Each open returns an independent cursor, positioned before the first row. Dispose the cursor when you are done; disposing it releases the whole plan.
+- **Each open is compiled on first use.** `ImplementRoot` builds both the synchronous and the asynchronous open; each is JIT-compiled the first time it is called.
 
-- **The calc rules are a separate pass.** `VolcanoCost.isLt` compares row counts and nothing else, so a project and a calc are never cheaper than one another and the planner keeps whichever it saw first. Rewriting unconditionally afterwards as a hep pass is what makes a project's refusal to implement itself safe. `Programs.standard()` does the same thing for the same reason.
-- **The planner pass registers Calcite's rules, then this convention's.** `Programs.standard()` installs none and plans with whatever is on the planner, which works because `RelOptUtil.registerDefaultRules` has already put Calcite's there. Nothing has heard of this convention, so `Rules()` registers — but it registers Calcite's set *as well as* ours, not instead of it. Dropping Calcite's takes with it the logical rewrites that belong to no convention, and `AVG`, every `DISTINCT` aggregate and every `OVER` window each need one of those before any planner sees them. It is also what lets a node this convention has no rule for be planned in `EnumerableConvention` and carried across a converter.
-- **The decorrelation is Calcite's and is run.** A scalar sub-query and an `EXISTS` become joins, and an `UNNEST` over a correlation variable cannot be decorrelated and keeps its correlate — which is how Calcite reaches its own `EnumerableCorrelate` under `Programs.standard()` as well.
-- **The metadata provider is Calcite's, with this convention's nodes added.** Calcite answers some of what a plan is costed from — a limit's row-count bounds, the collation a merge join or a hash join keeps, an interpreter's cumulative cost — from handlers keyed on the `Enumerable*` class, which this convention's nodes never reach. `ClrCursorRelMetadata.Provider` puts the same handlers, keyed on the `ClrCursor*` class, in front of `DefaultRelMetadataProvider.INSTANCE`. Pass it to `standard` as well as to the calc pass: each hep pass sets the thread's metadata provider as it runs, and the planner pass inside `standard` costs with whatever the sub-query pass before it set.
+Why the program is shaped this way, if you want to write your own:
+
+- **`Rules()` goes on the planner; `CalcRules()` runs afterwards as a separate `Programs.hep` pass.** The calc rules cannot be planner rules: Calcite's Volcano planner compares plans by row count only, so a calc is never cheaper than the project it replaces, and it does not match transformation rules against physical nodes.
+- **Keep Calcite's rules registered.** `Rules()` adds to Calcite's rules rather than replacing them. Calcite's logical rewrites are needed for `AVG`, `DISTINCT` aggregates and `OVER` windows, and a node this convention cannot implement is planned by Calcite and connected with a converter.
+- **Decorrelation runs as in Calcite.** `Programs.standard` turns a scalar sub-query or `EXISTS` into a join; an `UNNEST` over a correlation variable keeps its correlate.
+- **Use `ClrCursorRelMetadata.Provider`** for both passes. It is Calcite's default metadata provider with handlers added for this convention's nodes; without it, some row-count bounds, collations and costs are computed as if for a generic node, and the planner can choose different plans from Calcite's.
+- **`ClrRelOptUtil.RegisterDefaultRules`** registers Calcite's default rules followed by `Rules()`, for a planner you create yourself rather than through `Frameworks`.
+
+## Writing tables in .NET
+
+Calcite's own `ScannableTable` and `QueryableTable` work, but require a linq4j `Enumerable`. This package adds three table interfaces, in `Apache.Calcite.Extensions.Schema`, that a table can implement instead. Each has a required synchronous member and an asynchronous member that defaults to it:
+
+| Interface | Required | Asynchronous (optional) | Use for |
+|---|---|---|---|
+| `IClrScannableTable` | `Scan(DataContext)` returning `IEnumerable<object?[]>` | `ScanAsync(DataContext)` returning `IAsyncEnumerable<object?[]>` | rows as arrays |
+| `IClrQueryableTable` | `ElementType`, `GetExpression(schema, name)` returning an expression of `IEnumerable<ElementType>` | `GetAsyncExpression(schema, name)` returning an expression of `IAsyncEnumerable<ElementType>` | a typed element; the expression is compiled into the plan |
+| `IClrCursorTable` | `Open(DataContext)` returning `IClrCursor<object?[]>` | `OpenAsync(DataContext, CancellationToken)` | a source that is already a cursor, such as a `DbDataReader`; each `ReadAsync` token reaches it |
+
+- **Row values must be the Java values** Calcite's type factory declares for each column (`java.lang.Integer` for `INTEGER`, `java.lang.String` for `VARCHAR`, and so on). They are not converted; a value of the wrong type fails when the column is read.
+- **If your rows arrive over I/O, implement the asynchronous member too.** The default reads the synchronous member without suspending, so it would block an asynchronous caller.
+- **If your source is only asynchronous,** implement the asynchronous member and write the synchronous one by blocking on it. Clear `SynchronizationContext.Current` before starting the asynchronous call, not only around the wait, or it can deadlock under a UI or ASP.NET-style context.
+- **Cancellation**: an `IClrScannableTable` or `IClrQueryableTable` receives the token of the asynchronous open through `GetAsyncEnumerator`; an `IClrCursorTable` receives a token with every `ReadAsync`. Calcite-implemented parts of a plan observe cancellation through the `DataContext`'s cancel flag instead.
 
 ## Key public types
 
 | Type | Purpose |
 |------|---------|
-| `ClrCursorConvention` | The calling convention itself. `ClrCursorConvention.Instance` is the singleton trait. |
-| `ClrCursorRules` | The convention's rules: `Rules()` and `CalcRules()`. Add these to a planner you built yourself. |
-| `ClrCursorRelImplementor` | Builds both opens of a plan and hands back a `ClrCursorFactory`. Two parallel hierarchies over one instance: `VisitChild` composes opens that acquire synchronously and `VisitChildAsync` opens that await. It carries no mode. `Pulled` and `Awaited` cross between them, and `Opener` and `OpenerAsync` defer an input's open for an operator that acquires it later. |
-| `ClrCursorResult` / `ClrCursorAsyncResult` | What a node's two bodies answer, one type per kind, built by `Result` and `ResultAsync`. |
-| `IClrCursorFactory` / `ClrCursorFactory` | A compiled plan: `Open(DataContext)` and `OpenAsync(DataContext, CancellationToken)` each hand back an `IClrCursor`, and `ElementType` says what one row is. `ClrCursorFactory` is the one the implementor builds. |
-| `IClrCursor` / `IClrCursor<T>` | A forward-only cursor with `Read()` and `ReadAsync(CancellationToken)` over one position, and `Current`. `ClrCursor` and `ClrCursor<T>` are the abstract bases every cursor of this project derives from; a source that is a cursor already implements the interface directly. |
-| `ClrCursorPrefer` | How a caller wants rows represented — `Array` is what a prepared statement asks for. It is in the `Adapter.Cursor` namespace with the rest of the convention. |
-| `ClrCursorRelFactories` | `RelBuilder` factories producing nodes of this convention. |
-| `IClrScannableTable` / `IClrQueryableTable` / `IClrCursorTable` | The table SPI: a table hands back .NET sequences rather than linq4j ones, or a cursor. One interface per table kind, carrying both halves. `Scan`, `GetExpression` and `Open` are required; `ScanAsync`, `GetAsyncExpression` and `OpenAsync` default to reading them across. A table whose rows only ever arrive asynchronously overrides those and drains its own sequence for the required half. A cursor table is for a source that is a forward-only cursor already, a `DbDataReader` say: its cursor is the plan's leaf and the token of each `ReadAsync` reaches it. |
-| `ClrCursorRel` | The interface every node of this convention implements. Two bodies: `Implement` composes opens that acquire synchronously, required, and `ImplementAsync` opens that await, optional and defaulting to `Implement`. That default is safe exactly when a body does not visit a child, which is not the same as having no input: a body that asks for its input and takes the default composes a synchronously opened input into an awaiting operator, which `Expression.Call` refuses. |
-| `CalciteConnectionProperties` | Typed .NET properties over Calcite's `java.util.Properties`. |
-| `CalciteConnectionPropertiesSchemaMap` | The `schema.*` sub-properties, as a dictionary. |
+| `ClrCursorConvention` | The calling convention. `ClrCursorConvention.Instance` is the trait. |
+| `ClrCursorRules` | `Rules()` for the planner and `CalcRules()` for the pass after it. |
+| `ClrRelOptUtil` | `RegisterDefaultRules(planner, enableMaterializations)`: Calcite's default rules plus this convention's. |
+| `ClrCursorRelMetadata` | `Provider`, the metadata provider to plan with. |
+| `ClrCursorRelImplementor` | Compiles a physical plan: `ImplementRoot` returns a `ClrCursorFactory`. |
+| `IClrCursorFactory` / `ClrCursorFactory` | A compiled plan: `Open(DataContext)`, `OpenAsync(DataContext, CancellationToken)` and `ElementType`. |
+| `IClrCursor` / `IClrCursor<T>` | A forward-only cursor: `Read()`, `ReadAsync(CancellationToken)`, `Current`, and both `Dispose` forms. `ClrCursor` and `ClrCursor<T>` are abstract bases for implementing one. |
+| `ClrCursorPrefer` | The row representation requested; `Array` gives `object[]` rows. |
+| `IClrScannableTable` / `IClrQueryableTable` / `IClrCursorTable` | The .NET table interfaces described above. |
+| `IClrPrepare` / `ClrPrepareImpl` | The SQL prepare pipeline `Apache.Calcite.Data` uses: `PrepareSql` returns an `IClrPrepare.Signature`, whose `Open` and `OpenAsync` run the statement. |
+| `ClrCursorRel` | The interface every node of the convention implements, for writing a node of your own. `Implement` is required; `ImplementAsync` defaults to it, which is correct only for a node whose implementation does not visit a child node. |
+| `CalciteConnectionProperties` | Typed properties over Calcite's connection options. |
+| `CalciteConnectionPropertiesSchemaMap` | The `schema.*` operands passed to a schema factory. |
 
-The nodes (`ClrCursorCalc`, `ClrCursorHashJoin`, `ClrCursorWindow`, and the rest) and their rules are public too, so you can subclass or re-register them.
-
-**The operator set is not public.** `ClrCursorDefaults` and the `ClrCursorBuiltInMethod` table that names its members are internal to this package. A node you write outside it builds calls to its own methods with `Expression.Call`, and an awaiting one appends the token the awaiting root takes, which is the implementor's `CancellationToken` parameter.
-
-**The SQL-text prepare pipeline is public, and it is what `Apache.Calcite.Data` prepares through.** `IClrPrepare` and its implementation `ClrPrepareImpl`, in `Apache.Calcite.Extensions.Prepare`, take a statement to an `IClrPrepare.Signature`, whose `Open` and `OpenAsync` are the factory's. The contexts it runs against are internal, so to run SQL text use `Apache.Calcite.Data`; to drive the planner directly, use the public types above.
+The convention's nodes (`ClrCursorCalc`, `ClrCursorHashJoin`, `ClrCursorWindow` and the rest) and their rules are public, so you can subclass or re-register them. The runtime operators the nodes compile calls to are internal; a node of your own calls its own methods.
 
 ## `CalciteConnectionProperties`
 
-Strongly-typed .NET properties over a Calcite `java.util.Properties` map. Instead of reading and writing raw string keys, you get compile-time-checked access to Calcite's connection options:
+Typed .NET properties over a Calcite `java.util.Properties` map, so you do not have to spell property names or enum values as strings:
 
 ```csharp
 using Apache.Calcite.Extensions.Config;
-using java.util;
 using org.apache.calcite.avatica.util;
+using org.apache.calcite.config;
 
 var props = new CalciteConnectionProperties();
 
-// Typed setters — no magic strings needed.
-props.Lex                  = Lex.MYSQL_ANSI;
-props.CaseSensitive        = false;
-props.DefaultNullCollation = NullCollation.LOW;
-props.Fun                  = "oracle,spatial";
-props.TimeZone             = "UTC";
-props.ForceDecorrelate     = true;
+props.Lex                     = Lex.MYSQL_ANSI;
+props.CaseSensitive           = false;
+props.DefaultNullCollation    = NullCollation.LOW;
+props.Fun                     = "oracle,spatial";
+props.TimeZone                = "UTC";
+props.ForceDecorrelate        = true;
 props.MaterializationsEnabled = false;
 ```
 
-| Property | Type | Default | Description |
+Pass an existing `Properties` to the constructor to read or modify it in place.
+
+| Property | Type | Calcite's default | Description |
 |----------|------|---------|-------------|
-| `Model` | `string` | — | URI or inline JSON model. |
+| `Model` | `string` | — | Model URI, or an inline JSON model prefixed with `inline:`. |
 | `Schema` | `string` | — | Default schema name. |
-| `CaseSensitive` | `bool` | from `Lex` (`true` under `ORACLE`) | Case-sensitive identifier matching. |
+| `CaseSensitive` | `bool` | from `Lex` (`true` for `ORACLE`) | Case-sensitive identifier matching. |
 | `Lex` | `Lex` | `ORACLE` | Lexical policy (`ORACLE`, `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`). |
 | `Quoting` | `Quoting` | from `Lex` | Identifier quote character. |
-| `QuotedCasing` | `Casing?` | from `Lex` | Storage of quoted identifiers. |
-| `UnquotedCasing` | `Casing?` | from `Lex` | Storage of unquoted identifiers. |
+| `QuotedCasing` | `Casing?` | from `Lex` | How quoted identifiers are stored. |
+| `UnquotedCasing` | `Casing?` | from `Lex` | How unquoted identifiers are stored. |
 | `Fun` | `string` | `standard` | Function libraries, e.g. `oracle,spatial`. |
 | `Conformance` | `SqlConformanceEnum` | `DEFAULT` | SQL conformance level. |
-| `DefaultNullCollation` | `NullCollation` | `HIGH` | NULL sort order when `NULLS FIRST`/`LAST` is omitted. |
+| `DefaultNullCollation` | `NullCollation` | `HIGH` | Where nulls sort when `NULLS FIRST`/`LAST` is omitted. |
 | `TimeZone` | `string` | JVM default | Session time zone. |
 | `Locale` | `string` | `Locale.ROOT` | Session locale. |
-| `ForceDecorrelate` | `bool` | `true` | Aggressive subquery de-correlation. |
-| `TopDownGeneralDecorrelationEnabled` | `bool` | `false` | De-correlate with `TopDownGeneralDecorrelator` rather than `RelDecorrelator`. |
+| `ForceDecorrelate` | `bool` | `true` | Decorrelate sub-queries as far as possible. |
+| `TopDownGeneralDecorrelationEnabled` | `bool` | `false` | Decorrelate with `TopDownGeneralDecorrelator` rather than `RelDecorrelator`. |
 | `MaterializationsEnabled` | `bool` | `true` | Use materializations in the planner. |
 | `CreateMaterializations` | `bool` | `true` | Create materializations on the fly. |
 | `TypeCoercion` | `bool` | `true` | Implicit type coercion during validation. |
-| `ApproximateDecimal` | `bool` | `false` | Allow approximate DECIMAL aggregate results. |
+| `ApproximateDecimal` | `bool` | `false` | Allow approximate `DECIMAL` aggregate results. |
 | `ApproximateDistinctCount` | `bool` | `false` | Allow approximate `COUNT(DISTINCT ...)`. |
 | `ApproximateTopN` | `bool` | `false` | Allow approximate Top-N results. |
-| `AutoTemp` | `bool` | `false` | Store query results in a temporary table. |
+| `AutoTemp` | `bool` | `false` | Store query results in temporary tables. |
 | `NullEqualToEmpty` | `bool` | `true` | Treat empty strings as null, for the Druid adapter. |
-| `Spark` | `bool` | `false` | Use Spark as the in-process execution engine. |
-| `TopdownOpt` | `bool` | `calcite.planner.topdown.opt` | Enable top-down optimization in the Volcano planner. |
-| `LenientOperatorLookup` | `bool` | `false` | Silently create unknown functions during parsing. |
+| `Spark` | `bool` | `false` | Use Spark for processing that cannot be pushed to the source. |
+| `TopdownOpt` | `bool` | `calcite.planner.topdown.opt` | Top-down optimization in the Volcano planner. |
+| `LenientOperatorLookup` | `bool` | `false` | Accept calls to functions not in the operator table. |
 | `DruidFetch` | `int` | `16384` | Rows to fetch per Druid query. |
-| `SchemaFactory` | `string` | — | Schema factory class name (when not using a model). |
+| `SchemaFactory` | `string` | — | Schema factory class (when not using a model). |
 | `SchemaType` | `string` | — | Schema type: `MAP`, `JDBC`, or `CUSTOM`. |
 | `ParserFactory` | `string` | — | Custom SQL parser factory. |
 | `MetaTableFactory` / `MetaColumnFactory` | `string` | — | Avatica metadata factories. |
-| `TypeSystem` | `string` | — | Type system class name. |
+| `TypeSystem` | `string` | — | Type system class. |
 
-Defaults are Calcite's own, read from `CalciteConnectionProperty` in the version this package references (1.43).
+A property that has not been set reads as Calcite's declared default. The four whose default comes from `Lex` read as `null` when unset (`false` for `CaseSensitive`), and Calcite applies the `Lex` value when the connection is made.
 
 ## `CalciteConnectionPropertiesSchemaMap`
 
-Exposes the `schema.*`-prefixed sub-properties of a `CalciteConnectionProperties` instance as a typed dictionary, so operand values can be passed to a custom schema factory:
+`CalciteConnectionProperties.SchemaProperties` exposes the `schema.*` entries as a dictionary keyed without the prefix. Calcite passes them as operands to the schema factory:
 
 ```csharp
 var props = new CalciteConnectionProperties();
@@ -186,8 +232,8 @@ props.SchemaProperties["flavor"]    = "scannable";
 
 | Package | Purpose |
 |---------|---------|
-| [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) | The ADO.NET provider. Executes SQL text through this convention. |
-| [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) | Exposes any ADO.NET data source to Calcite as a federated schema. |
+| [`Apache.Calcite.Data`](https://www.nuget.org/packages/Apache.Calcite.Data) | The ADO.NET provider. Executes SQL through this convention. |
+| [`Apache.Calcite.Adapter.AdoNet`](https://www.nuget.org/packages/Apache.Calcite.Adapter.AdoNet) | Exposes any ADO.NET data source to Calcite as a schema. |
 
 ## Further reading
 
