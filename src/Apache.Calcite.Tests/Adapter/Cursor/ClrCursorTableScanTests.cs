@@ -1,8 +1,6 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Linq.Expressions;
-using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -33,8 +31,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
     /// <remarks>
     /// The expected rows are those of the same data read through Calcite's <see cref="ScannableTable"/>, which
     /// <c>ClrCursorConventionDifferentialTests</c> checks against Calcite itself. What these check is the route
-    /// to the rows: a scannable table is called, a queryable table returns an expression the scan composes into
-    /// the plan, and a cursor table's cursor becomes the plan's leaf.
+    /// to the rows: a scannable table is called, and a cursor table's cursor becomes the plan's leaf.
     /// </remarks>
     public class ClrCursorTableScanTests
     {
@@ -55,79 +52,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
 
             /// <inheritdoc />
             public IEnumerable<object?[]> Scan(DataContext root) => AsyncTestRows.Sorted;
-
-        }
-
-        /// <summary>
-        /// A table of this project's queryable SPI whose expression reads its rows synchronously.
-        /// </summary>
-        sealed class ClrQueryableRowsTable : AbstractTable, IClrQueryableTable
-        {
-
-            /// <inheritdoc />
-            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
-
-            /// <inheritdoc />
-            public Type ElementType => typeof(object?[]);
-
-            /// <inheritdoc />
-            /// <remarks>
-            /// The expression is composed into the plan rather than reached through an interface call. A constant
-            /// is the simplest expression that yields rows; a real table would return an expression that reads
-            /// its store.
-            /// </remarks>
-            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
-                Expression.Constant(AsyncTestRows.Sorted, typeof(IEnumerable<object?[]>));
-
-        }
-
-        /// <summary>
-        /// A table of this project's queryable SPI whose rows are available only as an
-        /// <see cref="IAsyncEnumerable{T}"/>.
-        /// </summary>
-        sealed class AsyncQueryableRowsTable : AbstractTable, IClrQueryableTable
-        {
-
-            /// <inheritdoc />
-            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => AsyncTestRows.SortedRowType(typeFactory);
-
-            /// <inheritdoc />
-            public Type ElementType => typeof(object?[]);
-
-            /// <inheritdoc />
-            public Expression GetAsyncExpression(SchemaPlus? schema, string tableName) =>
-                Expression.Call(null, RowsMethod, Expression.Default(typeof(CancellationToken)));
-
-            /// <inheritdoc />
-            /// <remarks>
-            /// Written in terms of the awaiting expression, because the rows have no synchronous source; the
-            /// interface's default goes the other way. The drain is the test's own, as an adapter outside this
-            /// repository would have to write, because the convention's is internal.
-            /// </remarks>
-            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
-                Expression.Call(null, DrainMethod.MakeGenericMethod(ElementType), GetAsyncExpression(schema, tableName));
-
-            static readonly System.Reflection.MethodInfo DrainMethod =
-                typeof(BlockingDrain).GetMethod(nameof(BlockingDrain.Of))!;
-
-            static readonly System.Reflection.MethodInfo RowsMethod =
-                typeof(AsyncQueryableRowsTable).GetMethod(nameof(Rows), System.Reflection.BindingFlags.Public | System.Reflection.BindingFlags.Static)!;
-
-            /// <summary>
-            /// The rows, yielding the thread before each, so that a plan reading them suspends.
-            /// </summary>
-            /// <param name="cancellationToken">The token the enumeration is cancelled by, checked before each row.</param>
-            /// <returns>The rows of <c>AsyncTestRows.Sorted</c>, in order.</returns>
-            public static async IAsyncEnumerable<object?[]> Rows([EnumeratorCancellation] CancellationToken cancellationToken = default)
-            {
-                foreach (var row in AsyncTestRows.Sorted)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-                    await Task.Yield();
-
-                    yield return row;
-                }
-            }
 
         }
 
@@ -389,27 +313,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         [Fact]
-        public void ShouldReadAClrQueryableTable()
-        {
-            var (plan, rows) = Run(Sql, new ClrQueryableRowsTable(), false);
-
-            RelOptUtil.toString(plan).Should().Contain("ClrCursorTableScan");
-            rows.Should().Equal(Expected);
-        }
-
-        [Fact]
         public void ShouldReadAnAsyncScannableTable()
         {
             var (plan, rows) = Run(Sql, new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false), true);
-
-            RelOptUtil.toString(plan).Should().Contain("ClrCursorTableScan");
-            rows.Should().Equal(Expected);
-        }
-
-        [Fact]
-        public void ShouldReadAnAsyncQueryableTable()
-        {
-            var (plan, rows) = Run(Sql, new AsyncQueryableRowsTable(), true);
 
             RelOptUtil.toString(plan).Should().Contain("ClrCursorTableScan");
             rows.Should().Equal(Expected);
@@ -485,26 +391,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
-        /// A table of this project's queryable SPI with the one column of <see cref="OneColumn"/>, whose element
-        /// type is an array.
-        /// </summary>
-        sealed class OneColumnQueryableTable : AbstractTable, IClrQueryableTable
-        {
-
-            /// <inheritdoc />
-            public override RelDataType getRowType(RelDataTypeFactory typeFactory) => OneColumnRowType(typeFactory);
-
-            /// <inheritdoc />
-            public Type ElementType => typeof(object?[]);
-
-            /// <inheritdoc />
-            public Expression GetExpression(SchemaPlus? schema, string tableName) =>
-                Expression.Constant(OneColumn, typeof(IEnumerable<object?[]>));
-
-        }
-
-        /// <summary>
-        /// A one-column table of this project's SPI whose element type is an array yields an array per row,
+        /// A one-column table of this project's scannable or cursor SPI yields an array per row,
         /// which the scan narrows to its value as Calcite's scan narrows the arrays of a
         /// <see cref="ScannableTable"/>, whether the plan is opened synchronously or awaiting.
         /// </summary>
@@ -521,7 +408,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             foreach (var async in new[] { false, true })
             {
                 Run(sql, new AsyncRowsTable(OneColumn, OneColumnRowType, false), async).Rows.Should().Equal(expected);
-                Run(sql, new OneColumnQueryableTable(), async).Rows.Should().Equal(expected);
 
                 var (plan, rows) = Run(sql, new OneColumnCursorTable(), async);
                 RelOptUtil.toString(plan).Should().Contain("ClrCursorTableScan");
@@ -535,8 +421,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// Calcite's SPI Calcite's own answer.
         /// </summary>
         /// <remarks>
-        /// The element type decides the row format: a scannable table yields arrays, a queryable table names its
-        /// own element type, and anything else takes Calcite's answer.
+        /// The element type decides the row format: a scannable or cursor table yields arrays, and anything else
+        /// takes Calcite's answer.
         /// </remarks>
         [Fact]
         public void ShouldDeduceTheElementTypeCalciteWould()
@@ -544,9 +430,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var arrays = (java.lang.Class)typeof(object[]);
 
             ClrCursorTableScan.DeduceElementType(new ClrRowsTable()).Should().Be(arrays);
-            ClrCursorTableScan.DeduceElementType(new ClrQueryableRowsTable()).Should().Be(arrays);
             ClrCursorTableScan.DeduceElementType(new AsyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false)).Should().Be(arrays);
-            ClrCursorTableScan.DeduceElementType(new AsyncQueryableRowsTable()).Should().Be(arrays);
 
             // a table of Calcite's own SPI gets Calcite's answer
             ClrCursorTableScan.DeduceElementType(new SyncRowsTable(AsyncTestRows.Sorted, AsyncTestRows.SortedRowType, false))

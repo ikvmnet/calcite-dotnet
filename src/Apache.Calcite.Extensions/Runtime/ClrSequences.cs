@@ -12,8 +12,7 @@ namespace Apache.Calcite.Extensions.Runtime
     /// </summary>
     /// <remarks>
     /// The default awaiting half of a table that only produces rows synchronously:
-    /// <see cref="Schema.IClrScannableTable.ScanAsync"/> and the default asynchronous expression of
-    /// <see cref="Schema.IClrQueryableTable"/> use it.
+    /// <see cref="Schema.IClrScannableTable.ScanAsync"/> uses it.
     /// </remarks>
     static class ClrSequences
     {

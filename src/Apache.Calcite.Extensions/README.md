@@ -127,18 +127,17 @@ Why the program is shaped this way, if you want to write your own:
 
 ## Writing tables in .NET
 
-Calcite's own `ScannableTable` and `QueryableTable` work, but require a linq4j `Enumerable`. This package adds three table interfaces, in `Apache.Calcite.Extensions.Schema`, that a table can implement instead. Each has a required synchronous member and an asynchronous member that defaults to it:
+Calcite's own `ScannableTable` and `QueryableTable` work, but require a linq4j `Enumerable`. This package adds two table interfaces, in `Apache.Calcite.Extensions.Schema`, that a table can implement instead. Each has a required synchronous member and an asynchronous member that defaults to it:
 
 | Interface | Required | Asynchronous (optional) | Use for |
 |---|---|---|---|
 | `IClrScannableTable` | `Scan(DataContext)` returning `IEnumerable<object?[]>` | `ScanAsync(DataContext)` returning `IAsyncEnumerable<object?[]>` | rows as arrays |
-| `IClrQueryableTable` | `ElementType`, `GetExpression(schema, name)` returning an expression of `IEnumerable<ElementType>` | `GetAsyncExpression(schema, name)` returning an expression of `IAsyncEnumerable<ElementType>` | a typed element; the expression is compiled into the plan |
 | `IClrCursorTable` | `Open(DataContext)` returning `IClrCursor<object?[]>` | `OpenAsync(DataContext, CancellationToken)` | a source that is already a cursor, such as a `DbDataReader`; each `ReadAsync` token reaches it |
 
 - **Row values must be the Java values** Calcite's type factory declares for each column (`java.lang.Integer` for `INTEGER`, `java.lang.String` for `VARCHAR`, and so on). They are not converted; a value of the wrong type fails when the column is read.
 - **If your rows arrive over I/O, implement the asynchronous member too.** The default reads the synchronous member without suspending, so it would block an asynchronous caller.
 - **If your source is only asynchronous,** implement the asynchronous member and write the synchronous one by blocking on it. Clear `SynchronizationContext.Current` before starting the asynchronous call, not only around the wait, or it can deadlock under a UI or ASP.NET-style context.
-- **Cancellation**: an `IClrScannableTable` or `IClrQueryableTable` receives the token of the asynchronous open through `GetAsyncEnumerator`; an `IClrCursorTable` receives a token with every `ReadAsync`. Calcite-implemented parts of a plan observe cancellation through the `DataContext`'s cancel flag instead.
+- **Cancellation**: an `IClrScannableTable` receives the token of the asynchronous open through `GetAsyncEnumerator`; an `IClrCursorTable` receives a token with every `ReadAsync`. Calcite-implemented parts of a plan observe cancellation through the `DataContext`'s cancel flag instead.
 
 ## Key public types
 
@@ -152,7 +151,7 @@ Calcite's own `ScannableTable` and `QueryableTable` work, but require a linq4j `
 | `IClrCursorFactory` / `ClrCursorFactory` | A compiled plan: `Open(DataContext)`, `OpenAsync(DataContext, CancellationToken)` and `ElementType`. |
 | `IClrCursor` / `IClrCursor<T>` | A forward-only cursor: `Read()`, `ReadAsync(CancellationToken)`, `Current`, and both `Dispose` forms. `ClrCursor` and `ClrCursor<T>` are abstract bases for implementing one. |
 | `ClrCursorPrefer` | The row representation requested; `Array` gives `object[]` rows. |
-| `IClrScannableTable` / `IClrQueryableTable` / `IClrCursorTable` | The .NET table interfaces described above. |
+| `IClrScannableTable` / `IClrCursorTable` | The .NET table interfaces described above. |
 | `IClrPrepare` / `ClrPrepareImpl` | The SQL prepare pipeline `Apache.Calcite.Data` uses: `PrepareSql` returns an `IClrPrepare.Signature`, whose `Open` and `OpenAsync` run the statement. |
 | `ClrCursorRel` | The interface every node of the convention implements, for writing a node of your own. `Implement` is required; `ImplementAsync` defaults to it, which is correct only for a node whose implementation does not visit a child node. |
 | `CalciteConnectionProperties` | Typed properties over Calcite's connection options. |

@@ -883,8 +883,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// with the returned cursor.</param>
         /// <returns>A cursor over the sequence's elements, in enumeration order.</returns>
         /// <remarks>
-        /// Used for a scan of an <see cref="Schema.IClrScannableTable"/> or an
-        /// <see cref="Schema.IClrQueryableTable"/>. <see cref="IEnumerable{T}.GetEnumerator"/> is where the
+        /// Used for a scan of an <see cref="Schema.IClrScannableTable"/>.
+        /// <see cref="IEnumerable{T}.GetEnumerator"/> is where the
         /// sequence starts running, so it is called at the open. The cursor's
         /// <see cref="ClrCursor.ReadAsync"/> pulls the enumerator synchronously.
         /// </remarks>
