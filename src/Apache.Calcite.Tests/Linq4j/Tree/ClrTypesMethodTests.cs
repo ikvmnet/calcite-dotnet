@@ -148,7 +148,7 @@ namespace Apache.Calcite.Extensions.Linq4j.Tree.Tests
 
             // the size of Calcite's table, which grows with Calcite; the failure list above is what checks
             // that each method resolves
-            called.Should().Be(609);
+            called.Should().Be(610);
             invoked.Should().BeEquivalentTo([
                 "STRING_TO_UPPER: public java.lang.String java.lang.String.toUpperCase()",
                 "OBJECT_TO_STRING: public java.lang.String java.lang.Object.toString()",
