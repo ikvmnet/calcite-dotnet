@@ -226,6 +226,78 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
+        /// An exception of the CLR's own raised while implementing is wrapped in one naming the plan, with the
+        /// failure as its inner exception.
+        /// </summary>
+        [Fact]
+        public void ShouldNameThePlanWhenImplementingRaisesAClrException()
+        {
+            var act = () => ImplementThrowing(new InvalidOperationException("from the CLR"));
+
+            act.Should().Throw<java.lang.IllegalStateException>()
+                .WithMessage("Unable to implement ThrowingProject*")
+                .WithInnerException<InvalidOperationException>()
+                .WithMessage("from the CLR");
+        }
+
+        /// <summary>
+        /// A Java exception that is not a <c>RuntimeException</c> passes through unwrapped, as Calcite's
+        /// <c>implementRoot</c>, which catches only <c>RuntimeException</c>, lets it through.
+        /// </summary>
+        [Fact]
+        public void ShouldNotWrapAJavaError()
+        {
+            var act = () => ImplementThrowing(new java.lang.AssertionError("from Java"));
+
+            act.Should().Throw<java.lang.AssertionError>().WithMessage("from Java");
+        }
+
+        /// <summary>
+        /// Implements, as a plan's root, a project whose implementation throws the exception given.
+        /// </summary>
+        /// <param name="exception">What implementing the project throws.</param>
+        /// <returns>The factory; never returned, since implementing throws.</returns>
+        static ClrCursorFactory ImplementThrowing(Exception exception)
+        {
+            var (physical, _) = Plan("SELECT \"ID\", \"NAME\" FROM \"PEOPLE\"");
+
+            var identity = new java.util.ArrayList();
+            for (int i = 0; i < physical.getRowType().getFieldCount(); i++)
+                identity.add(physical.getCluster().getRexBuilder().makeInputRef(physical, i));
+
+            var project = new ThrowingProject(physical, identity, exception);
+            return new ClrCursorRelImplementor(project.getCluster().getRexBuilder(), new java.util.HashMap()).ImplementRoot(project, ClrCursorPrefer.Array);
+        }
+
+        /// <summary>
+        /// A project whose implementation throws a given exception.
+        /// </summary>
+        sealed class ThrowingProject : ClrCursorProject, ClrCursorRel
+        {
+
+            readonly Exception exception;
+
+            /// <summary>
+            /// Initializes a new instance.
+            /// </summary>
+            /// <param name="input">The input.</param>
+            /// <param name="projects">The projected expressions.</param>
+            /// <param name="exception">What implementing throws.</param>
+            public ThrowingProject(RelNode input, java.util.List projects, Exception exception) :
+                base(input.getCluster(), input.getTraitSet(), input, projects, input.getRowType())
+            {
+                this.exception = exception;
+            }
+
+            /// <inheritdoc />
+            ClrCursorResult ClrCursorRel.Implement(ClrCursorRelImplementor implementor, ClrCursorPrefer pref) => throw exception;
+
+            /// <inheritdoc />
+            ClrCursorAsyncResult ClrCursorRel.ImplementAsync(ClrCursorRelImplementor implementor, ClrCursorPrefer pref) => throw exception;
+
+        }
+
+        /// <summary>
         /// A combine gives one row per index, each column holding one query's values as a map, and as many rows
         /// as its largest input.
         /// </summary>

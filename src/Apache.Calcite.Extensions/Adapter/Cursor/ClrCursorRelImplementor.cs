@@ -292,7 +292,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="prefer">The row representation the caller prefers.</param>
         /// <returns>A factory carrying a synchronous and an awaiting open of the plan, and its element type.</returns>
         /// <exception cref="java.lang.IllegalStateException">A node of the plan could not be implemented. The
-        /// message contains the plan and the inner exception is the failure.</exception>
+        /// message contains the plan and the inner exception is the failure. A Java exception that is not a
+        /// <c>RuntimeException</c> is not wrapped.</exception>
         /// <remarks>
         /// Calls both <see cref="ClrCursorRel.Implement"/> and <see cref="ClrCursorRel.ImplementAsync"/> on the
         /// root. Where <paramref name="prefer"/> is <see cref="ClrCursorPrefer.Array"/> and the plan has one
@@ -313,7 +314,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 pulled = rootRel.Implement(this, prefer);
                 awaited = rootRel.ImplementAsync(this, prefer);
             }
-            catch (Exception e)
+            // as EnumerableRelImplementor.implementRoot, which catches RuntimeException; an exception of the CLR's
+            // own, which Calcite's Java cannot raise, is where this convention's Java counterpart would raise one.
+            // Calcite attaches the failure with addSuppressed, which no .NET caller reads; as the cause it is the
+            // InnerException
+            catch (Exception e) when (e is java.lang.RuntimeException || e is not java.lang.Throwable)
             {
                 throw new java.lang.IllegalStateException(
                     $"Unable to implement {org.apache.calcite.plan.RelOptUtil.toString(rootRel, org.apache.calcite.sql.SqlExplainLevel.ALL_ATTRIBUTES)}", e);
