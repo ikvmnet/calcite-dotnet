@@ -325,7 +325,8 @@ namespace Apache.Calcite.Extensions.Prepare
         /// <returns>The chosen plan.</returns>
         /// <remarks>
         /// Sets a <c>RexExecutorImpl</c> on the planner first, as Calcite does, so that constant reduction
-        /// works. No materializations are passed to the program: <c>Prepare.Materialization</c>'s fields are
+        /// works, wrapped in an executor that reduces each distinct list of constants once per statement. No
+        /// materializations are passed to the program: <c>Prepare.Materialization</c>'s fields are
         /// not accessible through IKVM, so they cannot be converted.
         /// </remarks>
         protected RelRoot Optimize(RelRoot root, java.util.List materializations, java.util.List lattices)
@@ -334,7 +335,10 @@ namespace Apache.Calcite.Extensions.Prepare
             ArgumentNullException.ThrowIfNull(lattices);
 
             var planner = root.rel.getCluster().getPlanner();
-            planner.setExecutor(new RexExecutorImpl(context.getDataContext()));
+            // Calcite sets a bare RexExecutorImpl, which compiles a Janino class for every list it reduces,
+            // including one it reduced before; under IKVM each compile takes a large share of a plan's time, so
+            // a repeated list is answered from a cache scoped to this planner
+            planner.setExecutor(new CachingRexExecutor(new RexExecutorImpl(context.getDataContext())));
 
             // Calcite converts each Materialization to a RelOptMaterialization here; Materialization's fields
             // are package private or private and unreachable, so the list stays empty
