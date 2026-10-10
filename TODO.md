@@ -594,3 +594,18 @@ What Calcite's `QueryableTable` is for, and what a counterpart would have to dec
   `QueryableTable` whose element type is `Object[]` yields the values themselves, which an
   `IEnumerable<object[]>` cannot. A counterpart has to say what a declared type means for one column, for
   `object`, and for a class (Calcite's CUSTOM format, which Calcite cannot compile for a root record).
+
+## Report to Calcite: `EnumerableUncollect` cannot implement `UNNEST` over an `ANY` column — *small, not yet filed*
+
+`Uncollect.deriveUncollectRowType` and `SqlUnnestOperator.inferReturnType` both accept a single column of
+type `ANY`: the row type is one nullable `ANY` column, plus `ORDINALITY` when asked for (CALCITE-7776). So
+the validator and planner accept `SELECT … FROM t, UNNEST(t.anyColumn)`, and the plan fails when it is
+implemented: `EnumerableUncollect.implement` calls `NonNullableAccessors.getComponentTypeOrThrow` on the
+field, which throws `NullPointerException: componentType is null for ANY`. The runtime half already
+copes, since `SqlFunctions.flatProduct` reads a `SCALAR` input as a `java.util.List` and a null as an empty
+one, so the fix is most likely a `SCALAR` branch for `ANY` in `implement`.
+
+`ClrCursorUncollect` follows Calcite and fails the same way;
+`ClrCursorConventionDifferentialTests.ShouldFailToUncollectAnAnyColumn` and its two neighbours check that it
+does. Once Calcite runs these queries, those tests fail and should compare rows instead. A provider whose
+values arrive as `ANY`, such as a document store's arrays, cannot `UNNEST` them in process until then.

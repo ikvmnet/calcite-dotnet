@@ -19,8 +19,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// </summary>
     /// <remarks>
     /// Mirrors <c>EnumerableUncollect</c>, which implements <c>UNNEST</c>: each input row produces a row per
-    /// element of its collections. It also accepts an input of a single <c>ANY</c> column, which
-    /// <c>EnumerableUncollect</c> cannot implement; such a value is read as a <c>java.util.List</c>.
+    /// element of its collections. Like <c>EnumerableUncollect</c>, it fails to implement an input of a
+    /// single <c>ANY</c> column, which has no component type.
     /// </remarks>
     public class ClrCursorUncollect : Uncollect, ClrCursorRel
     {
@@ -30,8 +30,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// produces no row for an empty collection.
         /// </summary>
         /// <param name="traitSet">The node's traits.</param>
-        /// <param name="input">The input, whose every field is an array, multiset or map, or which has a
-        /// single column of type <c>ANY</c>.</param>
+        /// <param name="input">The input, whose every field is an array, multiset or map.</param>
         /// <param name="withOrdinality">Whether the output has an <c>ORDINALITY</c> column.</param>
         /// <returns>The new uncollect.</returns>
         public static ClrCursorUncollect Create(RelTraitSet traitSet, RelNode input, bool withOrdinality)
@@ -43,8 +42,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// Creates a <see cref="ClrCursorUncollect"/>.
         /// </summary>
         /// <param name="traitSet">The node's traits.</param>
-        /// <param name="input">The input, whose every field is an array, multiset or map, or which has a
-        /// single column of type <c>ANY</c>.</param>
+        /// <param name="input">The input, whose every field is an array, multiset or map.</param>
         /// <param name="withOrdinality">Whether the output has an <c>ORDINALITY</c> column.</param>
         /// <param name="expandStructFields">Whether a struct element produces a column per field, rather than
         /// one column holding the element.</param>
@@ -114,53 +112,43 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var fields = child.getRowType().getFieldList();
 
-            if (IsSingleAnyColumn(fields))
+            for (int i = 0; i < fields.size(); i++)
             {
-                // treated as a scalar-element collection: SqlFunctions reads the value as a java.util.List,
-                // and a null as an empty one
-                fieldCounts.add(java.lang.Integer.valueOf(-1));
-                inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-            }
-            else
-            {
-                for (int i = 0; i < fields.size(); i++)
+                var type = ((RelDataTypeField)fields.get(i)).getType();
+
+                if (type is MapSqlType)
                 {
-                    var type = ((RelDataTypeField)fields.get(i)).getType();
+                    fieldCounts.add(java.lang.Integer.valueOf(2));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
+                    continue;
+                }
 
-                    if (type is MapSqlType)
-                    {
-                        fieldCounts.add(java.lang.Integer.valueOf(2));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
-                        continue;
-                    }
-
-                    var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
-                    if (elementType.isStruct() && expandStructFields)
-                    {
-                        // as in EnumerableUncollect, a single field whose element is a struct of
-                        // one field, without ordinality, yields scalars rather than one-element lists; the
-                        // outer variant yields one null for an empty or null collection
-                        if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
-                            flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
-                                isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
-                        else
-                        {
-                            fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
-                            inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
-                        }
-                    }
-                    else if (elementType.isStruct())
-                    {
-                        // a struct element kept whole occupies one output column, like a scalar, but is
-                        // converted from the collection's internal list representation
-                        fieldCounts.add(java.lang.Integer.valueOf(-1));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
-                    }
+                var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
+                if (elementType.isStruct() && expandStructFields)
+                {
+                    // as in EnumerableUncollect, a single field whose element is a struct of
+                    // one field, without ordinality, yields scalars rather than one-element lists; the
+                    // outer variant yields one null for an empty or null collection
+                    if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
+                        flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
+                            isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
                     else
                     {
-                        fieldCounts.add(java.lang.Integer.valueOf(-1));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
+                        fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
                     }
+                }
+                else if (elementType.isStruct())
+                {
+                    // a struct element kept whole occupies one output column, like a scalar, but is
+                    // converted from the collection's internal list representation
+                    fieldCounts.add(java.lang.Integer.valueOf(-1));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
+                }
+                else
+                {
+                    fieldCounts.add(java.lang.Integer.valueOf(-1));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
                 }
             }
 
@@ -203,53 +191,43 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var fields = child.getRowType().getFieldList();
 
-            if (IsSingleAnyColumn(fields))
+            for (int i = 0; i < fields.size(); i++)
             {
-                // treated as a scalar-element collection: SqlFunctions reads the value as a java.util.List,
-                // and a null as an empty one
-                fieldCounts.add(java.lang.Integer.valueOf(-1));
-                inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
-            }
-            else
-            {
-                for (int i = 0; i < fields.size(); i++)
+                var type = ((RelDataTypeField)fields.get(i)).getType();
+
+                if (type is MapSqlType)
                 {
-                    var type = ((RelDataTypeField)fields.get(i)).getType();
+                    fieldCounts.add(java.lang.Integer.valueOf(2));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
+                    continue;
+                }
 
-                    if (type is MapSqlType)
-                    {
-                        fieldCounts.add(java.lang.Integer.valueOf(2));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.MAP);
-                        continue;
-                    }
-
-                    var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
-                    if (elementType.isStruct() && expandStructFields)
-                    {
-                        // as in EnumerableUncollect, a single field whose element is a struct of
-                        // one field, without ordinality, yields scalars rather than one-element lists; the
-                        // outer variant yields one null for an empty or null collection
-                        if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
-                            flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
-                                isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
-                        else
-                        {
-                            fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
-                            inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
-                        }
-                    }
-                    else if (elementType.isStruct())
-                    {
-                        // a struct element kept whole occupies one output column, like a scalar, but is
-                        // converted from the collection's internal list representation
-                        fieldCounts.add(java.lang.Integer.valueOf(-1));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
-                    }
+                var elementType = org.apache.calcite.sql.type.NonNullableAccessors.getComponentTypeOrThrow(type);
+                if (elementType.isStruct() && expandStructFields)
+                {
+                    // as in EnumerableUncollect, a single field whose element is a struct of
+                    // one field, without ordinality, yields scalars rather than one-element lists; the
+                    // outer variant yields one null for an empty or null collection
+                    if (elementType.getFieldCount() == 1 && fields.size() == 1 && withOrdinality == false)
+                        flatListForSingleItem = org.apache.calcite.linq4j.tree.Expressions.call(
+                            isOuter ? BuiltInMethod.FLAT_LIST_OUTER.method : BuiltInMethod.FLAT_LIST.method);
                     else
                     {
-                        fieldCounts.add(java.lang.Integer.valueOf(-1));
-                        inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
+                        fieldCounts.add(java.lang.Integer.valueOf(elementType.getFieldCount()));
+                        inputTypes.add(SqlFunctions.FlatProductInputType.LIST);
                     }
+                }
+                else if (elementType.isStruct())
+                {
+                    // a struct element kept whole occupies one output column, like a scalar, but is
+                    // converted from the collection's internal list representation
+                    fieldCounts.add(java.lang.Integer.valueOf(-1));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.STRUCT);
+                }
+                else
+                {
+                    fieldCounts.add(java.lang.Integer.valueOf(-1));
+                    inputTypes.add(SqlFunctions.FlatProductInputType.SCALAR);
                 }
             }
 
@@ -276,24 +254,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.SelectManyAsync.MakeGenericMethod(sourceType, rowType),
                     result.Expression,
                     ClrEnumUtils.Convert(implementor.Translator.Translate(lambda), typeof(org.apache.calcite.linq4j.function.Function1))));
-        }
-
-        /// <summary>
-        /// Returns whether the input is a single column of type <c>ANY</c>, for which
-        /// <c>Uncollect.deriveUncollectRowType</c> produces a single <c>ANY</c> column.
-        /// </summary>
-        /// <param name="fields">The input's fields.</param>
-        /// <remarks>
-        /// An addition to Calcite: <c>EnumerableUncollect</c> throws for this input, because
-        /// <c>NonNullableAccessors.getComponentTypeOrThrow</c> finds no component type for <c>ANY</c>. The
-        /// test is the one <c>deriveUncollectRowType</c> applies; an <c>ANY</c> column among several fields is
-        /// rejected when the node's row type is derived.
-        /// </remarks>
-        /// <returns><see langword="true"/> if <paramref name="fields"/> holds exactly one field, of type <c>ANY</c>.</returns>
-        static bool IsSingleAnyColumn(java.util.List fields)
-        {
-            return fields.size() == 1
-                && ((RelDataTypeField)fields.get(0)).getType().getSqlTypeName() == SqlTypeName.ANY;
         }
 
     }

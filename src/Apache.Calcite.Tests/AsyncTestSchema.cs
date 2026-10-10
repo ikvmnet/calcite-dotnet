@@ -95,19 +95,6 @@ namespace Apache.Calcite.Tests
         ];
 
         /// <summary>
-        /// Collections in ANY columns, as a document store returns a path that holds a JSON array.
-        /// </summary>
-        /// <remarks>
-        /// The same rows as <c>ClrCursorConventionDifferentialTests.DocsTable</c>.
-        /// </remarks>
-        public static readonly object?[][] Docs =
-        [
-            [java.lang.Integer.valueOf(1), List("red", "green"), List(java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(2))],
-            [java.lang.Integer.valueOf(2), List("blue"), List()],
-            [java.lang.Integer.valueOf(3), null, List(java.lang.Integer.valueOf(3), java.lang.Double.valueOf(4.5))],
-        ];
-
-        /// <summary>
         /// Values in ANY columns as a document store returns them: a GUID, a timestamp and a number, each
         /// written as JSON writes it.
         /// </summary>
@@ -225,37 +212,6 @@ namespace Apache.Calcite.Tests
                 .add("V", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
                 .add("S", typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true))
                 .build();
-        }
-
-        /// <summary>
-        /// Returns the DOCS row type.
-        /// </summary>
-        /// <param name="typeFactory">The factory to build the type with.</param>
-        /// <returns>An INTEGER <c>ID</c> and nullable ANY columns <c>TAGS</c> and <c>NUMS</c>.</returns>
-        public static RelDataType DocsRowType(RelDataTypeFactory typeFactory)
-        {
-            RelDataType Any() => typeFactory.createTypeWithNullability(typeFactory.createSqlType(SqlTypeName.ANY), true);
-
-            return typeFactory.builder()
-                .add("ID", typeFactory.createSqlType(SqlTypeName.INTEGER))
-                .add("TAGS", Any())
-                .add("NUMS", Any())
-                .build();
-        }
-
-        /// <summary>
-        /// Returns a <c>java.util.List</c> of the items given, the form in which <c>SqlFunctions.flatProduct</c>
-        /// reads a collection behind an ANY column.
-        /// </summary>
-        /// <param name="items">The list's elements, in order.</param>
-        /// <returns>A new <c>java.util.ArrayList</c> holding the items.</returns>
-        static java.util.List List(params object?[] items)
-        {
-            var list = new java.util.ArrayList();
-            foreach (var item in items)
-                list.add(item);
-
-            return list;
         }
 
     }

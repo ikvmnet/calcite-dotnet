@@ -376,16 +376,6 @@ namespace Apache.Calcite.Extensions.Config
         }
 
         /// <summary>
-        /// Gets or sets whether Spark is used as the engine for processing that cannot be pushed to the source
-        /// system. Default <see langword="false"/>.
-        /// </summary>
-        public bool Spark
-        {
-            get => GetBoolean(CalciteConnectionProperty.SPARK);
-            set => SetBoolean(CalciteConnectionProperty.SPARK, value);
-        }
-
-        /// <summary>
         /// Gets or sets the session time zone, for example <c>gmt-3</c>. Default the JVM's default time zone.
         /// </summary>
         public string TimeZone
