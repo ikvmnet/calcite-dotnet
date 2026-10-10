@@ -20,7 +20,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// </summary>
     /// <remarks>
     /// Mirrors <c>EnumerableHashJoin</c>. The inner, outer and mark joins build their lookup when the node's
-    /// cursor is opened and take both inputs as opens. The semi and anti joins build theirs lazily, on the first
+    /// cursor is opened and only then acquire the left input, as linq4j's <c>hashJoin</c> and
+    /// <c>leftMarkHashJoin</c> do, so they take the right input as an open and the left as an opener of the
+    /// body's own kind. The semi and anti joins build theirs lazily, on the first
     /// left row, as linq4j's <c>semiJoin</c> does; that happens inside an advance, so the right input is passed
     /// as an opener of each kind and each body visits it through both hierarchies.
     /// </remarks>
@@ -279,7 +281,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             return implementor.ResultAsync(physType,
                 ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.LeftMarkHashJoinAsync.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
-                    leftResult.Expression,
+                    implementor.OpenerAsync(leftResult),
                     rightResult.Expression,
                     leftKeySelector,
                     rightKeySelector,
@@ -320,7 +322,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             return implementor.ResultAsync(physType,
                 ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.HashJoinAsync.MakeGenericMethod(leftType, rightType, keyType, rowType),
-                    leftResult.Expression,
+                    implementor.OpenerAsync(leftResult),
                     rightResult.Expression,
                     leftKey,
                     rightKey,
@@ -359,7 +361,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrCursorBuiltInMethod.HashJoin.MakeGenericMethod(leftType, rightType, keyType, rowType),
-                    leftResult.Expression,
+                    implementor.Opener(leftResult),
                     rightResult.Expression,
                     leftKey,
                     rightKey,
@@ -490,7 +492,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrCursorBuiltInMethod.LeftMarkHashJoin.MakeGenericMethod(leftType, rightType, keyType, nullSafeKeyType, rowType),
-                    leftResult.Expression,
+                    implementor.Opener(leftResult),
                     rightResult.Expression,
                     leftKeySelector,
                     rightKeySelector,

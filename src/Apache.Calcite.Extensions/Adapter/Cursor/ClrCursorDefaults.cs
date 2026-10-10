@@ -3807,11 +3807,13 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
         // ---- Join ----
         // Hash, semi, mark, merge and nested loop joins. Each acquires its inputs when its linq4j original
-        // does. A hash join drains its build side inside enumerator(), so the open drains it and the cursor
-        // probes it with the other input. An operator whose linq4j original acquires an input inside
-        // moveNext takes that input as opens of both kinds and calls the one matching the advance. A merge
-        // join positions both inputs inside enumerator(), so the open does. nestedLoopJoinAsList builds the
-        // whole result where it is called, so the open does.
+        // does. A hash join drains its build side inside enumerator() and only then acquires the probe side,
+        // so the open drains the one, opens the other, and the cursor probes the lookup with it. An input
+        // acquired after another input's drain arrives as an opener. An operator whose linq4j original
+        // acquires an input inside moveNext takes that input as opens of both kinds and calls the one
+        // matching the advance. A merge join positions its inputs inside enumerator(), acquiring the right one
+        // at its first step, so the open does. nestedLoopJoinAsList builds the whole result where it is
+        // called, reading the inner before it acquires the outer, so the open does.
 
 
         /// <summary>
@@ -3822,10 +3824,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TKey">The type of the EQUALS keys.</typeparam>
         /// <typeparam name="TNsKey">The type of the IS NOT DISTINCT FROM keys.</typeparam>
         /// <typeparam name="TResult">The type of the output rows.</typeparam>
-        /// <param name="outer">The opened left input, probed row by row and disposed with the returned
-        /// cursor.</param>
-        /// <param name="inner">The opened right input, drained into the lookup and disposed before this method
-        /// returns.</param>
+        /// <param name="outer">Opens the left input, once the right input has been drained; the cursor it
+        /// returns is probed row by row and disposed with the returned cursor.</param>
+        /// <param name="inner">The opened right input, drained into the lookup and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeyNullAwareSelector">Yields null where a not null-safe key is null.</param>
         /// <param name="innerKeyNullAwareSelector">Yields null where a not null-safe key is null.</param>
         /// <param name="outerNullSafeKeySelector">The IS NOT DISTINCT FROM keys, or null where there are none.</param>
@@ -3849,11 +3851,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <para>The lookup is a <c>java.util.HashMap</c> so that keys hash as Calcite values do. Its
         /// iteration order does not reach the output: a mark join emits in outer input order.</para>
         ///
-        /// <para><c>leftMarkHashJoin</c> builds its hash table inside <c>enumerator()</c>, so the build side is
-        /// drained and disposed at the open.</para>
+        /// <para><c>leftMarkHashJoin</c> builds its hash table inside <c>enumerator()</c> before it calls
+        /// <c>outer.enumerator()</c>, so the open drains and disposes the build side and then opens the left
+        /// input.</para>
         /// </remarks>
         public static IClrCursor<TResult> LeftMarkHashJoin<TSource, TInner, TKey, TNsKey, TResult>(
-            IClrCursor<TSource> outer,
+            Func<IClrCursor<TSource>> outer,
             IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeyNullAwareSelector,
             Func<TInner, TKey> innerKeyNullAwareSelector,
@@ -3894,7 +3897,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
 
             return new LeftMarkHashJoinCursor<TSource, TInner, TKey, TNsKey, TResult>(
-                outer, outerKeyNullAwareSelector, outerNullSafeKeySelector, atMostOneNotNullSafeKey,
+                outer(), outerKeyNullAwareSelector, outerNullSafeKeySelector, atMostOneNotNullSafeKey,
                 resultSelector, comparer, nullSafeComparer, nonEquiPredicate, equiPredicate,
                 lookup, nullSafeKeys);
         }
@@ -3908,9 +3911,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TKey">The type of the EQUALS keys.</typeparam>
         /// <typeparam name="TNsKey">The type of the IS NOT DISTINCT FROM keys.</typeparam>
         /// <typeparam name="TResult">The type of the output rows.</typeparam>
-        /// <param name="outer">The awaiting open of the left input.</param>
-        /// <param name="inner">The awaiting open of the right input, which is drained and disposed before the open
-        /// completes.</param>
+        /// <param name="outer">Opens the left input with await, once the right input has been drained.</param>
+        /// <param name="inner">The awaiting open of the right input, which is drained and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeyNullAwareSelector">Yields null where a not null-safe key is null.</param>
         /// <param name="innerKeyNullAwareSelector">Yields null where a not null-safe key is null.</param>
         /// <param name="outerNullSafeKeySelector">The IS NOT DISTINCT FROM keys, or null where there are
@@ -3925,10 +3928,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// equality.</param>
         /// <param name="nonEquiPredicate">Three-valued, or null where the condition is all equalities.</param>
         /// <param name="equiPredicate">Three-valued.</param>
-        /// <param name="cancellationToken">Passed to each advance of the build side's drain.</param>
+        /// <param name="cancellationToken">Passed to each advance of the build side's drain and to the probe
+        /// input's open.</param>
         /// <returns>The open, completing with the probing cursor once the right input has been drained.</returns>
         public static async ValueTask<IClrCursor<TResult>> LeftMarkHashJoinAsync<TSource, TInner, TKey, TNsKey, TResult>(
-            ValueTask<IClrCursor<TSource>> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> outer,
             ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeyNullAwareSelector,
             Func<TInner, TKey> innerKeyNullAwareSelector,
@@ -3942,7 +3946,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             Func<TSource, TInner, java.lang.Boolean?> equiPredicate,
             CancellationToken cancellationToken)
         {
-            var outerCursor = await outer.ConfigureAwait(false);
             var innerCursor = await inner.ConfigureAwait(false);
 
             // the build side: one bucket per key, plus the set of null-safe keys seen. A null key goes into
@@ -3970,7 +3973,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             }
 
             return new LeftMarkHashJoinCursor<TSource, TInner, TKey, TNsKey, TResult>(
-                outerCursor, outerKeyNullAwareSelector, outerNullSafeKeySelector, atMostOneNotNullSafeKey,
+                await outer(cancellationToken).ConfigureAwait(false), outerKeyNullAwareSelector, outerNullSafeKeySelector, atMostOneNotNullSafeKey,
                 resultSelector, comparer, nullSafeComparer, nonEquiPredicate, equiPredicate,
                 lookup, nullSafeKeys);
         }
@@ -4178,9 +4181,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TInner">The type of the inner (build) rows.</typeparam>
         /// <typeparam name="TKey">The type of the join key; a null key matches nothing.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The opened probe input, disposed with the returned cursor.</param>
-        /// <param name="inner">The opened build input, drained into the lookup and disposed before this method
-        /// returns.</param>
+        /// <param name="outer">Opens the probe input, once the build input has been drained; the cursor it
+        /// returns is disposed with the returned cursor.</param>
+        /// <param name="inner">The opened build input, drained into the lookup and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key, null where any key field is null.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key, null where any key field is null.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -4202,7 +4206,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// key in the first, by row in the second.</para>
         /// </remarks>
         public static IClrCursor<TResult> HashJoin<TSource, TInner, TKey, TResult>(
-            IClrCursor<TSource> outer,
+            Func<IClrCursor<TSource>> outer,
             IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
@@ -4228,9 +4232,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TInner">The type of the inner (build) rows.</typeparam>
         /// <typeparam name="TKey">The type of the join key; a null key matches nothing.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The awaiting open of the probe input.</param>
-        /// <param name="inner">The awaiting open of the build input, which is drained and disposed before the open
-        /// completes.</param>
+        /// <param name="outer">Opens the probe input with await, once the build input has been drained.</param>
+        /// <param name="inner">The awaiting open of the build input, which is drained and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key, null where any key field is null.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key, null where any key field is null.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -4242,10 +4246,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// right.</param>
         /// <param name="predicate">The part of the condition that is not an equality, or null when there is
         /// none.</param>
-        /// <param name="cancellationToken">Passed to each advance of the build side's drain.</param>
+        /// <param name="cancellationToken">Passed to each advance of the build side's drain and to the probe
+        /// input's open.</param>
         /// <returns>The open, completing with the probing cursor once the build input has been drained.</returns>
         public static ValueTask<IClrCursor<TResult>> HashJoinAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<IClrCursor<TSource>> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> outer,
             ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
@@ -4268,9 +4273,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TInner">The type of the inner (build) rows.</typeparam>
         /// <typeparam name="TKey">The type of the join key; a null key matches nothing.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The opened probe input, disposed with the returned cursor.</param>
-        /// <param name="inner">The opened build input, drained into the lookup and disposed before this method
-        /// returns.</param>
+        /// <param name="outer">Opens the probe input, once the build input has been drained; the cursor it
+        /// returns is disposed with the returned cursor.</param>
+        /// <param name="inner">The opened build input, drained into the lookup and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key, null where any key field is null.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key, null where any key field is null.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -4287,11 +4293,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// is left over at the end is each key no outer row carried, and every build row under it is returned
         /// together.
         ///
-        /// <para><c>hashEquiJoin_</c>'s <c>enumerator()</c> drains the build side into the lookup before the
-        /// first <c>moveNext</c>, so the drain happens at the open.</para>
+        /// <para><c>hashEquiJoin_</c>'s <c>enumerator()</c> drains the build side into the lookup and only then
+        /// calls <c>outer.enumerator()</c>, so the open drains the build input before it opens the probe
+        /// input.</para>
         /// </remarks>
         static IClrCursor<TResult> HashEquiJoin<TSource, TInner, TKey, TResult>(
-            IClrCursor<TSource> outer,
+            Func<IClrCursor<TSource>> outer,
             IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
@@ -4325,7 +4332,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             // probes (the null key included) stays, and its rows are returned against a null left
             var unmatched = generateNullsOnLeft ? new java.util.HashSet(lookup.keySet()) : null;
 
-            return new HashEquiJoinCursor<TSource, TInner, TKey, TResult>(outer, outerKeySelector, resultSelector, comparer, generateNullsOnRight, lookup, unmatched);
+            return new HashEquiJoinCursor<TSource, TInner, TKey, TResult>(outer(), outerKeySelector, resultSelector, comparer, generateNullsOnRight, lookup, unmatched);
         }
 
         /// <summary>
@@ -4335,9 +4342,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TInner">The type of the inner (build) rows.</typeparam>
         /// <typeparam name="TKey">The type of the join key; a null key matches nothing.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The awaiting open of the probe input.</param>
-        /// <param name="inner">The awaiting open of the build input, which is drained and disposed before the open
-        /// completes.</param>
+        /// <param name="outer">Opens the probe input with await, once the build input has been drained.</param>
+        /// <param name="inner">The awaiting open of the build input, which is drained and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key, null where any key field is null.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key, null where any key field is null.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -4347,10 +4354,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// left.</param>
         /// <param name="generateNullsOnRight">Whether an outer row with no match is returned against a null
         /// right.</param>
-        /// <param name="cancellationToken">Passed to each advance of the build side's drain.</param>
+        /// <param name="cancellationToken">Passed to each advance of the build side's drain and to the probe
+        /// input's open.</param>
         /// <returns>The open, completing with the probing cursor once the build input has been drained.</returns>
         static async ValueTask<IClrCursor<TResult>> HashEquiJoinAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<IClrCursor<TSource>> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> outer,
             ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
@@ -4360,7 +4368,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             bool generateNullsOnRight,
             CancellationToken cancellationToken)
         {
-            var outerCursor = await outer.ConfigureAwait(false);
             var innerCursor = await inner.ConfigureAwait(false);
 
             // a java.util.HashMap, as linq4j's toLookup builds: the unmatched right rows a RIGHT or FULL join
@@ -4388,7 +4395,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             // probes (the null key included) stays, and its rows are returned against a null left
             var unmatched = generateNullsOnLeft ? new java.util.HashSet(lookup.keySet()) : null;
 
-            return new HashEquiJoinCursor<TSource, TInner, TKey, TResult>(outerCursor, outerKeySelector, resultSelector, comparer, generateNullsOnRight, lookup, unmatched);
+            return new HashEquiJoinCursor<TSource, TInner, TKey, TResult>(await outer(cancellationToken).ConfigureAwait(false), outerKeySelector, resultSelector, comparer, generateNullsOnRight, lookup, unmatched);
         }
 
         /// <summary>
@@ -4611,9 +4618,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TInner">The type of the inner (build) rows.</typeparam>
         /// <typeparam name="TKey">The type of the join key; a null key matches nothing.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The opened probe input, disposed with the returned cursor.</param>
-        /// <param name="inner">The opened build input, drained into the lookup and disposed before this method
-        /// returns.</param>
+        /// <param name="outer">Opens the probe input, once the build input has been drained; the cursor it
+        /// returns is disposed with the returned cursor.</param>
+        /// <param name="inner">The opened build input, drained into the lookup and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key, null where any key field is null.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key, null where any key field is null.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -4634,10 +4642,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// left. The leftovers are returned in build input order.
         ///
         /// <para><c>hashJoinWithPredicate_</c>'s <c>enumerator()</c> reads the build side and builds the lookup
-        /// and the leftover list before the first <c>moveNext</c>, so the build side is read at the open.</para>
+        /// and the leftover list before it calls <c>outer.enumerator()</c>, so the open reads the build input
+        /// before it opens the probe input.</para>
         /// </remarks>
         static IClrCursor<TResult> HashJoinWithPredicate<TSource, TInner, TKey, TResult>(
-            IClrCursor<TSource> outer,
+            Func<IClrCursor<TSource>> outer,
             IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
@@ -4673,7 +4682,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var unmatched = innerToLookUp == null ? null : new List<TInner>(innerToLookUp);
 
-            return new HashJoinWithPredicateCursor<TSource, TInner, TKey, TResult>(outer, outerKeySelector, resultSelector, comparer, generateNullsOnRight, predicate, lookup, unmatched);
+            return new HashJoinWithPredicateCursor<TSource, TInner, TKey, TResult>(outer(), outerKeySelector, resultSelector, comparer, generateNullsOnRight, predicate, lookup, unmatched);
         }
 
         /// <summary>
@@ -4683,9 +4692,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TInner">The type of the inner (build) rows.</typeparam>
         /// <typeparam name="TKey">The type of the join key; a null key matches nothing.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The awaiting open of the probe input.</param>
-        /// <param name="inner">The awaiting open of the build input, which is drained and disposed before the open
-        /// completes.</param>
+        /// <param name="outer">Opens the probe input with await, once the build input has been drained.</param>
+        /// <param name="inner">The awaiting open of the build input, which is drained and disposed before
+        /// <paramref name="outer"/> is called.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key, null where any key field is null.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key, null where any key field is null.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -4697,10 +4706,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// right.</param>
         /// <param name="predicate">The part of the condition that is not an equality, run on every pair whose keys
         /// are equal.</param>
-        /// <param name="cancellationToken">Passed to each advance of the build side's drain.</param>
+        /// <param name="cancellationToken">Passed to each advance of the build side's drain and to the probe
+        /// input's open.</param>
         /// <returns>The open, completing with the probing cursor once the build input has been drained.</returns>
         static async ValueTask<IClrCursor<TResult>> HashJoinWithPredicateAsync<TSource, TInner, TKey, TResult>(
-            ValueTask<IClrCursor<TSource>> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> outer,
             ValueTask<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
@@ -4711,7 +4721,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             Func<TSource, TInner, bool> predicate,
             CancellationToken cancellationToken)
         {
-            var outerCursor = await outer.ConfigureAwait(false);
             var innerCursor = await inner.ConfigureAwait(false);
 
             // a join that generates nulls on the left needs the build rows again for its leftovers, and the
@@ -4740,7 +4749,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var unmatched = innerToLookUp == null ? null : new List<TInner>(innerToLookUp);
 
-            return new HashJoinWithPredicateCursor<TSource, TInner, TKey, TResult>(outerCursor, outerKeySelector, resultSelector, comparer, generateNullsOnRight, predicate, lookup, unmatched);
+            return new HashJoinWithPredicateCursor<TSource, TInner, TKey, TResult>(await outer(cancellationToken).ConfigureAwait(false), outerKeySelector, resultSelector, comparer, generateNullsOnRight, predicate, lookup, unmatched);
         }
 
         /// <summary>
@@ -5306,8 +5315,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
         /// <param name="outer">The opened outer input, sorted on the key and disposed with the returned
         /// cursor.</param>
-        /// <param name="inner">The opened inner input, sorted on the key and disposed with the returned
-        /// cursor.</param>
+        /// <param name="inner">Opens the inner input, sorted on the key, at the positioning's first step of it;
+        /// not called where the outer input has no row to join. The cursor it returns is disposed with the
+        /// returned cursor.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key.</param>
         /// <param name="predicate">The part of the condition that is not an equality, or null.</param>
@@ -5330,11 +5340,17 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// catches the same exception, by class name because the class is package private.</para>
         ///
         /// <para><c>MergeJoinEnumerator</c>'s constructor calls <c>start()</c>, which reads each input as far
-        /// as its first key run; the open does the same.</para>
+        /// as its first key run; the open does the same. linq4j acquires the right input at its first
+        /// <c>rightMoveNext</c>, which <c>start()</c> skips where the left input has no row to join, so the
+        /// inner is opened by the positioning, and in that case not at all.</para>
+        ///
+        /// <para>Where the positioning throws, nothing disposes the inputs it opened: the exception leaves
+        /// <c>MergeJoinEnumerator</c>'s constructor, so no enumerator is returned for anyone to close. This is
+        /// a Calcite defect, reproduced.</para>
         /// </remarks>
         public static IClrCursor<TResult> MergeJoin<TSource, TInner, TKey, TResult>(
             IClrCursor<TSource> outer,
-            IClrCursor<TInner> inner,
+            Func<IClrCursor<TInner>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
@@ -5350,9 +5366,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 throw new java.lang.UnsupportedOperationException($"MergeJoin unsupported for join type {joinType}");
 
             var cursor = new MergeJoinCursor<TSource, TInner, TKey, TResult>(
-                outer, inner, outerKeySelector, innerKeySelector, predicate, resultSelector, joinType, comparator, comparer);
+                outer, outerKeySelector, innerKeySelector, predicate, resultSelector, joinType, comparator, comparer);
 
-            cursor.Start();
+            cursor.Start(inner);
 
             return cursor;
         }
@@ -5366,7 +5382,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TKey">The type of the join key.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
         /// <param name="outer">The awaiting open of the outer input, sorted on the key.</param>
-        /// <param name="inner">The awaiting open of the inner input, sorted on the key.</param>
+        /// <param name="inner">Opens the inner input with await, sorted on the key, at the positioning's first
+        /// step of it; not called where the outer input has no row to join.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key.</param>
         /// <param name="predicate">The part of the condition that is not an equality, or null.</param>
@@ -5375,11 +5392,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="joinType">INNER, SEMI, ANTI or LEFT.</param>
         /// <param name="comparator">Orders two keys; null means they compare themselves.</param>
         /// <param name="comparer">Decides whether two keys of one input are the same; null means they do.</param>
-        /// <param name="cancellationToken">Passed to each advance of the initial positioning.</param>
+        /// <param name="cancellationToken">Passed to the inner input's open and each advance of the initial
+        /// positioning.</param>
         /// <returns>The open, completing with the merging cursor once both inputs are positioned.</returns>
         public static async ValueTask<IClrCursor<TResult>> MergeJoinAsync<TSource, TInner, TKey, TResult>(
             ValueTask<IClrCursor<TSource>> outer,
-            ValueTask<IClrCursor<TInner>> inner,
+            Func<CancellationToken, ValueTask<IClrCursor<TInner>>> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
@@ -5393,9 +5411,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 throw new java.lang.UnsupportedOperationException($"MergeJoinAsync unsupported for join type {joinType}");
 
             var cursor = new MergeJoinCursor<TSource, TInner, TKey, TResult>(
-                await outer.ConfigureAwait(false), await inner.ConfigureAwait(false), outerKeySelector, innerKeySelector, predicate, resultSelector, joinType, comparator, comparer);
+                await outer.ConfigureAwait(false), outerKeySelector, innerKeySelector, predicate, resultSelector, joinType, comparator, comparer);
 
-            await cursor.StartAsync(cancellationToken).ConfigureAwait(false);
+            await cursor.StartAsync(inner, cancellationToken).ConfigureAwait(false);
 
             return cursor;
         }
@@ -5410,7 +5428,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TKey">The type of the join key.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
         /// <param name="outer">The opened outer input, disposed with this cursor.</param>
-        /// <param name="inner">The opened inner input, disposed with this cursor.</param>
         /// <param name="outerKeySelector">Extracts an outer row's key.</param>
         /// <param name="innerKeySelector">Extracts an inner row's key.</param>
         /// <param name="predicate">The part of the condition that is not an equality, or null.</param>
@@ -5421,7 +5438,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="comparer">Decides whether two keys of one input are the same; null means they do.</param>
         sealed class MergeJoinCursor<TSource, TInner, TKey, TResult>(
             IClrCursor<TSource> outer,
-            IClrCursor<TInner> inner,
             Func<TSource, TKey> outerKeySelector,
             Func<TInner, TKey> innerKeySelector,
             Func<TSource, TInner, bool>? predicate,
@@ -5430,6 +5446,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             java.util.Comparator? comparator,
             EqualityComparer? comparer) : ClrCursor<TResult>
         {
+
+            // getRightEnumerator(): set by the positioning's first step of the right input, and left null where
+            // start() never takes that step
+            IClrCursor<TInner> inner = null!;
 
             readonly IEqualityComparer<TKey> equality = JavaEqualityComparer<TKey>.Of(comparer);
 
@@ -5452,18 +5472,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             /// <summary>
             /// <c>start()</c>: positions both inputs and settles the initial state.
             /// </summary>
-            internal void Start()
+            /// <param name="openInner">Opens the inner input, at the first step of it.</param>
+            internal void Start(Func<IClrCursor<TInner>> openInner)
             {
                 if (IsLeftOrAnti)
                 {
                     if (LeftMoveNext() == false)
                         done = true;
-                    else if (RightMoveNext() == false)
+                    else if (RightFirst(openInner) == false)
                         remainingLeft = true;
                     else if (Advance() == false)
                         done = true;
                 }
-                else if (LeftMoveNext() == false || RightMoveNext() == false || Advance() == false)
+                else if (LeftMoveNext() == false || RightFirst(openInner) == false || Advance() == false)
                 {
                     done = true;
                 }
@@ -5472,21 +5493,23 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             /// <summary>
             /// <see cref="Start"/>, awaiting each input it steps.
             /// </summary>
-            /// <param name="cancellationToken">Passed to each advance of either input.</param>
+            /// <param name="openInner">Opens the inner input with await, at the first step of it.</param>
+            /// <param name="cancellationToken">Passed to the inner input's open and each advance of either
+            /// input.</param>
             /// <returns>A task that completes once both inputs are positioned.</returns>
-            internal async ValueTask StartAsync(CancellationToken cancellationToken)
+            internal async ValueTask StartAsync(Func<CancellationToken, ValueTask<IClrCursor<TInner>>> openInner, CancellationToken cancellationToken)
             {
                 if (IsLeftOrAnti)
                 {
                     if (await LeftMoveNextAsync(cancellationToken).ConfigureAwait(false) == false)
                         done = true;
-                    else if (await RightMoveNextAsync(cancellationToken).ConfigureAwait(false) == false)
+                    else if (await RightFirstAsync(openInner, cancellationToken).ConfigureAwait(false) == false)
                         remainingLeft = true;
                     else if (await AdvanceAsync(cancellationToken).ConfigureAwait(false) == false)
                         done = true;
                 }
                 else if (await LeftMoveNextAsync(cancellationToken).ConfigureAwait(false) == false
-                    || await RightMoveNextAsync(cancellationToken).ConfigureAwait(false) == false
+                    || await RightFirstAsync(openInner, cancellationToken).ConfigureAwait(false) == false
                     || await AdvanceAsync(cancellationToken).ConfigureAwait(false) == false)
                 {
                     done = true;
@@ -5504,6 +5527,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             async ValueTask<bool> RightMoveNextAsync(CancellationToken cancellationToken) =>
                 await inner.ReadAsync(cancellationToken).ConfigureAwait(false) && innerKeySelector(inner.Current) != null;
+
+            // the first rightMoveNext, which acquires the right input through getRightEnumerator() first
+            bool RightFirst(Func<IClrCursor<TInner>> open)
+            {
+                inner = open();
+                return RightMoveNext();
+            }
+
+            async ValueTask<bool> RightFirstAsync(Func<CancellationToken, ValueTask<IClrCursor<TInner>>> open, CancellationToken cancellationToken)
+            {
+                inner = await open(cancellationToken).ConfigureAwait(false);
+                return await RightMoveNextAsync(cancellationToken).ConfigureAwait(false);
+            }
 
             int Compare(TKey a, TKey b)
             {
@@ -5848,15 +5884,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             /// type.</returns>
             /// <remarks>
             /// Mirrors Calcite's <c>nestedLoopJoin(Linq4j.asEnumerable(lefts), Linq4j.asEnumerable(rights), …)</c>,
-            /// whose enumerator is obtained on the spot. The opens passed stand for the right run, opened once per
-            /// left row.
+            /// whose enumerator is obtained on the spot. The opens passed stand for the two runs: the left run's is
+            /// called at once, and the right run's once per left row.
             /// </remarks>
             IClrCursor<TResult> Residual()
             {
+                var leftRun = new List<TSource>(lefts);
                 var rightRun = new List<TInner>(rights);
 
                 return NestedLoopJoin(
-                    new ListCursor<TSource>([.. lefts]),
+                    () => new ListCursor<TSource>(leftRun),
                     () => new ListCursor<TInner>(rightRun),
                     token => new ValueTask<IClrCursor<TInner>>(new ListCursor<TInner>(rightRun)),
                     resultSelector,
@@ -5942,14 +5979,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             public override void Dispose()
             {
                 outer.Dispose();
-                inner.Dispose();
+                inner?.Dispose();
             }
 
             /// <inheritdoc />
             public override async ValueTask DisposeAsync()
             {
                 await outer.DisposeAsync().ConfigureAwait(false);
-                await inner.DisposeAsync().ConfigureAwait(false);
+                if (inner != null)
+                    await inner.DisposeAsync().ConfigureAwait(false);
             }
 
         }
@@ -6278,7 +6316,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TSource">The type of the outer (left) rows.</typeparam>
         /// <typeparam name="TInner">The type of the inner (right) rows.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The opened outer input, disposed with the returned cursor.</param>
+        /// <param name="outer">Opens the outer input: at once for the streaming walk, and after the inner has
+        /// been read into a list for the buffering one.</param>
         /// <param name="inner">Opens the inner synchronously.</param>
         /// <param name="innerAsync">Opens the inner with await.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -6299,7 +6338,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// the open of its own kind.</para>
         /// </remarks>
         public static IClrCursor<TResult> NestedLoopJoin<TSource, TInner, TResult>(
-            IClrCursor<TSource> outer,
+            Func<IClrCursor<TSource>> outer,
             Func<IClrCursor<TInner>> inner,
             Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -6311,7 +6350,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ArgumentNullException.ThrowIfNull(innerAsync);
 
             if (joinType.generatesNullsOnLeft() == false)
-                return NestedLoopJoinOptimized(outer, inner, innerAsync, resultSelector, predicate, joinType);
+                return NestedLoopJoinOptimized(outer(), inner, innerAsync, resultSelector, predicate, joinType);
 
             return NestedLoopJoinAsList(outer, inner, resultSelector, predicate, joinType);
         }
@@ -6322,7 +6361,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TSource">The type of the outer (left) rows.</typeparam>
         /// <typeparam name="TInner">The type of the inner (right) rows.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The awaiting open of the outer input.</param>
+        /// <param name="outer">Opens the outer input with await: at once for the streaming walk, and after the
+        /// inner has been read into a list for the buffering one.</param>
         /// <param name="inner">Opens the inner synchronously.</param>
         /// <param name="innerAsync">Opens the inner with await.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
@@ -6330,12 +6370,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <param name="predicate">The join condition, run on every pair.</param>
         /// <param name="joinType">The join type, which decides which walk runs and which unmatched rows are
         /// returned.</param>
-        /// <param name="cancellationToken">Passed to the inner's open and each advance of the buffering walk for
-        /// RIGHT and FULL; otherwise unused.</param>
+        /// <param name="cancellationToken">Passed to the outer input's open, and for RIGHT and FULL to the inner's
+        /// open and each advance of the buffering walk.</param>
         /// <returns>The open, completing once the outer input is open and, for RIGHT and FULL, once the whole
         /// result has been built.</returns>
         public static async ValueTask<IClrCursor<TResult>> NestedLoopJoinAsync<TSource, TInner, TResult>(
-            ValueTask<IClrCursor<TSource>> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> outer,
             Func<IClrCursor<TInner>> inner,
             Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
@@ -6346,12 +6386,10 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             ArgumentNullException.ThrowIfNull(inner);
             ArgumentNullException.ThrowIfNull(innerAsync);
 
-            var outerCursor = await outer.ConfigureAwait(false);
-
             if (joinType.generatesNullsOnLeft() == false)
-                return NestedLoopJoinOptimized(outerCursor, inner, innerAsync, resultSelector, predicate, joinType);
+                return NestedLoopJoinOptimized(await outer(cancellationToken).ConfigureAwait(false), inner, innerAsync, resultSelector, predicate, joinType);
 
-            return await NestedLoopJoinAsListAsync(outerCursor, innerAsync, resultSelector, predicate, joinType, cancellationToken).ConfigureAwait(false);
+            return await NestedLoopJoinAsListAsync(outer, innerAsync, resultSelector, predicate, joinType, cancellationToken).ConfigureAwait(false);
         }
 
         /// <summary>
@@ -6361,8 +6399,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TSource">The type of the outer (left) rows.</typeparam>
         /// <typeparam name="TInner">The type of the inner (right) rows.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The opened outer input, drained and disposed before this method returns.</param>
-        /// <param name="inner">Opens the inner, once, before the outer is read.</param>
+        /// <param name="outer">Opens the outer input, once the inner has been read into a list; it is drained and
+        /// disposed before this method returns.</param>
+        /// <param name="inner">Opens the inner, once, before the outer is opened.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
         /// value for an unmatched row of an outer join or an ANTI row.</param>
         /// <param name="predicate">The join condition, run on every pair.</param>
@@ -6373,14 +6412,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <remarks>
         /// Mirrors <c>EnumerableDefaults.nestedLoopJoinAsList</c>, which runs the whole join when called and
         /// returns the filled list wrapped by <c>Linq4j.asEnumerable</c>; here the whole join runs at the open.
-        /// The inner is read into a list once and walked for every outer row.
+        /// The inner is read into a list once, by <c>inner.toList()</c> before <c>outer.enumerator()</c>, so it
+        /// is read and disposed before the outer is opened, and is walked for every outer row.
         ///
         /// <para>The right rows that never matched are held in Guava's <c>Sets.newIdentityHashSet()</c>, as
         /// Calcite holds them. That set deduplicates by reference, so two unmatched right rows that are the
         /// same object are emitted once rather than twice. This is a Calcite defect, reproduced.</para>
         /// </remarks>
         static IClrCursor<TResult> NestedLoopJoinAsList<TSource, TInner, TResult>(
-            IClrCursor<TSource> outer,
+            Func<IClrCursor<TSource>> outer,
             Func<IClrCursor<TInner>> inner,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
@@ -6405,14 +6445,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var rightUnmatched = RightUnmatched(generateNullsOnLeft, rightList);
 
+            var lefts = outer();
             try
             {
-                while (outer.Read())
-                    NestedLoopJoinRow(outer.Current, rightList, rightUnmatched, name, generateNullsOnRight, resultSelector, predicate, result);
+                while (lefts.Read())
+                    NestedLoopJoinRow(lefts.Current, rightList, rightUnmatched, name, generateNullsOnRight, resultSelector, predicate, result);
             }
             finally
             {
-                outer.Dispose();
+                lefts.Dispose();
             }
 
             if (rightUnmatched != null)
@@ -6429,18 +6470,19 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         /// <typeparam name="TSource">The type of the outer (left) rows.</typeparam>
         /// <typeparam name="TInner">The type of the inner (right) rows.</typeparam>
         /// <typeparam name="TResult">The type of the joined rows.</typeparam>
-        /// <param name="outer">The opened outer input, drained and disposed before the open completes.</param>
-        /// <param name="innerAsync">Opens the inner with await, once, before the outer is read.</param>
+        /// <param name="outer">Opens the outer input with await, once the inner has been read into a list; it is
+        /// drained and disposed before the open completes.</param>
+        /// <param name="innerAsync">Opens the inner with await, once, before the outer is opened.</param>
         /// <param name="resultSelector">Combines an outer row and an inner row, either of which is the default
         /// value for an unmatched row of an outer join or an ANTI row.</param>
         /// <param name="predicate">The join condition, run on every pair.</param>
         /// <param name="joinType">The join type, which decides which walk runs and which unmatched rows are
         /// returned.</param>
-        /// <param name="cancellationToken">Passed to the inner's open and to each advance of both drains.</param>
+        /// <param name="cancellationToken">Passed to both opens and to each advance of both drains.</param>
         /// <returns>The open, completing with a cursor over the finished result once the whole join has
         /// run.</returns>
         static async ValueTask<IClrCursor<TResult>> NestedLoopJoinAsListAsync<TSource, TInner, TResult>(
-            IClrCursor<TSource> outer,
+            Func<CancellationToken, ValueTask<IClrCursor<TSource>>> outer,
             Func<CancellationToken, ValueTask<IClrCursor<TInner>>> innerAsync,
             Func<TSource?, TInner?, TResult> resultSelector,
             Func<TSource, TInner, bool> predicate,
@@ -6466,14 +6508,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             var rightUnmatched = RightUnmatched(generateNullsOnLeft, rightList);
 
+            var lefts = await outer(cancellationToken).ConfigureAwait(false);
             try
             {
-                while (await outer.ReadAsync(cancellationToken).ConfigureAwait(false))
-                    NestedLoopJoinRow(outer.Current, rightList, rightUnmatched, name, generateNullsOnRight, resultSelector, predicate, result);
+                while (await lefts.ReadAsync(cancellationToken).ConfigureAwait(false))
+                    NestedLoopJoinRow(lefts.Current, rightList, rightUnmatched, name, generateNullsOnRight, resultSelector, predicate, result);
             }
             finally
             {
-                await outer.DisposeAsync().ConfigureAwait(false);
+                await lefts.DisposeAsync().ConfigureAwait(false);
             }
 
             if (rightUnmatched != null)
