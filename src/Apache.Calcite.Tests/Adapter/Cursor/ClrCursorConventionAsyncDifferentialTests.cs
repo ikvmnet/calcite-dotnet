@@ -451,6 +451,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public Task ShouldAgreeOnASortWithLimit() => Same("SELECT * FROM SALES ORDER BY ID OFFSET 1 ROWS FETCH NEXT 3 ROWS ONLY");
 
         [Fact]
+        public Task ShouldAgreeOnOffsetAndFetchExpressions() => Same("SELECT * FROM SALES ORDER BY ID OFFSET (ABS(-1)) ROWS FETCH NEXT (1 + ABS(-2)) ROWS ONLY");
+
+        [Fact]
         public Task ShouldAgreeOnValues() => SameThrough("ClrCursorValues", "SELECT * FROM (VALUES (1, 'a'), (2, 'b')) AS t(x, y)");
 
         [Fact]

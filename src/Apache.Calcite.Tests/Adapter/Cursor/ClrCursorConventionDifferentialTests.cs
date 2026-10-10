@@ -1653,6 +1653,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnLimitAndOffset() => Same("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET 2 ROWS FETCH NEXT 3 ROWS ONLY");
 
         [Fact]
+        public void ShouldAgreeOnAFetchExpression() => Same("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" FETCH NEXT (1 + ABS(-2)) ROWS ONLY");
+
+        [Fact]
+        public void ShouldAgreeOnAnOffsetExpression() => Same("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET (ABS(-2)) ROWS FETCH NEXT (1 + ABS(-2)) ROWS ONLY");
+
+        [Fact]
+        public void ShouldAgreeOnALimitSortWithExpressions() =>
+            SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" OFFSET (ABS(-2)) ROWS FETCH NEXT (1 + ABS(-2)) ROWS ONLY");
+
+        [Fact]
+        public void ShouldAgreeOnAnOffsetExpressionOverAUnion() =>
+            Same("SELECT \"ID\" FROM \"SALES\" UNION ALL SELECT \"ID\" FROM \"SALES\" ORDER BY 1 OFFSET (ABS(-2)) ROWS FETCH NEXT (1 + ABS(-2)) ROWS ONLY");
+
+        [Fact]
         public void ShouldAgreeOnALimitSort() =>
             SameLimitSort("SELECT \"ID\" FROM \"SALES\" ORDER BY \"ID\" FETCH NEXT 3 ROWS ONLY");
 
@@ -2368,8 +2382,8 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         // The window table functions, which RexImpTable implements rather than the schema.
-        // TumbleImplementor and tumblingWindowSelector each name a parameter _input, so the translation must
-        // resolve parameters by lexical scope, as Java source compiled by Janino does.
+        // The table function scan declares _input and tumblingWindowSelector names its parameter _input, so the
+        // translation must resolve parameters by lexical scope, as Java source compiled by Janino does.
 
         [Fact]
         public void ShouldAgreeOnTumble() =>

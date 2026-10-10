@@ -165,16 +165,15 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             else if (rexNode is RexLiteral literal)
                 value = Expression.Constant(RexLiteral.bigDecimalValue(literal), typeof(object));
             else
-                // any other expression is translated by Calcite's translator and converted immediately. It goes
-                // through translateList because every translate overload is package private; a list of one is
-                // the same call
-                value = ClrEnumUtils.Convert(
-                    implementor.Translator.Translate(
-                        (org.apache.calcite.linq4j.tree.Expression)RexToLixTranslator
-                            .forAggregation(implementor.TypeFactory, new org.apache.calcite.linq4j.tree.BlockBuilder(), null, implementor.Conformance)
-                            .translateList(com.google.common.collect.ImmutableList.of(rexNode))
-                            .get(0)),
-                    typeof(object));
+            {
+                // any other expression is translated by Calcite's translator, which declares its intermediate
+                // values in the builder it is given; Calcite gives it the node's own builder, so the translated
+                // expression is returned from this block to keep those declarations with it
+                var block = new org.apache.calcite.linq4j.tree.BlockBuilder();
+                var translator = RexToLixTranslator.forAggregation(implementor.TypeFactory, block, null, implementor.Conformance);
+                block.add(ClrEnumUtils.Translate(translator, rexNode, null));
+                value = implementor.Translator.TranslateBody(block.toBlock(), typeof(object));
+            }
 
             return Expression.Call(null, NumberToBigDecimal, value, Expression.Constant(kind), roundingPolicy);
         }
