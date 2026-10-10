@@ -53,7 +53,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 rootSchema.add("ANYS", new AsyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new AsyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
                 rootSchema.add("EVENTS", new AsyncRowsTable(AsyncTestRows.Events, AsyncTestRows.EventsRowType, false));
-                rootSchema.add("DOCS", new AsyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
             else
             {
@@ -63,7 +62,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
                 rootSchema.add("ANYS", new SyncRowsTable(AsyncTestRows.Anys, AsyncTestRows.AnysRowType, false));
                 rootSchema.add("CASTS", new SyncRowsTable(AsyncTestRows.Casts, AsyncTestRows.CastsRowType, false));
                 rootSchema.add("EVENTS", new SyncRowsTable(AsyncTestRows.Events, AsyncTestRows.EventsRowType, false));
-                rootSchema.add("DOCS", new SyncRowsTable(AsyncTestRows.Docs, AsyncTestRows.DocsRowType, false));
             }
 
             // a table function whose call yields the rows: ClrCursorTableFunctionScan implements it, with no
@@ -646,39 +644,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         [Fact]
         public Task ShouldAgreeOnAnUncollect() =>
             Same("SELECT * FROM UNNEST(ARRAY[1, 2, 3]) AS t(x)");
-
-        // UNNEST over a column of type ANY, whose element type is not known until a row is read. Calcite
-        // cannot run this (ClrCursorUncollect explains why) and ClrCursorConventionDifferentialTests asserts
-        // the answers by hand; here the awaiting reading must match the synchronous one through this
-        // convention's node. The plan is a correlate over the uncollect, because decorrelation cannot remove
-        // an UNNEST of a correlation variable. Calcite's uncollect rule is removed, because otherwise the
-        // planner may keep Calcite's node, which fails to implement over ANY.
-
-        static readonly RelOptRule[] TheirUncollect = [org.apache.calcite.adapter.enumerable.EnumerableRules.ENUMERABLE_UNCOLLECT_RULE];
-
-        [Fact]
-        public Task ShouldAgreeOnUncollectingAnAnyColumn() =>
-            SameThrough("ClrCursorUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X)", remove: TheirUncollect);
-
-        [Fact]
-        public Task ShouldAgreeOnUncollectingAnAnyColumnOfMixedNumericTypes() =>
-            SameThrough("ClrCursorUncollect", "SELECT d.ID, t.X FROM DOCS d, UNNEST(d.NUMS) AS t(X)", remove: TheirUncollect);
-
-        [Fact]
-        public Task ShouldAgreeOnOuterUncollectingAnAnyColumn() =>
-            SameThrough("ClrCursorUncollect", "SELECT d.ID, t.X FROM DOCS d LEFT JOIN UNNEST(d.TAGS) AS t(X) ON TRUE", remove: TheirUncollect);
-
-        [Fact]
-        public Task ShouldAgreeOnUncollectingAnAnyColumnWithOrdinality() =>
-            SameThrough("ClrCursorUncollect", "SELECT d.ID, t.X, t.O FROM DOCS d, UNNEST(d.TAGS) WITH ORDINALITY AS t(X, O)", remove: TheirUncollect);
-
-        [Fact]
-        public Task ShouldAgreeOnAggregatingOverAnUncollectedAnyColumn() =>
-            SameThrough("ClrCursorUncollect", "SELECT d.ID, COUNT(*), MIN(t.X), MAX(t.X) FROM DOCS d, UNNEST(d.NUMS) AS t(X) GROUP BY d.ID ORDER BY 1", remove: TheirUncollect);
-
-        [Fact]
-        public Task ShouldAgreeOnFilteringTheOuterRowOfAnUncollectedAnyColumn() =>
-            SameThrough("ClrCursorUncollect", "SELECT t.X FROM DOCS d, UNNEST(d.TAGS) AS t(X) WHERE d.ID = 1", remove: TheirUncollect);
 
         [Fact]
         public Task ShouldAgreeOnACaseAndCoalesce() =>

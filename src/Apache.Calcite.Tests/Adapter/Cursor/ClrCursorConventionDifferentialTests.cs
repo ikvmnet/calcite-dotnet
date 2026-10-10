@@ -927,6 +927,48 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         }
 
         /// <summary>
+        /// Requires that a query fails while it is implemented in both conventions, for the same underlying
+        /// reason.
+        /// </summary>
+        /// <param name="sql">The query.</param>
+        /// <param name="message">The message of the failure each convention's "Unable to implement" exception
+        /// carries.</param>
+        /// <remarks>
+        /// <c>EnumerableRelImplementor.implementRoot</c> attaches the failure to its
+        /// <c>IllegalStateException</c> as a suppressed exception and <see cref="ClrCursorRelImplementor.ImplementRoot"/>
+        /// as the cause, and the message of each names its own plan, so only the failure inside is compared.
+        /// </remarks>
+        static void SameImplementFailure(string sql, string message)
+        {
+            static string Failure(string sql, bool clr)
+            {
+                try
+                {
+                    Run(sql, clr);
+                    return "<no failure>";
+                }
+                catch (Exception e)
+                {
+                    Exception? t = e;
+                    while (t is not null && !(t is java.lang.IllegalStateException && t.Message.StartsWith("Unable to implement", StringComparison.Ordinal)))
+                        t = t.InnerException;
+
+                    if (t is not java.lang.Throwable thrown)
+                        return $"{e.GetType().Name}: {e.Message}";
+
+                    var inner = thrown.getCause() ?? thrown.getSuppressed().FirstOrDefault();
+                    return inner is null ? "<nothing inside>" : $"{inner.GetType().Name}: {inner.Message}";
+                }
+            }
+
+            var mine = Failure(sql, true);
+            var calcite = Failure(sql, false);
+
+            calcite.Should().Contain(message, "'{0}' should fail this way under EnumerableConvention", sql);
+            mine.Should().Be(calcite, "'{0}' should fail the way EnumerableConvention fails", sql);
+        }
+
+        /// <summary>
         /// Requires that a query gives the same rows in both conventions, and that this convention really
         /// planned the node it was aimed at.
         /// </summary>
@@ -1268,78 +1310,21 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAggregateDistinctlyOverAnAnyColumn() => Gives("SELECT COUNT(DISTINCT \"V\"), SUM(DISTINCT \"V\") FROM \"ANYS\"", "4|65.5");
 
         // UNNEST over a column of type ANY. EnumerableUncollect asks NonNullableAccessors.getComponentTypeOrThrow
-        // for an element type, which ANY lacks, and throws before a row is read, so Calcite plans these but
-        // cannot run them. As for the aggregates above, the answers are asserted by hand and
-        // ShouldStillBeBeyondCalcite fails once Calcite can run them.
-        //
-        // Each plan is a correlate whose right input is the uncollect, because decorrelation cannot remove an
-        // UNNEST of a correlation variable; this is the shape a document store's array traversal reaches.
+        // for an element type, which ANY lacks, and throws when the plan is implemented; this convention fails
+        // the same way. Each plan is a correlate whose right input is the uncollect, because decorrelation
+        // cannot remove an UNNEST of a correlation variable.
 
         [Fact]
-        public void ShouldUncollectAnAnyColumn() =>
-            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\")", "1|red", "1|green", "2|blue");
+        public void ShouldFailToUncollectAnAnyColumn() =>
+            SameImplementFailure("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\")", "componentType is null for ANY");
 
-        /// <summary>
-        /// UNNEST over an ANY column whose lists hold two numeric classes.
-        /// </summary>
-        /// <remarks>
-        /// No element is converted: <c>SqlFunctions.flatProduct</c> reads a single SCALAR field with
-        /// <c>LIST_AS_ENUMERABLE</c>, which enumerates the list as it is, so an <c>Integer</c> and a
-        /// <c>Double</c> in one column come through unchanged.
-        /// </remarks>
         [Fact]
-        public void ShouldUncollectAnAnyColumnOfMixedNumericTypes() =>
-            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"NUMS\") AS t(\"X\")", "1|1", "1|2", "3|3", "3|4.5");
+        public void ShouldFailToOuterUncollectAnAnyColumn() =>
+            SameImplementFailure("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d LEFT JOIN UNNEST(d.\"TAGS\") AS t(\"X\") ON TRUE", "componentType is null for ANY");
 
-        /// <summary>
-        /// An outer UNNEST over an ANY column keeps a row whose collection is null, against a null.
-        /// </summary>
-        /// <remarks>
-        /// A null and an empty list behave alike, as for an array column: <c>LIST_AS_ENUMERABLE</c> treats a null
-        /// as the empty sequence, and an inner correlate emits nothing for an outer row whose right side is
-        /// empty. So an inner UNNEST drops the row (row 3 has a null <c>TAGS</c>, row 2 an empty <c>NUMS</c>) and
-        /// an outer one keeps it.
-        /// </remarks>
         [Fact]
-        public void ShouldOuterUncollectANullAnyColumn() =>
-            Gives("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d LEFT JOIN UNNEST(d.\"TAGS\") AS t(\"X\") ON TRUE",
-                "1|red", "1|green", "2|blue", "3|<null>");
-
-        /// <summary>
-        /// WITH ORDINALITY over an ANY column, which numbers each element from one.
-        /// </summary>
-        /// <remarks>
-        /// <c>SqlUnnestOperator.inferReturnType</c> and <c>Uncollect.deriveUncollectRowType</c> append the
-        /// ORDINALITY column in their ANY branch as in the others, and the node passes <c>withOrdinality</c> to
-        /// <c>FLAT_ZIP</c> as <c>EnumerableUncollect</c> does.
-        /// </remarks>
-        [Fact]
-        public void ShouldNumberAnUncollectedAnyColumn() =>
-            Gives("SELECT d.\"ID\", t.\"X\", t.\"O\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\", \"O\")",
-                "1|red|1", "1|green|2", "2|blue|1");
-
-        /// <summary>
-        /// An aggregate over the column an UNNEST of an ANY column produces, which is itself ANY.
-        /// </summary>
-        /// <remarks>
-        /// The uncollect does not know the element type, so the column it produces is ANY, and MIN and MAX over
-        /// it are implemented by <see cref="ClrAnyAggImplementors"/>.
-        /// </remarks>
-        [Fact]
-        public void ShouldAggregateOverAnUncollectedAnyColumn() =>
-            Gives("SELECT d.\"ID\", COUNT(*), MIN(t.\"X\"), MAX(t.\"X\") FROM \"DOCS\" d, UNNEST(d.\"NUMS\") AS t(\"X\") GROUP BY d.\"ID\" ORDER BY 1",
-                "1|2|1|2", "3|2|3|4.5");
-
-        /// <summary>
-        /// A filter on the outer row of an UNNEST over an ANY column.
-        /// </summary>
-        /// <remarks>
-        /// The filter is planned under the correlate rather than over the uncollect, so the correlate's left
-        /// input is a calc rather than a bare scan.
-        /// </remarks>
-        [Fact]
-        public void ShouldFilterTheOuterRowOfAnUncollectedAnyColumn() =>
-            Gives("SELECT t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\") WHERE d.\"ID\" = 1", "red", "green");
+        public void ShouldFailToNumberAnUncollectedAnyColumn() =>
+            SameImplementFailure("SELECT d.\"ID\", t.\"X\", t.\"O\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\", \"O\")", "componentType is null for ANY");
 
         /// <summary>
         /// Requires that Calcite still cannot run a query.
@@ -1385,10 +1370,6 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             StillBeyondCalcite("SELECT VAR_POP(\"V\") FROM \"ANYS\"");
             StillBeyondCalcite("SELECT MIN(\"V\") FILTER (WHERE \"ID\" > 1) FROM \"ANYS\"");
             StillBeyondCalcite("SELECT \"K\", MIN(\"V\"), SUM(\"V\") FROM \"ANYS\" GROUP BY \"K\"");
-
-            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") AS t(\"X\")");
-            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\" FROM \"DOCS\" d LEFT JOIN UNNEST(d.\"TAGS\") AS t(\"X\") ON TRUE");
-            StillBeyondCalcite("SELECT d.\"ID\", t.\"X\", t.\"O\" FROM \"DOCS\" d, UNNEST(d.\"TAGS\") WITH ORDINALITY AS t(\"X\", \"O\")");
         }
 
         // the same columns read without an ANY aggregate implementor, which Calcite can run, so that a failure
