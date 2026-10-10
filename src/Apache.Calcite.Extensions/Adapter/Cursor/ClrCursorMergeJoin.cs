@@ -27,6 +27,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <remarks>
     /// Mirrors <c>EnumerableMergeJoin</c>. Both inputs must be sorted ascending, nulls last, on their join keys.
     /// The node passes a required collation through to its inputs and derives its own collation from theirs.
+    ///
+    /// <para>linq4j's merge join acquires the right input at its first step of it, which it skips where the left
+    /// input has no row to join, so the right input is passed as an opener of the body's own kind.</para>
     /// </remarks>
     public class ClrCursorMergeJoin : Join, ClrCursorRel
     {
@@ -459,7 +462,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 Expression.Call(null,
                     ClrCursorBuiltInMethod.MergeJoin.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
                     leftResult.Expression,
-                    rightResult.Expression,
+                    implementor.Opener(rightResult),
                     leftKey,
                     rightKey,
                     predicate,
@@ -543,7 +546,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             return implementor.ResultAsync(physType,
                 ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.MergeJoinAsync.MakeGenericMethod(leftType_, rightType_, leftKey.ReturnType, rowType),
                     leftResult.Expression,
-                    rightResult.Expression,
+                    implementor.OpenerAsync(rightResult),
                     leftKey,
                     rightKey,
                     predicate,

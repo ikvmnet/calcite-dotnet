@@ -113,7 +113,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// <returns>Each output row as <c>left/right</c>, with a missing side written as <c>-</c>.</returns>
         static List<string> Join(IReadOnlyList<string> outer, Counting<Row> inner, JoinType joinType)
         {
-            var join = ClrCursorDefaults.NestedLoopJoin<string, Row, string>(new RowsCursor<string>(outer), inner.Open, inner.OpenAsync, Pair, StartsWith, joinType);
+            var join = ClrCursorDefaults.NestedLoopJoin<string, Row, string>(() => new RowsCursor<string>(outer), inner.Open, inner.OpenAsync, Pair, StartsWith, joinType);
 
             var rows = new List<string>();
             while (join.Read())
@@ -132,7 +132,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         static async Task<List<string>> JoinAsync(IReadOnlyList<string> outer, Counting<Row> inner, JoinType joinType)
         {
             var join = await ClrCursorDefaults.NestedLoopJoinAsync<string, Row, string>(
-                new ValueTask<IClrCursor<string>>(new RowsCursor<string>(outer)), inner.Open, inner.OpenAsync, Pair, StartsWith, joinType, CancellationToken.None);
+                _ => new ValueTask<IClrCursor<string>>(new RowsCursor<string>(outer)), inner.Open, inner.OpenAsync, Pair, StartsWith, joinType, CancellationToken.None);
 
             var rows = new List<string>();
             while (await join.ReadAsync(CancellationToken.None))
@@ -289,7 +289,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var inner = new Counting<Row>(Rows("a1"));
             var outer = new ReadCountingCursor(["a", "b"]);
 
-            ClrCursorDefaults.NestedLoopJoin<string, Row, string>(outer, inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.RIGHT);
+            ClrCursorDefaults.NestedLoopJoin<string, Row, string>(() => outer, inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.RIGHT);
 
             inner.Count.Should().Be(1);
             outer.Reads.Should().Be(3, "the outer was read to its end at the open");
@@ -298,7 +298,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             outer = new ReadCountingCursor(["a", "b"]);
 
             await ClrCursorDefaults.NestedLoopJoinAsync<string, Row, string>(
-                new ValueTask<IClrCursor<string>>(outer), inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.RIGHT, CancellationToken.None);
+                _ => new ValueTask<IClrCursor<string>>(outer), inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.RIGHT, CancellationToken.None);
 
             inner.Count.Should().Be(1);
             outer.Reads.Should().Be(3, "the awaiting open awaited the whole join");
@@ -309,8 +309,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         /// </summary>
         /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// The outer arrives already opened, so what is checked is when the inner is opened and when the outer
-        /// is first read: neither happens at the open, and both happen at the first advance.
+        /// The outer is opened at the open, as <c>nestedLoopJoinOptimized</c>'s enumerator acquires it, so what
+        /// is checked is when the inner is opened and when the outer is first read: neither happens at the
+        /// open, and both happen at the first advance.
         /// </remarks>
         [Fact]
         public async Task ShouldNotRunAnInnerJoinUntilItIsEnumerated()
@@ -318,7 +319,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             var inner = new Counting<Row>(Rows("a1"));
             var outer = new ReadCountingCursor(["a", "b"]);
 
-            var join = ClrCursorDefaults.NestedLoopJoin<string, Row, string>(outer, inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.INNER);
+            var join = ClrCursorDefaults.NestedLoopJoin<string, Row, string>(() => outer, inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.INNER);
 
             inner.Count.Should().Be(0);
             outer.Reads.Should().Be(0);
@@ -331,7 +332,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             outer = new ReadCountingCursor(["a", "b"]);
 
             join = await ClrCursorDefaults.NestedLoopJoinAsync<string, Row, string>(
-                new ValueTask<IClrCursor<string>>(outer), inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.INNER, CancellationToken.None);
+                _ => new ValueTask<IClrCursor<string>>(outer), inner.Open, inner.OpenAsync, Pair, (l, r) => false, JoinType.INNER, CancellationToken.None);
 
             inner.Count.Should().Be(0);
             outer.Reads.Should().Be(0);

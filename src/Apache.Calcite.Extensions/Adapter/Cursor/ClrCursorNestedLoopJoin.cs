@@ -21,7 +21,9 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
     /// <see cref="ClrCursorHashJoin"/> does not support.
     ///
     /// <para>The operator may acquire the right input from within an advance of either kind, so each body
-    /// visits the right input through both hierarchies and passes a synchronous and an awaiting opener.</para>
+    /// visits the right input through both hierarchies and passes a synchronous and an awaiting opener. A RIGHT
+    /// or FULL join reads the right input before it acquires the left, as linq4j's <c>nestedLoopJoinAsList</c>
+    /// does, so the left input of a nested loop join is passed as an opener of the body's own kind.</para>
     /// </remarks>
     public class ClrCursorNestedLoopJoin : Join, ClrCursorRel
     {
@@ -205,7 +207,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
 
             return implementor.ResultAsync(physType,
                 ClrCursorBuiltInMethod.CallAsync(implementor, ClrCursorBuiltInMethod.NestedLoopJoinAsync.MakeGenericMethod(leftType, rightType, rowType),
-                    leftResult.Expression,
+                    implementor.OpenerAsync(leftResult),
                     implementor.Opener(rightResultSync),
                     implementor.OpenerAsync(rightResult),
                     selector,
@@ -275,7 +277,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             return implementor.Result(physType,
                 Expression.Call(null,
                     ClrCursorBuiltInMethod.NestedLoopJoin.MakeGenericMethod(leftType, rightType, rowType),
-                    leftResult.Expression,
+                    implementor.Opener(leftResult),
                     implementor.Opener(rightResult),
                     implementor.OpenerAsync(rightResultAsync),
                     selector,
