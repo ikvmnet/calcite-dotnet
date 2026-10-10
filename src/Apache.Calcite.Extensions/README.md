@@ -205,7 +205,6 @@ Pass an existing `Properties` to the constructor to read or modify it in place.
 | `ApproximateTopN` | `bool` | `false` | Allow approximate Top-N results. |
 | `AutoTemp` | `bool` | `false` | Store query results in temporary tables. |
 | `NullEqualToEmpty` | `bool` | `true` | Treat empty strings as null, for the Druid adapter. |
-| `Spark` | `bool` | `false` | Use Spark for processing that cannot be pushed to the source. |
 | `TopdownOpt` | `bool` | `calcite.planner.topdown.opt` | Top-down optimization in the Volcano planner. |
 | `LenientOperatorLookup` | `bool` | `false` | Accept calls to functions not in the operator table. |
 | `DruidFetch` | `int` | `16384` | Rows to fetch per Druid query. |

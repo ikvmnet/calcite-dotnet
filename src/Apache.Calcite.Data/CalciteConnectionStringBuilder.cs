@@ -155,11 +155,6 @@ namespace Apache.Calcite.Data
         public const string SchemaTypeKey = "schemaType";
 
         /// <summary>
-        /// Connection string key for whether Spark should be used as the processing engine.
-        /// </summary>
-        public const string SparkKey = "spark";
-
-        /// <summary>
         /// Connection string key for the time zone.
         /// </summary>
         public const string TimeZoneKey = "timeZone";
@@ -545,22 +540,6 @@ namespace Apache.Calcite.Data
         {
             get => TryGetString(SchemaTypeKey);
             set => SetOrRemove(SchemaTypeKey, value);
-        }
-
-        /// <summary>
-        /// Gets or sets Calcite's <c>spark</c> property. Default is <c>false</c>.
-        /// </summary>
-        /// <remarks>
-        /// This provider does not use Spark, whatever this is set to.
-        /// </remarks>
-        public bool? Spark
-        {
-            get => TryGetBool(SparkKey);
-            set
-            {
-                if (value is null) Remove(SparkKey);
-                else this[SparkKey] = value.Value;
-            }
         }
 
         /// <summary>

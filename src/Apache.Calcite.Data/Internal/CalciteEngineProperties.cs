@@ -40,7 +40,6 @@ namespace Apache.Calcite.Data.Internal
             [CalciteConnectionStringBuilder.SchemaKey] = CalciteConnectionProperty.SCHEMA,
             [CalciteConnectionStringBuilder.SchemaFactoryKey] = CalciteConnectionProperty.SCHEMA_FACTORY,
             [CalciteConnectionStringBuilder.SchemaTypeKey] = CalciteConnectionProperty.SCHEMA_TYPE,
-            [CalciteConnectionStringBuilder.SparkKey] = CalciteConnectionProperty.SPARK,
             [CalciteConnectionStringBuilder.TimeZoneKey] = CalciteConnectionProperty.TIME_ZONE,
             [CalciteConnectionStringBuilder.TopDownGeneralDecorrelationEnabledKey] = CalciteConnectionProperty.TOPDOWN_GENERAL_DECORRELATION_ENABLED,
             [CalciteConnectionStringBuilder.TypeCoercionKey] = CalciteConnectionProperty.TYPE_COERCION,

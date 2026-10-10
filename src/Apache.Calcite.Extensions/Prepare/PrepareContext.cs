@@ -93,6 +93,8 @@ namespace Apache.Calcite.Extensions.Prepare
 
         public CalcitePrepare.SparkHandler spark()
         {
+            // CalciteConnectionImpl.ContextImpl passes config().spark(); Spark runs on a JVM cluster, which a CLR
+            // process cannot host, so the setting is not offered and the trivial handler is always used
             return CalcitePrepare.Dummy.getSparkHandler(false);
         }
 

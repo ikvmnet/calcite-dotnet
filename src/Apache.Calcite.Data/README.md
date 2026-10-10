@@ -318,7 +318,6 @@ and `CREATE TABLE ... AS SELECT` are not supported.
 - **`CommandTimeout`** is passed to Calcite as the statement's query timeout, which Calcite applies to queries
   its JDBC adapter sends to a database. It does not otherwise stop a long-running statement.
 - **Materialized views are not substituted**, whatever `materializationsEnabled` says.
-- **`spark=true` has no effect.**
 - **Hooks are attached during planning and opening only.** A hook registered with `RegisterHook` is attached to
   the executing thread while the statement is prepared and its result opened, not while rows are read.
 
@@ -370,7 +369,6 @@ the schema `SchemaFactory` or `SchemaType` creates. Defaults are Calcite's own.
 | `ApproximateDistinctCount` | `bool` | `false` | Allow approximate `COUNT(DISTINCT ...)`. |
 | `ApproximateTopN` | `bool` | `false` | Allow approximate Top-N results. |
 | `DruidFetch` | `int` | `16384` | Rows Calcite's Druid adapter fetches at a time. |
-| `Spark` | `bool` | `false` | Has no effect here. |
 | `SchemaFactory` | `string` | — | Java class (or `Class#FIELD`) of a schema factory. Without a model, creates one schema named by `Schema` (default `adhoc`) with every `schema.`-prefixed key as an operand. |
 | `SchemaType` | `string` | — | Without a model or `SchemaFactory`: `MAP` for an empty schema, `JDBC` for a `JdbcSchema`. |
 | `TypeSystem` | `string` | — | A .NET type or static member providing a Calcite `RelDataTypeSystem`, such as `"[org.apache.calcite.sql.dialect.PostgresqlSqlDialect, calcite.core]::POSTGRESQL_TYPE_SYSTEM"`. |
