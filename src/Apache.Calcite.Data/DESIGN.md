@@ -115,39 +115,49 @@ Calcite's JDBC connection is long-lived and owns its root schema; an ADO.NET con
 provider therefore splits Calcite's connection in two: the part that lives as long as the application, held
 by a data source, and the part that lives as long as an ADO.NET connection.
 
-**`CalciteDataSourceRoot`** (`Internal/`) is the application-lived part: the root schema, `DUAL` where the
-conformance supports it, and the model. It runs the steps of `CalciteConnectionImpl`'s constructor that build
-the root and `DUAL`, then the model step of the driver's `onConnectionInit`, in that order, so a model can
-replace `DUAL`. Without a `Model` key, a `SchemaFactory` or `SchemaType` key produces an inline model with one
-custom schema, named by the `Schema` key (default `adhoc`), with every `schema.`-prefixed key as an operand,
-as Calcite's `Driver.createHandler` does. Steps registered on a `CalciteDataSourceBuilder` run last.
+**`CalciteDataSourceRoot`** (`Internal/`) is the application-lived part: the model, read once, the schema
+objects its factories make, and the roots assembled from them. A root is assembled as Calcite's connection
+builds one: the steps of `CalciteConnectionImpl`'s constructor that build the root and `DUAL`, then the model
+step of the driver's `onConnectionInit`, in that order, so a model can replace `DUAL`, then the steps
+registered on a `CalciteDataSourceBuilder`. Without a `Model` key, a `SchemaFactory` or `SchemaType` key
+produces an inline model with one custom schema, named by the `Schema` key (default `adhoc`), with every
+`schema.`-prefixed key as an operand, as Calcite's `Driver.createHandler` does.
 
-A root counts the sessions using it. `Retire` marks it unwanted; it is disposed when retired and unused.
-Disposing a root disposes every schema on it that implements `IDisposable`, sub-schemas first, which gives
-adapters the release point Calcite's schema SPI lacks.
+**The model** is read by `CalciteModel` and applied by `CalciteModelAssembler` (both `Internal/`), which
+together are a port of Calcite's `ModelHandler`. `ModelHandler` reads a model and applies it to one root in its
+constructor, and creates a schema factory's schema in the same step that adds it, so it is split here:
+`CalciteModel` is the reading (the same Jackson configuration, JSON or YAML, inline or a file confined to
+`calcite.model.baseDirectory`), and `CalciteModelAssembler` is the applying, run for every root. The assembler
+matches the model's elements by type, in the order `ModelHandler`'s `visitChildren` visits them, rather than
+through their `accept` methods, which take a `ModelHandler`. Everything a model declares is created against the
+root it is applied to, as Calcite creates it against each connection's root: a view is analysed against that
+root and sees tables that connection creates, and lattices and materializations belong to it. What a factory
+makes is made once per data source and added to every root: the schema a `custom` schema's factory returns, the
+`JdbcSchema` a `jdbc` schema becomes, and the table a `custom` table's factory returns. Those hold an adapter's
+clients and caches. A factory is given the first root's schema as its parent; an adapter that keeps that parent
+and reads it, rather than building expressions from its path as `JdbcSchema` does, sees the first root.
+Classes a model names pass `ModelClassFilter`, a port of `ClassNameFilter.standard()`, which is package-private;
+user-defined functions go through `ModelHandler.addFunctions`, which applies Calcite's own.
+
+A data source's roots count the sessions using them. `Retire` marks them unwanted; they are disposed when
+retired and unused. A schema that implements `IDisposable` is disposed when nothing can reach it again, which
+gives adapters the release point Calcite's schema SPI lacks: one the data source owns (one a factory made, or
+one on the first root assembled, which covers an instance a builder step adds to every root) when the data
+source's roots are released, and any other with the root that holds it.
 
 How sessions use a root is its `CalciteRootSharing`:
 
-- **`Isolated`**, the default. The root is a template no statement runs against. Each session rents a copy
-  of its wrapper tree and returns it on dispose. Calcite gives every connection a root of its own and never
-  guards one against concurrent use: DDL writes into a `CalciteSchema`'s name maps, and execution does too, as
-  a recursive query registers its working table at the root under the query's own name and removes it when
-  closed. A copy gives a session maps of its own while the `Schema` objects, which hold an adapter's clients
-  and caches, stay shared. A copy that DDL altered (`PrepareContext.getMutableRootSchema` was called) or whose
-  root holds a table the template's does not is discarded, and any `IDisposable` schema DDL added to it is
-  disposed; a clean one is kept for the next session until it has been idle for `Connection Idle Lifetime`.
+- **`Isolated`**, the default. Each session rents a root of its own and returns it on dispose. Calcite gives
+  every connection a root of its own and never guards one against concurrent use: DDL writes into a
+  `CalciteSchema`'s name maps, and execution does too, as a recursive query registers its working table at the
+  root under the query's own name and removes it when closed. A root that DDL altered
+  (`PrepareContext.getMutableRootSchema` was called) or whose root level holds a table it was not assembled
+  with is dropped; a clean one is kept for the next session until it has been idle for
+  `Connection Idle Lifetime`. The first root, assembled when the data source's root is built, is the first one
+  rented.
 - **`Shared`**, chosen with `CalciteDataSourceBuilder.UseSharedRootSchema`. Every session uses the root itself,
   so DDL outlives the connection, and planning and DDL take the root's lock (below). Execution is not guarded.
 - **`Owned`**, under `Pooling=false`. The root was built for one session, which uses it directly.
-
-The copy is made by `CachingCalciteSchema` (`Internal/`), a port of Calcite's package-private class of that
-name, which `CalciteSchema.createRootSchema` builds by default. The explicit entries are `protected` maps on
-`CalciteSchema` with no public accessor that leaves out the implicit ones, so only a subclass can read them; a
-tree is made entirely of the port when its root is, because every other node is made by its `add`,
-`createSubSchema` or `snapshot`. `CopyRoot` adds the template's explicit sub-schemas (each copied in turn),
-lattices, tables, types and functions to a new root over the same `Schema` objects, through the public `add`
-overloads, and leaves implicit sub-schemas for the copy to derive again. A view macro holds the root it was
-defined against, so a view on the template is analysed against the template, which nothing writes.
 
 **`CalciteDataSource`** builds its root once, under a lock, when the first connection opens, `Shared` where
 the builder asked for it and otherwise `Isolated`; a failed build
@@ -481,9 +491,11 @@ src/
     CalciteException.cs                   DbException
     Internal/
       CalciteSession.cs                   Per-connection state over a root; plan, bind, execute
-      CalciteDataSourceRoot.cs            The root schema, DUAL and the model; lifetime, lock and copies
+      CalciteDataSourceRoot.cs            Assembles roots: DUAL, the model, the steps; pooling, lock, disposal
       CalciteRootSharing.cs               How sessions use a root: isolated, shared or owned
-      CachingCalciteSchema.cs             Port of Calcite's CachingCalciteSchema, with CopyRoot
+      CalciteModel.cs                     Reads a model once (ModelHandler's parse)
+      CalciteModelAssembler.cs            Applies a model to a root (ModelHandler's visit methods)
+      ModelClassFilter.cs                 Port of ClassNameFilter.standard()
       CalciteDataSources.cs               The data sources the provider keeps, one per connection string
       CalciteEngineProperties.cs          Connection string keys to Calcite Properties
       ClrPlugin.cs                        Resolves a plugin named in the connection string

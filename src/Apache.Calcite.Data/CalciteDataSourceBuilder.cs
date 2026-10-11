@@ -95,9 +95,10 @@ namespace Apache.Calcite.Data
         /// <returns>This builder.</returns>
         /// <exception cref="ArgumentNullException"><paramref name="name"/> or <paramref name="schema"/> is <see langword="null"/>.</exception>
         /// <remarks>
-        /// The same instance is added to every root the data source builds: once normally, again after
-        /// <see cref="CalciteDataSource.Clear"/>, and once per connection under <c>Pooling=false</c>. A schema
-        /// that implements <see cref="IDisposable"/> is disposed each time a root holding it is released.
+        /// The same instance is added to every root the data source assembles, so every connection shares it. A
+        /// schema that implements <see cref="IDisposable"/> is disposed when the data source's roots are
+        /// released: after <see cref="CalciteDataSource.Clear"/> or disposal, or with the connection under
+        /// <c>Pooling=false</c>.
         /// </remarks>
         public CalciteDataSourceBuilder AddSchema(string name, Schema schema)
         {
@@ -115,11 +116,22 @@ namespace Apache.Calcite.Data
         /// macro.</param>
         /// <returns>This builder.</returns>
         /// <remarks>
-        /// The step runs each time a root is built: when the first connection opens, again after
-        /// <see cref="CalciteDataSource.Clear"/>, and once per connection under <c>Pooling=false</c>. Every
-        /// connection's root holds what the step added, and the objects it added are shared by those
-        /// connections. This is the only place the root is exposed as a <see cref="SchemaPlus"/>; a connection
-        /// exposes it as a read-only <see cref="Schema"/> through <see cref="CalciteConnection.RootSchema"/>.
+        /// <para>
+        /// The step runs for every root the data source assembles. Each connection plans against a root of its
+        /// own, kept for the next connection while no DDL has touched it, so the step runs for the first
+        /// connection and again whenever a new root is needed; with a shared root, or under
+        /// <c>Pooling=false</c>, there is one root per data source or per connection. A view macro the step adds
+        /// is analysed against the root it was given, as one a model declares is.
+        /// </para>
+        /// <para>
+        /// An instance the step adds to every root is shared by the connections. One it creates each time
+        /// belongs to that root: a schema that implements <see cref="IDisposable"/> is disposed with the root,
+        /// except the first root's, which is disposed with the data source's roots.
+        /// </para>
+        /// <para>
+        /// This is the only place a root is exposed as a <see cref="SchemaPlus"/>; a connection exposes it as a
+        /// read-only <see cref="Schema"/> through <see cref="CalciteConnection.RootSchema"/>.
+        /// </para>
         /// </remarks>
         /// <exception cref="ArgumentNullException"><paramref name="configure"/> is <see langword="null"/>.</exception>
         public CalciteDataSourceBuilder ConfigureRootSchema(Action<SchemaPlus> configure)

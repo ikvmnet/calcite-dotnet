@@ -79,7 +79,10 @@ class PeopleTable : AbstractTable, ScannableTable
 
 `AddSchema(name, schema)` registers a whole schema object. `ConfigureRootSchema` gives you the root as
 Calcite's mutable `SchemaPlus`, after any model has been applied, so you can add schemas, tables, functions and
-views. Steps run in the order they were added, each time a root is built.
+views. Steps run in the order they were added, for every root the data source assembles, which by default is
+one per connection, though a connection's root is kept for the next while no DDL has touched it. A schema
+instance a step adds to every root, as `AddSchema` does, is shared by the connections; one a step creates each
+time belongs to that connection's root and is disposed with it.
 
 ## Quick start: a JSON model
 

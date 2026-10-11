@@ -20,8 +20,8 @@ namespace Apache.Calcite.Data.Internal
         Shared,
 
         /// <summary>
-        /// Each session uses a copy of the root's wrapper tree over the same <c>Schema</c> objects, so DDL and
-        /// the tables execution registers at the root stay with the connection.
+        /// Each session uses a root of its own, assembled from the same model and steps over the same schema
+        /// objects, so DDL and the tables execution registers at the root stay with the connection.
         /// </summary>
         Isolated,
 

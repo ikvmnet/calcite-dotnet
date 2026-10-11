@@ -48,6 +48,7 @@ namespace Apache.Calcite.Data.Internal
 
         readonly CalciteDataSourceRoot _root;
         readonly bool _ownsRoot;
+        readonly CalciteDataSourceRoot.Lease _lease;
         readonly CalciteSchema _rootSchema;
         readonly SchemaPlus _rootSchemaPlus;
         readonly ReaderWriterLockSlim? _rootLock;
@@ -141,7 +142,7 @@ namespace Apache.Calcite.Data.Internal
                 _root.Acquire();
                 try
                 {
-                    _rootSchema = root.Rent();
+                    _lease = root.Rent();
                 }
                 catch
                 {
@@ -149,6 +150,7 @@ namespace Apache.Calcite.Data.Internal
                     throw;
                 }
 
+                _rootSchema = _lease.Schema;
                 _rootSchemaPlus = _rootSchema.plus();
             }
             catch (Exception e) when (e is not CalciteException)
@@ -183,7 +185,7 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the root schema this session plans against: a copy of its own, or under a shared root, the
+        /// Gets the root schema this session plans against: one of its own, or under a shared root, the
         /// root every session on the data source uses.
         /// </summary>
         public SchemaPlus RootSchema => _rootSchemaPlus;
@@ -568,7 +570,7 @@ namespace Apache.Calcite.Data.Internal
                 return;
 
             _disposed = true;
-            _root.Return(_rootSchema, _altered);
+            _root.Return(_lease, _altered);
             if (_ownsRoot)
                 _root.Retire();
 
