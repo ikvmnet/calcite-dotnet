@@ -399,8 +399,8 @@ namespace Apache.Calcite.Data.Tests
             var root = CalciteSchema.createRootSchema(true);
             root.plus().add("PRE", new org.apache.calcite.schema.impl.AbstractSchema());
             var built = CalciteDataSourceRoot.Build(new CalciteConnectionStringBuilder(), [], rootSchema: root);
-            Assert.Same(root, built.Schema);
-            Assert.NotNull(built.Schema.plus().getSubSchema("PRE"));
+            Assert.Same(root, built.Rent().Schema);
+            Assert.NotNull(built.Rent().Schema.plus().getSubSchema("PRE"));
         }
 
         [Fact]
@@ -409,8 +409,8 @@ namespace Apache.Calcite.Data.Tests
             var root = CalciteSchema.createRootSchema(true);
             root.plus().add("PRE", new org.apache.calcite.schema.impl.AbstractSchema());
             var built = CalciteDataSourceRoot.Build(new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString), [], rootSchema: root);
-            Assert.NotNull(built.Schema.plus().getSubSchema("PRE"));
-            Assert.NotNull(built.Schema.plus().getSubSchema("adhoc"));
+            Assert.NotNull(built.Rent().Schema.plus().getSubSchema("PRE"));
+            Assert.NotNull(built.Rent().Schema.plus().getSubSchema("adhoc"));
             Assert.Equal("adhoc", built.DefaultSchemaName);
         }
 
@@ -420,7 +420,7 @@ namespace Apache.Calcite.Data.Tests
             // DUAL is a view macro, so it registers as a nullary function rather than a plain table
             var root = CalciteSchema.createRootSchema(true);
             var built = CalciteDataSourceRoot.Build(new CalciteConnectionStringBuilder(TestModels.InlineEmptyModelConnectionString + ";Conformance=ORACLE_12"), [], rootSchema: root);
-            Assert.False(built.Schema.plus().getFunctions("DUAL").isEmpty());
+            Assert.False(built.Rent().Schema.plus().getFunctions("DUAL").isEmpty());
         }
 
         /// <summary>

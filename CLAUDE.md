@@ -22,9 +22,9 @@ and how they fit together is in `README.md` and each project's own README; outst
   metadata, `ClrCursorCostTests` compares plans and costs against Calcite's.
 - Before writing a recursive-query test, check the query converges under Calcite. One that does not hangs the
   suite rather than failing it. Run a new recursive test on its own first.
-- A test entry point that loads anything a model names by class must set `calcite.model.classes.allowed`
-  before Calcite reads its system properties. See the `ModelClasses.cs` module initializer in each test project;
-  a .NET class needs both its CLR name and its `cli.`-prefixed name listed.
+- `Fun=spatial` needs `calcite.model.classes.allowed` to include `org.apache.calcite.` before Calcite reads its
+  system properties: Calcite filters its own spatial functions. See `CalciteClassAllowlist.cs` in the test projects
+  that use it. Model classes are not filtered.
 - `dotnet sln add` misreports conflicts. Read the `.slnx` afterwards rather than trusting its output.
 
 ## The Calcite snapshot and `~/.m2`

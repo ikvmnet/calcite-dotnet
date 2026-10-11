@@ -33,8 +33,8 @@ dotnet add package Apache.Calcite.Data
 
 ## Quick start: a schema from code
 
-A schema your application constructs is registered on a `CalciteDataSource` and shared by every connection
-opened from it. Tables implement Calcite's `Table` interface; `ScannableTable` is the simplest kind:
+A schema your application constructs is registered on a `CalciteDataSource`, and the same instance serves every
+connection opened from it. Tables implement Calcite's `Table` interface; `ScannableTable` is the simplest kind:
 
 ```csharp
 using Apache.Calcite.Data;
@@ -79,7 +79,10 @@ class PeopleTable : AbstractTable, ScannableTable
 
 `AddSchema(name, schema)` registers a whole schema object. `ConfigureRootSchema` gives you the root as
 Calcite's mutable `SchemaPlus`, after any model has been applied, so you can add schemas, tables, functions and
-views. Steps run in the order they were added, each time a root is built.
+views. Steps run in the order they were added, for every root the data source assembles, which by default is
+one per connection, though a connection's root is kept for the next while no DDL has touched it. A schema
+instance a step adds to every root, as `AddSchema` does, is shared by the connections; one a step creates each
+time belongs to that connection's root and is disposed with it.
 
 ## Quick start: a JSON model
 
@@ -123,23 +126,25 @@ connection string key.
 
 ### Models that name classes
 
-Calcite loads a class named in a model (a custom schema's `factory`, a function's `className`, a JDBC
-driver) only when the Java system property `calcite.model.classes.allowed` allows it. The value is a
-comma-separated list of class names, or of package prefixes ending in `.`; it is empty by default, which
-allows nothing, not even Calcite's own classes. Calcite reads the property once, the first time it reads its
-system properties, so set it at startup before opening any connection:
+A schema or table factory a model names is called once per data source, and what it returns is shared by every
+connection. A factory is given a parent schema and should only read it: one that adds to its parent adds to the
+first connection's root alone. Calcite's Geode adapter (`GeodeSchemaFactory`, which adds its functions to the
+parent), `CloneSchema` (which adds a `name$source` schema beside itself) and Cassandra adapter (which adds
+materialized views from a process-wide hook) do this, and are not supported.
+
+A class named in a model (a custom schema's `factory`, a function's `className`, a JDBC driver) is loaded
+by name. Calcite's own driver loads one only where the Java system property `calcite.model.classes.allowed`
+lists it; this provider applies no such filter, since the application chooses its model.
+
+Calcite applies that filter to its own spatial functions, though: the `spatial` function library registers
+them through the same check, and the property is empty by default, so `Fun=spatial` fails until it lists
+Calcite's package. Calcite reads the property once, so set it at startup, before anything touches Calcite:
 
 ```csharp
-java.lang.System.setProperty(
-    "calcite.model.classes.allowed",
-    "org.apache.calcite.,MyCompany.Calcite.,cli.MyCompany.Calcite.");
+java.lang.System.setProperty("calcite.model.classes.allowed", "org.apache.calcite.");
 ```
 
-A .NET class must be listed under its .NET name and also under its IKVM name, which is the .NET name prefixed
-with `cli.`. The same applies to the class a `SchemaFactory` or `SchemaType` connection string key implies,
-since the provider describes that schema to Calcite as a model.
-
-The class must also be visible to Calcite's class loader. A class in a Java library you reference with
+The class must be visible to Calcite's class loader. A class in a Java library you reference with
 `MavenReference` is found once its assembly is on IKVM's boot class path:
 
 ```csharp
@@ -222,10 +227,26 @@ command; call `NextResult` to move between them. Hooks registered on the connect
 
 ## Data sources and connection lifetime
 
-A connection plans against a root schema that belongs to a `CalciteDataSource`: the schemas the model defines,
-the schemas and steps registered on the data source, and the tables DDL creates. The root is built when the
-first connection opens, and every connection of the data source shares it, so a table created on one
-connection is visible on the others.
+A `CalciteDataSource` holds a root schema: the schemas the model defines and the schemas and steps registered
+on the data source. The root is built when the first connection opens, and the schema objects on it are shared
+by every connection of the data source. Each connection plans against a root of its own over those schemas, so
+a table, view or schema that DDL creates belongs to the connection that created it: other connections do not
+see it, and it is gone when the connection is disposed. A connection's root is kept for the next connection
+when no DDL ran against it.
+
+Where DDL should outlive the connection, as in a test fixture that creates tables and reads them on a new
+connection, build the data source with `UseSharedRootSchema()`. Every connection of that data source plans
+against the one root, and what DDL creates lasts until the data source is cleared or disposed:
+
+```csharp
+await using var dataSource = new CalciteDataSourceBuilder(connectionString)
+    .UseSharedRootSchema()
+    .Build();
+```
+
+A shared root is not safe to use from several connections at once. Planning and DDL are serialized, but
+execution is not: a recursive query registers its working table at the root under its own name while it runs,
+so two such queries running at once on different connections return wrong results.
 
 Create a data source once, share it for the life of the application, and dispose it at shutdown:
 
@@ -247,21 +268,22 @@ releases the one for a connection's string at once, which makes the next connect
 file, and `CalciteConnection.ClearAllPools()` releases all of them. `CalciteDataSource.Clear()` does the same
 for a data source you created. Connections already open keep the root they have until they are disposed.
 
-`Pooling=false` in the connection string gives each connection a root of its own, built when it first opens
-and released when it is disposed.
+`Pooling=false` in the connection string makes each connection build everything itself, model included, when it
+first opens, and release it when it is disposed. It cannot be combined with `UseSharedRootSchema()`.
 
 When a root is released, every schema on it that implements `IDisposable` is disposed, once the last
-connection using that root has been disposed.
+connection using that root has been disposed. A schema that DDL created on a connection is disposed with the
+connection.
 
-Because connections share the root, a schema you register may be read from several threads at once and must
-tolerate concurrent reads. Statements plan under a shared lock on the root and DDL runs under an exclusive
-one; execution does not hold the lock.
+Because connections share the schema objects, a schema you register may be read from several threads at once
+and must tolerate concurrent reads.
 
 For a single connection:
 
 - The first `Open()` creates the connection's session: its configuration, type factory and type mappings.
   `Close()` only changes the state, and a later `Open()` reuses the session.
-- `Dispose()` releases the session. The root is not affected, except under `Pooling=false`.
+- `Dispose()` releases the session and the connection's own root. The data source's root is not affected,
+  except under `Pooling=false`.
 - `ConnectionString` and `TypeMapper` cannot be changed once the connection has been opened.
 
 ## Using `DbProviderFactory`
@@ -296,7 +318,8 @@ await using var conn = new CalciteConnection(
 ```
 
 A DDL statement takes effect while it is prepared, before the execute method returns, and produces no rows.
-It changes the data source's root, so every connection of the data source sees it. `CREATE MATERIALIZED VIEW`
+It changes the connection's own root, so other connections do not see it unless the data source was built
+with `UseSharedRootSchema()`. `CREATE MATERIALIZED VIEW`
 and `CREATE TABLE ... AS SELECT` are not supported.
 
 ## Behaviour to be aware of
@@ -348,7 +371,7 @@ the schema `SchemaFactory` or `SchemaType` creates. Defaults are Calcite's own.
 |-----|------|---------|-------------|
 | `Model` | `string` | — | Path to a model file, or inline JSON (prefixed `inline:` or starting with `{`). |
 | `Schema` | `string` | — | Default schema for unqualified names. The model's `defaultSchema` takes precedence. |
-| `Pooling` | `bool` | `true` | Whether connections opened with an equivalent connection string share one root schema. |
+| `Pooling` | `bool` | `true` | Whether connections opened with an equivalent connection string share one data source, which reads the model once. |
 | `Connection Idle Lifetime` | `int` | `300` | Seconds a kept data source may go with no open connection before it is released. |
 | `Connection Pruning Interval` | `int` | `10` | Seconds between checks for data sources to release. Must be positive and not exceed `Connection Idle Lifetime`. |
 | `Lex` | `string` | `ORACLE` | Lexical policy: `ORACLE`, `MYSQL`, `MYSQL_ANSI`, `SQL_SERVER`, `JAVA`, `BIG_QUERY`. |
@@ -357,7 +380,7 @@ the schema `SchemaFactory` or `SchemaType` creates. Defaults are Calcite's own.
 | `QuotedCasing` | `string` | from `Lex` | How quoted identifiers are stored: `UNCHANGED`, `TO_UPPER`, `TO_LOWER`. |
 | `UnquotedCasing` | `string` | from `Lex` | How unquoted identifiers are stored: `UNCHANGED`, `TO_UPPER`, `TO_LOWER`. |
 | `Conformance` | `string` | `DEFAULT` | SQL conformance level: `DEFAULT`, `STRICT_2003`, `PRAGMATIC_2003`, … |
-| `Fun` | `string` | `standard` | Function libraries, comma-separated: `standard`, `oracle`, `mysql`, `spatial`, … |
+| `Fun` | `string` | `standard` | Function libraries, comma-separated: `standard`, `oracle`, `mysql`, `spatial`, …. `spatial` needs the Java system property `calcite.model.classes.allowed` to include `org.apache.calcite.`; see below. |
 | `DefaultNullCollation` | `string` | `HIGH` | How nulls sort when a query does not say: `HIGH`, `LOW`, `FIRST`, `LAST`. |
 | `TimeZone` | `string` | process default | Session time zone, for example `UTC` or `gmt-3`. |
 | `TypeCoercion` | `bool` | `true` | Whether implicit type coercion is applied during validation. |
@@ -395,7 +418,7 @@ await using var conn = new CalciteConnection("Model=path/to/model.json;Lex=MYSQL
 
 | Property | Type | Purpose |
 |----------|------|---------|
-| `RootSchema` | `org.apache.calcite.schema.Schema` | The root schema the connection plans against, shared by the data source's connections. To add to it, use `CalciteDataSourceBuilder.ConfigureRootSchema` or DDL. |
+| `RootSchema` | `org.apache.calcite.schema.Schema` | The root schema the connection plans against. To add to it, use `CalciteDataSourceBuilder.ConfigureRootSchema` or DDL. |
 | `TypeFactory` | `org.apache.calcite.adapter.java.JavaTypeFactory` | Builds Calcite `RelDataType` instances, for example for `CalciteParameter.RelDataType`. |
 | `Config` | `org.apache.calcite.config.CalciteConnectionConfig` | The effective Calcite configuration. |
 

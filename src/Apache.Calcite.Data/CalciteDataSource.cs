@@ -14,16 +14,23 @@ namespace Apache.Calcite.Data
 {
 
     /// <summary>
-    /// Represents a source of <see cref="CalciteConnection"/> objects that share one Apache Calcite root
-    /// schema.
+    /// Represents a source of <see cref="CalciteConnection"/> objects built from one Apache Calcite model.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// The data source holds the root schema: the schemas the model defines, any schemas and steps added
-    /// through <see cref="CalciteDataSourceBuilder"/>, and every table, view or schema DDL creates. The root is
-    /// built once, when the first connection opens, and every connection the data source produces plans
-    /// against it. A table created by DDL on one connection is therefore visible on the others. Each
-    /// connection keeps its own configuration and type factory.
+    /// The data source holds the root schema: the schemas the model defines and any schemas and steps added
+    /// through <see cref="CalciteDataSourceBuilder"/>. The root is built once, when the first connection
+    /// opens, and the schema objects on it are shared by every connection the data source produces. Each
+    /// connection plans against a root of its own over those schemas, so a table, view or schema that DDL
+    /// creates on one connection is not visible on another, and is discarded with the connection. A
+    /// connection's root is kept for the next connection when no DDL ran against it. Each connection also
+    /// keeps its own configuration and type factory.
+    /// </para>
+    /// <para>
+    /// A data source built with <see cref="CalciteDataSourceBuilder.UseSharedRootSchema"/> instead gives
+    /// every connection the one root, so DDL on one connection is visible on the others for as long as the
+    /// data source lives. That root is not safe to use from several connections at once; see
+    /// <see cref="CalciteDataSourceBuilder.UseSharedRootSchema"/>.
     /// </para>
     /// <para>
     /// Create one data source per logical database and share it for the life of the application, for
@@ -40,10 +47,8 @@ namespace Apache.Calcite.Data
     /// first opens and releases it when disposed, and nothing is shared.
     /// </para>
     /// <para>
-    /// Because connections share the root, a schema reachable from a data source may be read from several
-    /// threads at once and must tolerate concurrent reads. Statements plan under a shared lock on the root
-    /// and DDL runs under an exclusive one, so no statement plans against a root that DDL is changing.
-    /// Execution does not hold the lock.
+    /// Because connections share the schema objects, a schema reachable from a data source may be read from
+    /// several threads at once and must tolerate concurrent reads.
     /// </para>
     /// <para>
     /// Every schema on the root that implements <see cref="IDisposable"/> is disposed when the root is
@@ -72,6 +77,7 @@ namespace Apache.Calcite.Data
         readonly TimeSpan _idleLifetime;
         readonly TimeSpan _pruningInterval;
         readonly ImmutableArray<IClrTypeResolver> _typeResolvers;
+        readonly bool _sharedRoot;
         readonly long _created = Environment.TickCount64;
         readonly object _sync = new();
         CalciteDataSourceRoot? _root;
@@ -118,12 +124,19 @@ namespace Apache.Calcite.Data
         /// <c>Pooling</c> key.</param>
         /// <param name="typeMapper">The type-mapping chain every connection starts from, or
         /// <see langword="null"/> for the built-in one. Its current resolvers are captured.</param>
-        /// <exception cref="ArgumentException">The pooling settings are not valid.</exception>
-        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null, ClrTypeMapper? typeMapper = null)
+        /// <param name="sharedRoot">Whether every connection plans against the one root, rather than a root of
+        /// its own over the same schemas.</param>
+        /// <exception cref="ArgumentException">The pooling settings are not valid, or
+        /// <paramref name="sharedRoot"/> is set with <c>Pooling=false</c>.</exception>
+        internal CalciteDataSource(CalciteConnectionStringBuilder options, IReadOnlyList<Action<org.apache.calcite.schema.SchemaPlus>> configure, bool? pooled = null, ClrTypeMapper? typeMapper = null, bool sharedRoot = false)
         {
             _options = options ?? throw new ArgumentNullException(nameof(options));
             _configure = configure ?? throw new ArgumentNullException(nameof(configure));
             _pooling = pooled ?? options.Pooling ?? true;
+            if (sharedRoot && _pooling == false)
+                throw new ArgumentException($"A shared root schema can't be used with {CalciteConnectionStringBuilder.PoolingKey}=false, which builds a root per connection.", nameof(options));
+
+            _sharedRoot = sharedRoot;
 
             var idleLifetime = options.ConnectionIdleLifetime ?? DefaultConnectionIdleLifetime;
             var pruningInterval = options.ConnectionPruningInterval ?? DefaultConnectionPruningInterval;
@@ -160,16 +173,16 @@ namespace Apache.Calcite.Data
         internal TimeSpan PruningInterval => _pruningInterval;
 
         /// <summary>
-        /// Gets the root a connection should plan against, and whether that connection owns it.
+        /// Gets the root a connection should draw on, and whether that connection owns it.
         /// </summary>
         /// <returns>The root, and <see langword="true"/> where it was built for this caller alone and is the
         /// caller's to retire.</returns>
         /// <exception cref="ObjectDisposedException">The data source has been disposed.</exception>
         /// <exception cref="CalciteException">The root could not be built.</exception>
         /// <remarks>
-        /// The shared root is built under a lock by the first caller, and concurrent callers wait for it. A
-        /// failed build leaves nothing behind, so the next caller tries again. With <c>Pooling=false</c> every
-        /// call builds a root, which the caller owns and retires.
+        /// The data source's root is built under a lock by the first caller, and concurrent callers wait for
+        /// it. A failed build leaves nothing behind, so the next caller tries again. With <c>Pooling=false</c>
+        /// every call builds a root, which the caller owns and retires.
         /// </remarks>
         internal (CalciteDataSourceRoot Root, bool Owned) Acquire()
         {
@@ -195,12 +208,12 @@ namespace Apache.Calcite.Data
 
                 if (_pooling == false)
                 {
-                    root = CalciteDataSourceRoot.Build(_options, _configure);
+                    root = CalciteDataSourceRoot.Build(_options, _configure, sharing: CalciteRootSharing.Owned);
                     owned = true;
                     return true;
                 }
 
-                _root ??= CalciteDataSourceRoot.Build(_options, _configure);
+                _root ??= CalciteDataSourceRoot.Build(_options, _configure, sharing: _sharedRoot ? CalciteRootSharing.Shared : CalciteRootSharing.Isolated, idleLifetime: _idleLifetime);
                 root = _root;
                 owned = false;
                 return true;
@@ -242,9 +255,10 @@ namespace Apache.Calcite.Data
         /// again.
         /// </summary>
         /// <remarks>
-        /// Use this to pick up a changed model file, or to discard tables created by DDL. Connections already
-        /// open keep the old root, which is released once the last of them is disposed. Has no effect on a
-        /// data source with <c>Pooling=false</c>, whose connections each own their root.
+        /// Use this to pick up a changed model file, or, on a data source built with
+        /// <see cref="CalciteDataSourceBuilder.UseSharedRootSchema"/>, to discard tables created by DDL.
+        /// Connections already open keep the old root, which is released once the last of them is disposed.
+        /// Has no effect on a data source with <c>Pooling=false</c>, whose connections each own their root.
         /// </remarks>
         public void Clear()
         {

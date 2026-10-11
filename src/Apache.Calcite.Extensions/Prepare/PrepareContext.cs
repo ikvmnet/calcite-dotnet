@@ -67,8 +67,15 @@ namespace Apache.Calcite.Extensions.Prepare
             return _rootSchema;
         }
 
+        /// <summary>
+        /// Gets whether <see cref="getMutableRootSchema"/> has been called, which Calcite does only to alter the
+        /// root by DDL.
+        /// </summary>
+        public bool MutableRootSchemaRequested { get; private set; }
+
         public CalciteSchema getMutableRootSchema()
         {
+            MutableRootSchemaRequested = true;
             return _mutableRootSchema;
         }
 

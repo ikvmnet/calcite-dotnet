@@ -199,12 +199,9 @@ namespace Apache.Calcite.Data
         /// format. A <c>defaultSchema</c> the model names takes precedence over <see cref="Schema"/>.
         /// </para>
         /// <para>
-        /// Calcite loads a class a model names, such as a schema <c>factory</c> or a function <c>className</c>,
-        /// only where the Java system property <c>calcite.model.classes.allowed</c> lists it or its package, and
-        /// the list is empty by default. The property is read once, when Calcite first reads its system
-        /// properties, so set it at application startup with <c>java.lang.System.setProperty</c> before the
-        /// first connection opens. A .NET class must be listed under both its .NET name and its IKVM name, which
-        /// is the .NET name prefixed with <c>cli.</c>.
+        /// A class a model names, such as a schema <c>factory</c> or a function <c>className</c>, is loaded by
+        /// name without a filter: the Java system property <c>calcite.model.classes.allowed</c>, which Calcite's
+        /// own driver requires to list it, does not apply.
         /// </para>
         /// </remarks>
         public string? Model

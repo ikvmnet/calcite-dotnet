@@ -5,7 +5,12 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
+using org.apache.calcite;
+using org.apache.calcite.jdbc;
+using org.apache.calcite.materialize;
+using org.apache.calcite.rel.type;
 using org.apache.calcite.runtime;
+using org.apache.calcite.sql.type;
 
 using org.apache.calcite.schema;
 using org.apache.calcite.schema.impl;
@@ -65,8 +70,9 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// What is shared between two connections: the root schema of one data source, keyed by the connection
-    /// string for the bare path and held by the caller for the built one.
+    /// What is shared between two connections: the schemas of one data source, keyed by the connection string
+    /// for the bare path and held by the caller for the built one, and the root itself only where the built
+    /// data source asks for it.
     /// </summary>
     public class CalciteDataSourceSharingTests
     {
@@ -270,35 +276,251 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(typeof(Schema), typeof(CalciteConnection).GetProperty(nameof(CalciteConnection.RootSchema))!.PropertyType);
         }
 
+        /// <summary>
+        /// By default each connection plans against a root of its own, so a table DDL creates stays with the
+        /// connection that created it, while it is open and after.
+        /// </summary>
         [Fact]
-        public void DDL_on_one_connection_should_be_visible_on_another()
+        public void DDL_on_one_connection_should_not_be_visible_on_another()
         {
-            var cs = ConnectionString(out _, Ddl);
+            var cs = ConnectionString(out var token, Ddl);
 
-            using var a = new CalciteConnection(cs);
+            using (var a = new CalciteConnection(cs))
+            {
+                a.Open();
+                NonQuery(a, "CREATE TABLE \"own_t\" (\"id\" INTEGER NOT NULL)");
+                NonQuery(a, "INSERT INTO \"own_t\" VALUES (1), (2)");
+                Assert.Equal(2, Convert.ToInt32(Scalar(a, "SELECT COUNT(*) FROM \"own_t\"")));
+
+                using var b = new CalciteConnection(cs);
+                b.Open();
+                Assert.Throws<CalciteException>(() => Scalar(b, "SELECT COUNT(*) FROM \"own_t\""));
+            }
+
+            using var c = new CalciteConnection(cs);
+            c.Open();
+            Assert.Throws<CalciteException>(() => Scalar(c, "SELECT COUNT(*) FROM \"own_t\""));
+            Assert.Equal(1, CountingSchemaFactory.Builds[token]);
+        }
+
+        /// <summary>
+        /// A recursive query registers its working table at its connection's root, and removes it when
+        /// closed; on roots of their own, two connections running the same one at once do not meet.
+        /// </summary>
+        [Fact]
+        public async Task Recursive_queries_on_two_connections_should_not_share_a_working_table()
+        {
+            var cs = ConnectionString(out _);
+            const string sql = "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 200) SELECT SUM(n) FROM t";
+
+            var tasks = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    using var c = new CalciteConnection(cs);
+                    c.Open();
+                    Assert.Equal(20100L, Convert.ToInt64(Scalar(c, sql)));
+                }
+            }));
+
+            await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
+        /// A model whose schema holds a view over a table the model does not define.
+        /// </summary>
+        const string ViewOverDdlTableModel = "Model=inline:{\"version\":\"1.0\",\"defaultSchema\":\"S\",\"schemas\":["
+            + "{\"name\":\"S\",\"type\":\"map\",\"tables\":["
+            + "{\"name\":\"V\",\"type\":\"view\",\"sql\":\"select * from \\\"S\\\".\\\"T2\\\"\"}]}]}";
+
+        /// <summary>
+        /// Calcite applies the model to each connection's own root, so a model view is analysed against the
+        /// root the connection plans with and sees a table that connection created after the model was
+        /// loaded. Calcite's own driver answers 7 here.
+        /// </summary>
+        [Fact]
+        public void A_model_view_should_see_a_table_its_connection_created()
+        {
+            using var c = new CalciteConnection(ViewOverDdlTableModel + Ddl);
+            c.Open();
+            NonQuery(c, "CREATE TABLE \"S\".\"T2\" (\"n\" INTEGER NOT NULL)");
+            NonQuery(c, "INSERT INTO \"S\".\"T2\" VALUES 7");
+
+            Assert.Equal(7, Convert.ToInt32(Scalar(c, "SELECT * FROM \"S\".\"V\"")));
+        }
+
+        /// <summary>
+        /// A model view on one connection does not see a table another connection created.
+        /// </summary>
+        [Fact]
+        public void A_model_view_should_not_see_a_table_another_connection_created()
+        {
+            using var a = new CalciteConnection(ViewOverDdlTableModel + Ddl);
             a.Open();
+            NonQuery(a, "CREATE TABLE \"S\".\"T2\" (\"n\" INTEGER NOT NULL)");
+
+            using var b = new CalciteConnection(ViewOverDdlTableModel + Ddl);
+            b.Open();
+
+            Assert.Throws<CalciteException>(() => Scalar(b, "SELECT * FROM \"S\".\"V\""));
+        }
+
+        /// <summary>
+        /// A data source with a lattice over two tables, as a builder step adds it.
+        /// </summary>
+        static CalciteDataSource LatticeDataSource(bool shared)
+        {
+            var builder = new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString)
+                .AddSchema("L", new LatticeTestSchema())
+                .ConfigureRootSchema(root =>
+                {
+                    var l = (SchemaPlus)root.subSchemas().get("L")!;
+                    l.add("STAR", Lattice.create(CalciteSchema.from(l),
+                        "select 1 from \"L\".\"EMP\" as e join \"L\".\"DEPT\" as d on e.\"DEPTNO\" = d.\"DEPTNO\"", false));
+                });
+
+            return (shared ? builder.UseSharedRootSchema() : builder).Build();
+        }
+
+        /// <summary>
+        /// A connection's root carries the lattice and its one star table, and a query the lattice covers
+        /// plans and answers as it does against the root the lattice was defined on.
+        /// </summary>
+        [Fact]
+        public void A_lattice_should_plan_and_answer_on_a_connection_root_as_on_the_root_it_was_defined_on()
+        {
+            const string sql = "SELECT d.\"NAME\", SUM(e.\"SAL\") FROM \"L\".\"EMP\" AS e JOIN \"L\".\"DEPT\" AS d ON e.\"DEPTNO\" = d.\"DEPTNO\" GROUP BY d.\"NAME\" ORDER BY 1";
+
+            using var isolated = LatticeDataSource(shared: false);
+            using var shared = LatticeDataSource(shared: true);
+            using var a = isolated.OpenConnection();
+            using var b = shared.OpenConnection();
+
+            var star = (SchemaPlus)a.RootSchema.subSchemas().get("L")!;
+            Assert.NotNull(star.tables().get("STAR"));
+
+            Assert.Equal(Rows(b, sql), Rows(a, sql));
+            Assert.Equal([("accounts", 300), ("sales", 300)], Rows(a, sql));
+            Assert.Equal(Scalar(b, "EXPLAIN PLAN FOR " + sql), Scalar(a, "EXPLAIN PLAN FOR " + sql));
+        }
+
+        static List<(string, int)> Rows(CalciteConnection c, string sql)
+        {
+            using var cmd = c.CreateCommand();
+            cmd.CommandText = sql;
+            using var r = cmd.ExecuteReader();
+            var rows = new List<(string, int)>();
+            while (r.Read())
+                rows.Add((r.GetString(0), Convert.ToInt32(r.GetValue(1))));
+
+            return rows;
+        }
+
+        /// <summary>
+        /// Two tables a lattice joins: <c>EMP</c>, with a department and a salary, and <c>DEPT</c>.
+        /// </summary>
+        sealed class LatticeTestSchema : AbstractSchema
+        {
+
+            readonly java.util.Map _tables = new java.util.HashMap();
+
+            public LatticeTestSchema()
+            {
+                _tables.put("EMP", new RowsTable(
+                    [
+                        [java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(100)],
+                        [java.lang.Integer.valueOf(1), java.lang.Integer.valueOf(200)],
+                        [java.lang.Integer.valueOf(2), java.lang.Integer.valueOf(300)],
+                    ],
+                    f => f.builder()
+                        .add("DEPTNO", f.createSqlType(SqlTypeName.INTEGER))
+                        .add("SAL", f.createSqlType(SqlTypeName.INTEGER))
+                        .build()));
+                _tables.put("DEPT", new RowsTable(
+                    [
+                        [java.lang.Integer.valueOf(1), "sales"],
+                        [java.lang.Integer.valueOf(2), "accounts"],
+                    ],
+                    f => f.builder()
+                        .add("DEPTNO", f.createSqlType(SqlTypeName.INTEGER))
+                        .add("NAME", f.createSqlType(SqlTypeName.VARCHAR))
+                        .build()));
+            }
+
+            /// <inheritdoc />
+            protected override java.util.Map getTableMap() => _tables;
+
+            /// <summary>
+            /// A table over a fixed set of rows, which hold Java-boxed values.
+            /// </summary>
+            sealed class RowsTable(object[][] rows, Func<RelDataTypeFactory, RelDataType> rowType) : AbstractTable, ScannableTable
+            {
+
+                /// <inheritdoc />
+                public override RelDataType getRowType(RelDataTypeFactory typeFactory) => rowType(typeFactory);
+
+                /// <inheritdoc />
+                public org.apache.calcite.linq4j.Enumerable scan(DataContext root)
+                {
+                    var list = new java.util.ArrayList();
+                    foreach (var row in rows)
+                        list.add(row);
+
+                    return org.apache.calcite.linq4j.Linq4j.asEnumerable(list);
+                }
+
+            }
+
+        }
+
+        [Fact]
+        public void DDL_on_a_shared_root_should_be_visible_on_another_connection()
+        {
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
+
+            using var a = dataSource.OpenConnection();
             NonQuery(a, "CREATE TABLE \"shared_t\" (\"id\" INTEGER NOT NULL)");
             NonQuery(a, "INSERT INTO \"shared_t\" VALUES (1), (2)");
 
-            using var b = new CalciteConnection(cs);
-            b.Open();
+            using var b = dataSource.OpenConnection();
 
             Assert.Equal(2, Convert.ToInt32(Scalar(b, "SELECT COUNT(*) FROM \"shared_t\"")));
         }
 
         /// <summary>
-        /// Connections used at once over one root: each plans with a type factory of its own, so the
+        /// A shared root lasts as long as its data source, whether or not a connection is open on it.
+        /// </summary>
+        [Fact]
+        public void DDL_on_a_shared_root_should_outlive_the_connection_that_ran_it()
+        {
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
+
+            using (var a = dataSource.OpenConnection())
+                NonQuery(a, "CREATE TABLE \"kept_t\" (\"id\" INTEGER NOT NULL)");
+
+            using var b = dataSource.OpenConnection();
+
+            Assert.Equal(0, Convert.ToInt32(Scalar(b, "SELECT COUNT(*) FROM \"kept_t\"")));
+        }
+
+        [Fact]
+        public void A_shared_root_should_be_refused_with_pooling_false()
+        {
+            Assert.Throws<ArgumentException>(() => new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString + ";Pooling=false").UseSharedRootSchema().Build());
+        }
+
+        /// <summary>
+        /// Connections used at once over one shared root: each plans with a type factory of its own, so the
         /// grouped aggregates and windows here, which register synthetic types in the factory, do not race,
         /// and the root is only read.
         /// </summary>
         [Fact]
         public async Task Concurrent_connections_on_one_root_should_plan_and_read()
         {
-            var cs = ConnectionString(out _, Ddl);
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
 
-            using (var setup = new CalciteConnection(cs))
+            using (var setup = dataSource.OpenConnection())
             {
-                setup.Open();
                 NonQuery(setup, "CREATE TABLE \"conc_t\" (\"g\" INTEGER NOT NULL, \"v\" INTEGER NOT NULL)");
                 NonQuery(setup, "INSERT INTO \"conc_t\" VALUES (1, 10), (1, 20), (2, 30), (2, 40), (3, 50)");
             }
@@ -307,8 +529,7 @@ namespace Apache.Calcite.Data.Tests
             {
                 for (int i = 0; i < 10; i++)
                 {
-                    await using var c = new CalciteConnection(cs);
-                    await c.OpenAsync();
+                    await using var c = await dataSource.OpenConnectionAsync();
 
                     await using (var cmd = c.CreateCommand())
                     {
@@ -333,6 +554,21 @@ namespace Apache.Calcite.Data.Tests
             }));
 
             await Task.WhenAll(tasks);
+        }
+
+        /// <summary>
+        /// An inline model that does not start with <c>{</c> or a comment is read as YAML, as Calcite's
+        /// <c>ModelHandler</c> reads it.
+        /// </summary>
+        [Fact]
+        public void An_inline_YAML_model_should_be_read()
+        {
+            const string yaml = "version: '1.0'\ndefaultSchema: Y\nschemas:\n- name: Y\n  type: map\n  tables:\n  - name: V\n    type: view\n    sql: VALUES (3)\n";
+
+            using var c = new CalciteConnection("Model=\"inline:" + yaml + "\";Pooling=false");
+            c.Open();
+
+            Assert.Equal(3, Convert.ToInt32(Scalar(c, "SELECT * FROM \"Y\".\"V\"")));
         }
 
         /// <summary>
@@ -453,20 +689,19 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Planning holds the root's read lock and DDL wants its write lock, so a DDL statement on one
+        /// Planning holds a shared root's read lock and DDL wants its write lock, so a DDL statement on one
         /// connection waits for a statement planning on another. The hook fires inside planning, which is
         /// how the test holds a plan open.
         /// </summary>
         [Fact]
-        public async Task DDL_should_wait_for_a_statement_planning_on_another_connection()
+        public async Task DDL_on_a_shared_root_should_wait_for_a_statement_planning_on_another_connection()
         {
-            var cs = ConnectionString(out _, Ddl);
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
 
             using var inPlan = new ManualResetEventSlim();
             using var release = new ManualResetEventSlim();
 
-            using var a = new CalciteConnection(cs);
-            a.Open();
+            using var a = dataSource.OpenConnection();
             a.RegisterHook(Hook.PLAN_BEFORE_IMPLEMENTATION, _ =>
             {
                 inPlan.Set();
@@ -476,8 +711,7 @@ namespace Apache.Calcite.Data.Tests
             var planning = Task.Run(() => Scalar(a, "SELECT COUNT(*) FROM (VALUES (1), (2)) AS t(x)"));
             Assert.True(inPlan.Wait(TimeSpan.FromSeconds(30)));
 
-            using var b = new CalciteConnection(cs);
-            b.Open();
+            using var b = dataSource.OpenConnection();
             var ddl = Task.Run(() => NonQuery(b, "CREATE TABLE \"waits_t\" (\"id\" INTEGER NOT NULL)"));
 
             Assert.False(ddl.Wait(TimeSpan.FromMilliseconds(750)));

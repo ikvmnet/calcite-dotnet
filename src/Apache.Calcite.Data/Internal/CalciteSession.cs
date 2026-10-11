@@ -48,20 +48,24 @@ namespace Apache.Calcite.Data.Internal
 
         readonly CalciteDataSourceRoot _root;
         readonly bool _ownsRoot;
+        readonly CalciteDataSourceRoot.Lease _lease;
         readonly CalciteSchema _rootSchema;
         readonly SchemaPlus _rootSchemaPlus;
+        readonly ReaderWriterLockSlim? _rootLock;
         readonly JavaTypeFactory _typeFactory;
         readonly CalciteConnectionConfig _config;
         readonly IReadOnlyList<string> _defaultSchemaPath;
         readonly Func<ClrPrepareImpl> _prepareFactory;
         readonly ClrTypeRegistry _registry;
+        bool _altered;
         bool _disposed;
 
         /// <summary>
         /// Initializes a new instance.
         /// </summary>
         /// <param name="options">The connection string options.</param>
-        /// <param name="root">The root schema to plan against, built by the data source.</param>
+        /// <param name="root">The root schema built by the data source. The session plans against the root
+        /// <see cref="CalciteDataSourceRoot.Rent"/> answers, and returns it on <see cref="Dispose"/>.</param>
         /// <param name="ownsRoot">Whether this session is the only user of <paramref name="root"/> and so
         /// disposes it. <see langword="true"/> under <c>Pooling=false</c>, where the root was built for this
         /// connection alone.</param>
@@ -122,12 +126,7 @@ namespace Apache.Calcite.Data.Internal
                     _typeFactory = new JavaTypeFactoryImpl(typeSystem);
                 }
 
-                _root = root;
-                _ownsRoot = ownsRoot;
-                _root.Acquire();
-                _rootSchema = root.Schema;
                 _config = cfg;
-                _rootSchemaPlus = _rootSchema.plus();
 
                 // the chain is bound to this session's type factory, whose answers decide which Java class
                 // holds each Calcite type, so it is read once here and not again
@@ -135,6 +134,24 @@ namespace Apache.Calcite.Data.Internal
 
                 var defaultSchema = root.DefaultSchemaName ?? options.Schema;
                 _defaultSchemaPath = string.IsNullOrEmpty(defaultSchema) ? [] : [defaultSchema];
+
+                // last, so that nothing after the root is counted can fail and leave it counted
+                _root = root;
+                _ownsRoot = ownsRoot;
+                _rootLock = root.Sharing == CalciteRootSharing.Shared ? root.Lock : null;
+                _root.Acquire();
+                try
+                {
+                    _lease = root.Rent();
+                }
+                catch
+                {
+                    _root.Release();
+                    throw;
+                }
+
+                _rootSchema = _lease.Schema;
+                _rootSchemaPlus = _rootSchema.plus();
             }
             catch (Exception e) when (e is not CalciteException)
             {
@@ -168,7 +185,8 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// Gets the root schema, shared with every other session on the same data source root.
+        /// Gets the root schema this session plans against: one of its own, or under a shared root, the
+        /// root every session on the data source uses.
         /// </summary>
         public SchemaPlus RootSchema => _rootSchemaPlus;
 
@@ -199,39 +217,37 @@ namespace Apache.Calcite.Data.Internal
         /// </remarks>
         IClrPrepare.Signature Plan(CalciteExecuteRequest request)
         {
-            // the root's read lock, from the snapshot the context takes to the signature: the root may be
+            // a shared root's read lock, from the snapshot the context takes to the signature: the root is
             // shared with connections altering it by DDL. DDL releases this read lock and takes the write
             // side inside the prepare, then takes the read lock again before returning
-            _root.Lock.EnterReadLock();
+            using var _ = ReadRoot();
+
+            var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath, _rootLock);
+
+            CalcitePrepare.Dummy.push(ctx);
             try
             {
-                var ctx = new PrepareContext(_typeFactory, _rootSchema, _config, _defaultSchemaPath, _root.Lock);
-
-                CalcitePrepare.Dummy.push(ctx);
-                try
-                {
-                    return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1);
-                }
-                finally
-                {
-                    CalcitePrepare.Dummy.pop(ctx);
-                }
+                return _prepareFactory().PrepareSql(ctx, IClrPrepare.Query.Of(request.Sql), typeof(object[]), -1);
             }
             finally
             {
-                _root.Lock.ExitReadLock();
+                CalcitePrepare.Dummy.pop(ctx);
+
+                // a DDL statement that failed part way may still have altered the root
+                if (ctx.MutableRootSchemaRequested)
+                    _altered = true;
             }
         }
 
         /// <summary>
-        /// Takes the root's read lock and returns a handle that releases it on dispose, for code that reads the
-        /// root outside planning.
+        /// Takes a shared root's read lock and returns a handle that releases it on dispose, for code that
+        /// reads the root outside planning. A root no other session uses is not locked.
         /// </summary>
         /// <returns>The handle.</returns>
         public ReadLockHold ReadRoot()
         {
-            _root.Lock.EnterReadLock();
-            return new ReadLockHold(_root.Lock);
+            _rootLock?.EnterReadLock();
+            return new ReadLockHold(_rootLock);
         }
 
         /// <summary>
@@ -240,13 +256,13 @@ namespace Apache.Calcite.Data.Internal
         public readonly struct ReadLockHold : IDisposable
         {
 
-            readonly System.Threading.ReaderWriterLockSlim _lock;
+            readonly System.Threading.ReaderWriterLockSlim? _lock;
 
             /// <summary>
             /// Initializes a new instance.
             /// </summary>
-            /// <param name="lock">The lock held.</param>
-            public ReadLockHold(System.Threading.ReaderWriterLockSlim @lock)
+            /// <param name="lock">The lock held, or <see langword="null"/> where none was taken.</param>
+            public ReadLockHold(System.Threading.ReaderWriterLockSlim? @lock)
             {
                 _lock = @lock;
             }
@@ -254,7 +270,7 @@ namespace Apache.Calcite.Data.Internal
             /// <inheritdoc />
             public void Dispose()
             {
-                _lock.ExitReadLock();
+                _lock?.ExitReadLock();
             }
 
         }
@@ -545,8 +561,8 @@ namespace Apache.Calcite.Data.Internal
 
         /// <summary>
         /// Marks the session as disposed, so that further calls to execute methods throw
-        /// <see cref="ObjectDisposedException"/>, and releases this session's hold on the root, retiring it
-        /// first where the root was built for this session alone.
+        /// <see cref="ObjectDisposedException"/>, returns the root it rented, and releases this session's hold
+        /// on the data source's root, retiring it first where the root was built for this session alone.
         /// </summary>
         public void Dispose()
         {
@@ -554,6 +570,7 @@ namespace Apache.Calcite.Data.Internal
                 return;
 
             _disposed = true;
+            _root.Return(_lease, _altered);
             if (_ownsRoot)
                 _root.Retire();
 

@@ -68,12 +68,9 @@ A [Calcite JSON model](https://calcite.apache.org/docs/model.html) can create th
 }
 ```
 
-Calcite loads a class a model names only if the `calcite.model.classes.allowed` system property allows it, and it reads the property once, the first time any Calcite class is used. Set it, and register the ADO.NET provider the operands name, at startup before anything touches Calcite:
+Register the ADO.NET provider the operands name at startup:
 
 ```csharp
-// A comma-separated list; an entry ending in "." allows every class in that namespace.
-java.lang.System.setProperty("calcite.model.classes.allowed", "Apache.Calcite.Adapter.AdoNet.");
-
 DbProviderFactories.RegisterFactory("Microsoft.Data.Sqlite", SqliteFactory.Instance);
 
 await using var conn = new CalciteConnection($"Model=inline:{model};Lex=JAVA;CaseSensitive=false");

@@ -290,8 +290,10 @@ that produces it, and `AdoProject` and `AdoFilter` already push everything a cal
 Every statement pays parse, validate, Volcano, translation and `LambdaExpression.Compile` on every
 execution; parameters are bound at execution through the data context, so the same text with `?`
 placeholders is the same plan, and the EF Core provider emits exactly that shape repeatedly. The root a
-`CalciteDataSource` holds is where a cache of those plans belongs: a plan references the root's tables, the
-root's lifetime bounds the plans' validity, and the root's write lock is the one place the root changes.
+`CalciteDataSource` holds is where a cache of those plans belongs: a plan references the root's tables, and the
+root's lifetime bounds the plans' validity. By default each connection plans against a root of its own
+(`CalciteRootSharing.Isolated`), assembled from the same model and steps over the same schema objects, so a
+plan made on one root no DDL has touched is valid on every other.
 
 ### What was measured, 2026-09-07
 
@@ -343,8 +345,10 @@ which is what a cache on the root means, the factory being per connection.
   function library, type system, null collation all change what a statement means; the default schema
   path; the convention. That is `CalciteConnectionStringBuilder.DataSourceKey` plus the two things it
   leaves out, so the root owns the cache and the session contributes its part of the key.
-- **Invalidation, three kinds.** Schema change: DDL runs under the root's write lock, the one place the
-  root changes, so a version bumped there drops the cache. Learnt facts: an adapter's statistics expire —
+- **Invalidation, three kinds.** Schema change: under an isolated root, a session whose root DDL has
+  altered (`CalciteSession._altered`) neither reads nor writes the cache, since its plans may name tables only
+  it has; under a shared root, DDL runs under the root's write lock, so a version bumped there drops the
+  cache. Learnt facts: an adapter's statistics expire —
   calcite-cosmos on a five-minute lifetime — and a plan chosen while a table was small stays chosen after
   it grows; Calcite has no answer, SQL Server recompiles on a statistics change, and a time-to-live on
   entries is the cheap one. Size: bounded by count with LRU eviction, a keyword in the string with a
@@ -368,6 +372,17 @@ which is what a cache on the root means, the factory being per connection.
   and the cache's own test should be that list bound twice, since a state a bind leaves behind would show
   as a differential failure on the second bind and nowhere else.
 - Nothing above measured a cache hit's cost — key canonicalisation and lookup — against the 15 ms floor.
+
+## Materializations and lattice tiles are never offered to the planner
+
+`ClrPrepareImpl.PreparingStmt.GetMaterializations` returns an empty list. Calcite's
+`CalcitePrepareImpl.CalcitePreparingStmt.getMaterializations` asks `MaterializationService` for the root's
+materializations when `materializationsEnabled` is set and populates each, so a model's `materializations`
+are registered (by `CalciteModelAssembler`, once per root, as Calcite registers them once per connection) and
+never used. Calcite's `CalciteConnectionImpl.init` also defines every lattice's tiles with
+`MaterializationService.defineTile` when a connection opens; nothing here does. Lattices themselves are
+offered (`GetLattices`). Port both together, with a test that a query a materialization answers is rewritten
+to it.
 
 ## Test suites not yet written
 
