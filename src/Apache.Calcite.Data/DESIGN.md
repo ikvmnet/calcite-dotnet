@@ -136,9 +136,15 @@ makes is made once per data source and added to every root: the schema a `custom
 `JdbcSchema` a `jdbc` schema becomes, and the table a `custom` table's factory returns. Those hold an adapter's
 clients and caches. A factory is given the first root's schema as its parent; an adapter that keeps that parent
 and reads it, rather than building expressions from its path as `JdbcSchema` does, sees the first root.
-Classes a model names pass `ModelClassFilter`, the allowlist `calcite.model.classes.allowed`; Calcite's
-denylist is not applied. User-defined functions go through `ModelHandler.addFunctions`, which applies Calcite's
-own filter.
+A factory that writes into its parent breaks `SchemaFactory`'s contract, which is to create and return a
+schema for the caller to add; what it writes reaches the first root only. Three of Calcite's own adapters do:
+`GeodeSchemaFactory` adds its functions to the parent, `CloneSchema.Factory` adds a sibling `name$source`
+schema, and `CassandraSchema` adds materialized views to its schema in the parent from a global
+`Hook.TRIMMED`, which here writes into the first root while other connections may be using it. They are not
+supported.
+No class a model names is filtered: Calcite's `ClassNameFilter`, which refuses a class unless
+`calcite.model.classes.allowed` names it, is not applied, and `ModelHandler.addFunctions`, which applies it, is
+ported without it.
 
 A data source's roots count the sessions using them. `Retire` marks them unwanted; they are disposed when
 retired and unused. A schema that implements `IDisposable` is disposed when nothing can reach it again, which
@@ -496,7 +502,6 @@ src/
       CalciteRootSharing.cs               How sessions use a root: isolated, shared or owned
       CalciteModel.cs                     Reads a model once (ModelHandler's parse)
       CalciteModelAssembler.cs            Applies a model to a root (ModelHandler's visit methods)
-      ModelClassFilter.cs                 The class allowlist a model's classes pass
       CalciteDataSources.cs               The data sources the provider keeps, one per connection string
       CalciteEngineProperties.cs          Connection string keys to Calcite Properties
       ClrPlugin.cs                        Resolves a plugin named in the connection string

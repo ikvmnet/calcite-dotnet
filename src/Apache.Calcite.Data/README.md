@@ -126,23 +126,25 @@ connection string key.
 
 ### Models that name classes
 
-Calcite loads a class named in a model (a custom schema's `factory`, a function's `className`, a JDBC
-driver) only when the Java system property `calcite.model.classes.allowed` allows it. The value is a
-comma-separated list of class names, or of package prefixes ending in `.`; it is empty by default, which
-allows nothing, not even Calcite's own classes. Calcite reads the property once, the first time it reads its
-system properties, so set it at startup before opening any connection:
+A schema or table factory a model names is called once per data source, and what it returns is shared by every
+connection. A factory is given a parent schema and should only read it: one that adds to its parent adds to the
+first connection's root alone. Calcite's Geode adapter (`GeodeSchemaFactory`, which adds its functions to the
+parent), `CloneSchema` (which adds a `name$source` schema beside itself) and Cassandra adapter (which adds
+materialized views from a process-wide hook) do this, and are not supported.
+
+A class named in a model (a custom schema's `factory`, a function's `className`, a JDBC driver) is loaded
+by name. Calcite's own driver loads one only where the Java system property `calcite.model.classes.allowed`
+lists it; this provider applies no such filter, since the application chooses its model.
+
+Calcite applies that filter to its own spatial functions, though: the `spatial` function library registers
+them through the same check, and the property is empty by default, so `Fun=spatial` fails until it lists
+Calcite's package. Calcite reads the property once, so set it at startup, before anything touches Calcite:
 
 ```csharp
-java.lang.System.setProperty(
-    "calcite.model.classes.allowed",
-    "org.apache.calcite.,MyCompany.Calcite.,cli.MyCompany.Calcite.");
+java.lang.System.setProperty("calcite.model.classes.allowed", "org.apache.calcite.");
 ```
 
-A .NET class must be listed under its .NET name and also under its IKVM name, which is the .NET name prefixed
-with `cli.`. The same applies to the class a `SchemaFactory` or `SchemaType` connection string key implies,
-since the provider describes that schema to Calcite as a model.
-
-The class must also be visible to Calcite's class loader. A class in a Java library you reference with
+The class must be visible to Calcite's class loader. A class in a Java library you reference with
 `MavenReference` is found once its assembly is on IKVM's boot class path:
 
 ```csharp
@@ -378,7 +380,7 @@ the schema `SchemaFactory` or `SchemaType` creates. Defaults are Calcite's own.
 | `QuotedCasing` | `string` | from `Lex` | How quoted identifiers are stored: `UNCHANGED`, `TO_UPPER`, `TO_LOWER`. |
 | `UnquotedCasing` | `string` | from `Lex` | How unquoted identifiers are stored: `UNCHANGED`, `TO_UPPER`, `TO_LOWER`. |
 | `Conformance` | `string` | `DEFAULT` | SQL conformance level: `DEFAULT`, `STRICT_2003`, `PRAGMATIC_2003`, … |
-| `Fun` | `string` | `standard` | Function libraries, comma-separated: `standard`, `oracle`, `mysql`, `spatial`, … |
+| `Fun` | `string` | `standard` | Function libraries, comma-separated: `standard`, `oracle`, `mysql`, `spatial`, …. `spatial` needs the Java system property `calcite.model.classes.allowed` to include `org.apache.calcite.`; see below. |
 | `DefaultNullCollation` | `string` | `HIGH` | How nulls sort when a query does not say: `HIGH`, `LOW`, `FIRST`, `LAST`. |
 | `TimeZone` | `string` | process default | Session time zone, for example `UTC` or `gmt-3`. |
 | `TypeCoercion` | `bool` | `true` | Whether implicit type coercion is applied during validation. |

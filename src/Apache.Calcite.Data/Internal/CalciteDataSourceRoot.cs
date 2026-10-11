@@ -117,7 +117,7 @@ namespace Apache.Calcite.Data.Internal
         CalciteDataSourceRoot(bool dual, CalciteModel? model, IReadOnlyList<Action<SchemaPlus>> configure, CalciteSchema? rootSchema, CalciteRootSharing sharing, TimeSpan idleLifetime)
         {
             _dual = dual;
-            _assembler = model is null ? null : new CalciteModelAssembler(model, ModelClassFilter.Standard);
+            _assembler = model is null ? null : new CalciteModelAssembler(model);
             _configure = configure;
             _defaultSchemaName = model?.DefaultSchemaName;
             _sharing = sharing;

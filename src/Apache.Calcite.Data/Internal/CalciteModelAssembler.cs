@@ -43,12 +43,16 @@ namespace Apache.Calcite.Data.Internal
     /// <c>ModelHandler</c>; here the elements are matched by type in the order its <c>visitChildren</c>
     /// methods visit them.
     /// </para>
+    /// <para>
+    /// <c>ModelHandler</c> passes every class a model names through <c>ClassNameFilter</c>, which refuses a
+    /// class unless <c>calcite.model.classes.allowed</c> names it. No class is filtered here: a model names
+    /// the classes the application asks for, and the application chooses its model.
+    /// </para>
     /// </remarks>
     internal sealed class CalciteModelAssembler
     {
 
         readonly CalciteModel _model;
-        readonly ModelClassFilter _filter;
         readonly object _sync = new();
         readonly Dictionary<object, object> _made = new(ReferenceEqualityComparer.Instance);
 
@@ -56,11 +60,9 @@ namespace Apache.Calcite.Data.Internal
         /// Initializes a new instance.
         /// </summary>
         /// <param name="model">The model to apply.</param>
-        /// <param name="filter">The filter every class the model names passes before it is loaded.</param>
-        public CalciteModelAssembler(CalciteModel model, ModelClassFilter filter)
+        public CalciteModelAssembler(CalciteModel model)
         {
             _model = model ?? throw new ArgumentNullException(nameof(model));
-            _filter = filter ?? throw new ArgumentNullException(nameof(filter));
         }
 
         /// <summary>
@@ -160,7 +162,6 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 Mutable(parentSchema, "sub-schema");
-                _filter.Check(jsonSchema.factory);
                 var schema = (Schema)Made(jsonSchema, () =>
                 {
                     var schemaFactory = (SchemaFactory)AvaticaUtils.instantiatePlugin((java.lang.Class)typeof(SchemaFactory), jsonSchema.factory);
@@ -184,14 +185,12 @@ namespace Apache.Calcite.Data.Internal
         void AddJdbcSchema(SchemaPlus parentSchema, JsonJdbcSchema jsonSchema)
         {
             Mutable(parentSchema, "jdbc schema");
-            _filter.Check(jsonSchema.jdbcDriver);
             var schema = (JdbcSchema)Made(jsonSchema, () =>
             {
                 var dataSource = JdbcSchema.dataSource(jsonSchema.jdbcUrl, jsonSchema.jdbcDriver, jsonSchema.jdbcUser, jsonSchema.jdbcPassword);
                 if (string.IsNullOrEmpty(jsonSchema.sqlDialectFactory))
                     return JdbcSchema.create(parentSchema, jsonSchema.name, dataSource, jsonSchema.jdbcCatalog, jsonSchema.jdbcSchema);
 
-                _filter.Check(jsonSchema.sqlDialectFactory);
                 var factory = (SqlDialectFactory)AvaticaUtils.instantiatePlugin((java.lang.Class)typeof(SqlDialectFactory), jsonSchema.sqlDialectFactory);
                 return JdbcSchema.create(parentSchema, jsonSchema.name, dataSource, factory, jsonSchema.jdbcCatalog, jsonSchema.jdbcSchema);
             });
@@ -252,7 +251,6 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 Mutable(schema, "table");
-                _filter.Check(jsonTable.factory);
                 var table = (org.apache.calcite.schema.Table)Made(jsonTable, () =>
                 {
                     var tableFactory = (TableFactory)AvaticaUtils.instantiatePlugin((java.lang.Class)typeof(TableFactory), jsonTable.factory);
@@ -288,8 +286,7 @@ namespace Apache.Calcite.Data.Internal
         }
 
         /// <summary>
-        /// <c>visit(JsonFunction)</c>. <c>ModelHandler.addFunctions</c> is public and applies Calcite's
-        /// standard class filter, as <c>ModelHandler</c> does by default.
+        /// <c>visit(JsonFunction)</c>.
         /// </summary>
         /// <param name="schema">The schema the functions belong to.</param>
         /// <param name="jsonFunction">The function's element.</param>
@@ -299,12 +296,102 @@ namespace Apache.Calcite.Data.Internal
             try
             {
                 Mutable(schema, "function");
-                ModelHandler.addFunctions(schema, jsonFunction.name, ImmutableList.of(), jsonFunction.className, jsonFunction.methodName, false);
+                AddFunctions(schema, jsonFunction.name, jsonFunction.className, jsonFunction.methodName, false);
             }
             catch (Exception e)
             {
                 throw new java.lang.RuntimeException("Error instantiating " + jsonFunction, Throwable(e));
             }
+        }
+
+        /// <summary>
+        /// <c>ModelHandler.addFunctions</c>, without its class filter: adds to a schema the table function,
+        /// table macro, scalar functions or aggregate function a class defines.
+        /// </summary>
+        /// <param name="schema">The schema to add to.</param>
+        /// <param name="functionName">The function's name, or <see langword="null"/> to use the method's.</param>
+        /// <param name="className">The class to look in for methods that may be user-defined functions.</param>
+        /// <param name="methodName">The method's name; <see langword="null"/> means the class is the function,
+        /// and <c>*</c> adds every method.</param>
+        /// <param name="upCase">Whether to upper-case the names, so that they can be called without quotes.</param>
+        /// <exception cref="java.lang.RuntimeException">The class does not exist, or defines no function.</exception>
+        /// <remarks>
+        /// The class is loaded with <c>ModelHandler</c>'s class loader and without initializing it, as Calcite
+        /// loads it, and is tried as a table function, a table macro, scalar functions and an aggregate
+        /// function, in that order.
+        /// </remarks>
+        static void AddFunctions(SchemaPlus schema, string? functionName, string className, string? methodName, bool upCase)
+        {
+            java.lang.Class clazz;
+            try
+            {
+                // Defer class initialization until it is checked to be a valid function (see below)
+                clazz = java.lang.Class.forName(className, false, ((java.lang.Class)typeof(ModelHandler)).getClassLoader());
+            }
+            catch (java.lang.ClassNotFoundException)
+            {
+                throw new java.lang.RuntimeException("UDF class '" + className + "' not found");
+            }
+
+            var methodNameOrDefault = methodName ?? "eval";
+            var actualFunctionName = functionName ?? methodNameOrDefault;
+            if (upCase)
+                actualFunctionName = actualFunctionName.ToUpperInvariant();
+
+            var tableFunction = TableFunctionImpl.create(clazz, methodNameOrDefault);
+            if (tableFunction != null)
+            {
+                schema.add(functionName ?? methodNameOrDefault, tableFunction);
+                return;
+            }
+
+            // Must look for TableMacro before ScalarFunction. Both have an "eval"
+            // method.
+            var macro = TableMacroImpl.create(clazz);
+            if (macro != null)
+            {
+                schema.add(actualFunctionName, macro);
+                return;
+            }
+
+            if (methodName == "*")
+            {
+                for (var it = ScalarFunctionImpl.functions(clazz).entries().iterator(); it.hasNext();)
+                {
+                    var entry = (java.util.Map.Entry)it.next();
+                    var name = (string)entry.getKey();
+                    if (upCase)
+                        name = name.ToUpperInvariant();
+
+                    schema.add(name, (Function)entry.getValue());
+                }
+
+                return;
+            }
+            else
+            {
+                var function = ScalarFunctionImpl.create(clazz, methodNameOrDefault);
+                if (function != null)
+                {
+                    schema.add(actualFunctionName, function);
+                    return;
+                }
+            }
+
+            if (methodName == null)
+            {
+                var aggFunction = AggregateFunctionImpl.create(clazz);
+                if (aggFunction != null)
+                {
+                    schema.add(actualFunctionName, aggFunction);
+                    return;
+                }
+            }
+
+            throw new java.lang.RuntimeException("Not a valid function class: " + clazz
+                + ". Scalar functions and table macros have an 'eval' method; "
+                + "aggregate functions have 'init' and 'add' methods, and optionally "
+                + "'initAdd', 'merge' and 'result' methods.");
         }
 
         /// <summary>
@@ -431,10 +518,7 @@ namespace Apache.Calcite.Data.Internal
                 if (jsonLattice.rowCountEstimate != null)
                     latticeBuilder.rowCountEstimate(jsonLattice.rowCountEstimate.doubleValue());
                 if (jsonLattice.statisticProvider != null)
-                {
-                    _filter.Check(jsonLattice.statisticProvider);
                     latticeBuilder.statisticProvider(jsonLattice.statisticProvider);
-                }
 
                 for (var it = jsonLattice.defaultMeasures.iterator(); it.hasNext();)
                     latticeBuilder.addMeasure(Measure(latticeBuilder, (JsonMeasure)it.next()));
