@@ -95,13 +95,13 @@ forms are Java objects. `CalciteValues`, `CalciteVariants` and the collection ma
 | `CalciteParameter`, `CalciteParameterCollection` | `DbParameter`, `DbParameterCollection` | Positional parameters; `ParameterName` is used only for lookup. |
 | `CalciteTransaction` | `DbTransaction` | The declared transaction type. Never instantiated, because `BeginTransaction` throws. |
 | `CalciteDataSource` | `DbDataSource` | Holds the root schema for the connections it produces. |
-| `CalciteDataSourceBuilder` | — | Builds a data source from a connection string plus schema instances, root-schema steps and type resolvers. |
+| `CalciteDataSourceBuilder` | — | Builds a data source from a connection string plus schema instances, root-schema steps, type resolvers and whether the root is shared. |
 | `CalciteProviderFactory` | `DbProviderFactory` | Factory registration. |
 | `CalciteConnectionStringBuilder` | `DbConnectionStringBuilder` | Typed keys; unrecognized keys are kept and passed to Calcite. |
 | `CalciteException` | `DbException` | Wraps every failure from Calcite. |
 
 `CalciteConnection` exposes Calcite objects as typed properties rather than through an `Unwrap` method:
-`RootSchema` (as Calcite's read interface `Schema`, since the root is shared), `TypeFactory` and `Config`. All
+`RootSchema` (as Calcite's read interface `Schema`), `TypeFactory` and `Config`. All
 three require an open connection.
 
 `CalciteConnection` and `CalciteCommand` each have `RegisterHook` overloads for a Java `Consumer`, an
@@ -126,7 +126,31 @@ A root counts the sessions using it. `Retire` marks it unwanted; it is disposed 
 Disposing a root disposes every schema on it that implements `IDisposable`, sub-schemas first, which gives
 adapters the release point Calcite's schema SPI lacks.
 
-**`CalciteDataSource`** builds its root once, under a lock, when the first connection opens; a failed build
+How sessions use a root is its `CalciteRootSharing`:
+
+- **`Isolated`**, the default. The root is a template no statement runs against. Each session rents a copy
+  of its wrapper tree and returns it on dispose. Calcite gives every connection a root of its own and never
+  guards one against concurrent use: DDL writes into a `CalciteSchema`'s name maps, and execution does too, as
+  a recursive query registers its working table at the root under the query's own name and removes it when
+  closed. A copy gives a session maps of its own while the `Schema` objects, which hold an adapter's clients
+  and caches, stay shared. A copy that DDL altered (`PrepareContext.getMutableRootSchema` was called) or whose
+  root holds a table the template's does not is discarded, and any `IDisposable` schema DDL added to it is
+  disposed; a clean one is kept for the next session until it has been idle for `Connection Idle Lifetime`.
+- **`Shared`**, chosen with `CalciteDataSourceBuilder.UseSharedRootSchema`. Every session uses the root itself,
+  so DDL outlives the connection, and planning and DDL take the root's lock (below). Execution is not guarded.
+- **`Owned`**, under `Pooling=false`. The root was built for one session, which uses it directly.
+
+The copy is made by `CachingCalciteSchema` (`Internal/`), a port of Calcite's package-private class of that
+name, which `CalciteSchema.createRootSchema` builds by default. The explicit entries are `protected` maps on
+`CalciteSchema` with no public accessor that leaves out the implicit ones, so only a subclass can read them; a
+tree is made entirely of the port when its root is, because every other node is made by its `add`,
+`createSubSchema` or `snapshot`. `CopyRoot` adds the template's explicit sub-schemas (each copied in turn),
+lattices, tables, types and functions to a new root over the same `Schema` objects, through the public `add`
+overloads, and leaves implicit sub-schemas for the copy to derive again. A view macro holds the root it was
+defined against, so a view on the template is analysed against the template, which nothing writes.
+
+**`CalciteDataSource`** builds its root once, under a lock, when the first connection opens, `Shared` where
+the builder asked for it and otherwise `Isolated`; a failed build
 leaves nothing behind, so the next connection retries. Under `Pooling=false` it builds a root per connection,
 which the connection's session owns and retires. `Clear` retires the current root so the next connection
 builds a new one; `Dispose` retires it and refuses further connections. In both cases connections already open
@@ -161,19 +185,24 @@ kept across `Close`/`Open`. Its constructor is the rest of `CalciteConnectionImp
 - It resolves the default schema path to zero or one name; the model's `defaultSchema` takes precedence over
   the `Schema` key.
 
-`Dispose` marks the session disposed, releases its count on the root, and retires the root first where the
-session owns it. Anything thrown during construction that is not a `CalciteException` is wrapped in one.
+The session rents its root from the data source's root last, after everything else that can fail.
 
-**Concurrency.** Sharing a root means an adapter's schema can be read from several threads at once, and
-Calcite does not serialize access to a root: a `CalciteSchema` keeps its tables and sub-schemas in `NameMap`s
-over `TreeMap`s, and DDL writes into them. The root therefore carries a `ReaderWriterLockSlim`. `Plan` holds
+`Dispose` marks the session disposed, returns the root it rented, releases its count on the data source's root,
+and retires that root first where the session owns it. Anything thrown during construction that is not a `CalciteException` is wrapped in one.
+
+**Concurrency.** Sharing schema objects means an adapter's schema can be read from several threads at once.
+A shared root is read and written by several sessions too, and Calcite does not serialize access to a root: a
+`CalciteSchema` keeps its tables and sub-schemas in `NameMap`s over `TreeMap`s, and DDL writes into them. A
+shared root therefore carries a `ReaderWriterLockSlim`; the other modes give each session a root no other
+session uses and take no lock. On a shared root, `Plan` holds
 the read lock from the snapshot `PrepareContext` takes until the signature is built, and the `GetSchema`
 builders hold it while they read. DDL is recognized only after parsing, inside the prepare, so
 `ClrPrepareImpl` finds the lock on the context, releases the read lock, takes the write lock for the DDL, and
 takes the read lock again for `Plan` to release. No statement plans against a root that DDL is changing.
 Execution is not covered: the lock is thread-affine and a result may be read across awaits, and a running plan
 resolves tables again from its snapshot, whose table map is shared with the live root. A table lookup during
-execution is therefore not protected against concurrent DDL.
+execution is therefore not protected against concurrent DDL, and two recursive queries running at once on
+different connections register their working tables under the same name and return wrong results.
 
 **Session operations.**
 
@@ -385,7 +414,8 @@ only when `CalciteValues.TryConvertTo` meets a variant inside a collection.
    `CalciteDataSource`.
 2. **Open.** `Open` resolves the connection's data source (the one it came from, or the one the provider keeps
    for its connection string) and acquires its root, which the first connection builds, model included. It
-   then creates the `CalciteSession`: configuration, type factory, type registry, default schema path.
+   then creates the `CalciteSession`: configuration, type factory, type registry, default schema path, and the
+   root it plans against, rented from the data source's root.
 3. **Command.** The caller sets `CommandText` and adds parameters.
 4. **Request.** `ExecuteReader` builds a `CalciteExecuteRequest` from the text, the parameters, the timeout and
    the hooks, and passes it to the session.
@@ -401,7 +431,7 @@ only when `CalciteValues.TryConvertTo` meets a variant inside a collection.
 8. **Read.** `CalciteDataReader` advances `CalciteResult.Read` or `ReadAsync`, and each accessor goes
    `CalciteResultRow` → `CalciteResultValue` → .NET value.
 9. **Dispose.** Disposing the reader disposes the result and its cursor. Disposing the connection disposes the
-   session; the root goes with it only under `Pooling=false`.
+   session, which returns its rented root; the data source's root goes with it only under `Pooling=false`.
 
 **A non-query** follows steps 1 to 6 and then branches on the statement type as described under
 `ExecuteNonQuery`.
@@ -417,9 +447,8 @@ wherever this convention has no node. It cannot say whether a read will await; t
 ## Direct engine access
 
 `CalciteConnection` exposes Calcite objects as typed properties rather than a JDBC-style `unwrap`.
-`RootSchema` is typed as `Schema`, Calcite's read interface, rather than `SchemaPlus`, because the root is
-shared by every connection of the data source; the root is changed through
-`CalciteDataSourceBuilder.ConfigureRootSchema` or DDL. The type does not prevent a caller casting it.
+`RootSchema` is typed as `Schema`, Calcite's read interface, rather than `SchemaPlus`: the root is changed
+through `CalciteDataSourceBuilder.ConfigureRootSchema` or DDL. The type does not prevent a caller casting it.
 
 A user-defined function written in .NET needs no class name: this convention holds the method itself, not its
 name. Where a plan falls back to `EnumerableConvention`, Janino resolves the IKVM name (`cli.Namespace.Type`)
@@ -452,7 +481,9 @@ src/
     CalciteException.cs                   DbException
     Internal/
       CalciteSession.cs                   Per-connection state over a root; plan, bind, execute
-      CalciteDataSourceRoot.cs            The root schema, DUAL and the model; lifetime and lock
+      CalciteDataSourceRoot.cs            The root schema, DUAL and the model; lifetime, lock and copies
+      CalciteRootSharing.cs               How sessions use a root: isolated, shared or owned
+      CachingCalciteSchema.cs             Port of Calcite's CachingCalciteSchema, with CopyRoot
       CalciteDataSources.cs               The data sources the provider keeps, one per connection string
       CalciteEngineProperties.cs          Connection string keys to Calcite Properties
       ClrPlugin.cs                        Resolves a plugin named in the connection string

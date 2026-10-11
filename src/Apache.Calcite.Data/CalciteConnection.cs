@@ -29,12 +29,15 @@ namespace Apache.Calcite.Data
     /// connection when done.
     /// </para>
     /// <para>
-    /// The root schema a connection plans against (the schemas its model defines and the tables DDL creates)
-    /// belongs to a <see cref="CalciteDataSource"/> and outlives the connection. A connection created from a
-    /// data source uses that data source. A connection created from a connection string alone uses a data
-    /// source the provider keeps for that connection string, shared by every connection opened with an
-    /// equivalent string; see <see cref="ClearPool"/>. With <c>Pooling=false</c> in the connection string the
-    /// connection instead builds a root of its own when it first opens and releases it when disposed.
+    /// The schemas a connection plans against (those its model defines, and those registered through
+    /// <see cref="CalciteDataSourceBuilder"/>) belong to a <see cref="CalciteDataSource"/> and outlive the
+    /// connection. A connection created from a data source uses that data source. A connection created from
+    /// a connection string alone uses a data source the provider keeps for that connection string, shared by
+    /// every connection opened with an equivalent string; see <see cref="ClearPool"/>. The root schema over
+    /// them is the connection's own, so what DDL creates stays with the connection, unless the data source
+    /// was built with <see cref="CalciteDataSourceBuilder.UseSharedRootSchema"/>. With <c>Pooling=false</c>
+    /// in the connection string the connection instead builds everything itself when it first opens and
+    /// releases it when disposed.
     /// </para>
     /// <para>
     /// The connection's own state (its configuration, type factory and type mappings) is created on the
@@ -600,11 +603,12 @@ namespace Apache.Calcite.Data
         /// Gets the root schema this connection plans against.
         /// </summary>
         /// <remarks>
-        /// The root belongs to the connection's <see cref="CalciteDataSource"/> and is shared by every connection
-        /// on it: it holds the schemas the model defines, the schemas and steps registered through
-        /// <see cref="CalciteDataSourceBuilder"/>, and the tables DDL has created. It is exposed as Calcite's
-        /// read interface, <see cref="Schema"/>, because a change made through one connection would affect all
-        /// of them. To add to the root, use <see cref="CalciteDataSourceBuilder.ConfigureRootSchema"/> or DDL.
+        /// The root holds the schemas the model defines, the schemas and steps registered through
+        /// <see cref="CalciteDataSourceBuilder"/>, and the tables DDL has created on this connection, or on any
+        /// connection of a data source built with <see cref="CalciteDataSourceBuilder.UseSharedRootSchema"/>.
+        /// The schema objects in it are shared with every connection of the data source. It is exposed as
+        /// Calcite's read interface, <see cref="Schema"/>. To add to the root, use
+        /// <see cref="CalciteDataSourceBuilder.ConfigureRootSchema"/> or DDL.
         /// </remarks>
         /// <exception cref="InvalidOperationException">The connection is not open.</exception>
         /// <exception cref="ObjectDisposedException">The connection has been disposed.</exception>

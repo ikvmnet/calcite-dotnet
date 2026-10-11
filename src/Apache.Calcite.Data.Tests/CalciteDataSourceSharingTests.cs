@@ -65,8 +65,9 @@ namespace Apache.Calcite.Data.Tests
     }
 
     /// <summary>
-    /// What is shared between two connections: the root schema of one data source, keyed by the connection
-    /// string for the bare path and held by the caller for the built one.
+    /// What is shared between two connections: the schemas of one data source, keyed by the connection string
+    /// for the bare path and held by the caller for the built one, and the root itself only where the built
+    /// data source asks for it.
     /// </summary>
     public class CalciteDataSourceSharingTests
     {
@@ -270,35 +271,104 @@ namespace Apache.Calcite.Data.Tests
             Assert.Equal(typeof(Schema), typeof(CalciteConnection).GetProperty(nameof(CalciteConnection.RootSchema))!.PropertyType);
         }
 
+        /// <summary>
+        /// By default each connection plans against a root of its own, so a table DDL creates stays with the
+        /// connection that created it, while it is open and after.
+        /// </summary>
         [Fact]
-        public void DDL_on_one_connection_should_be_visible_on_another()
+        public void DDL_on_one_connection_should_not_be_visible_on_another()
         {
-            var cs = ConnectionString(out _, Ddl);
+            var cs = ConnectionString(out var token, Ddl);
 
-            using var a = new CalciteConnection(cs);
-            a.Open();
+            using (var a = new CalciteConnection(cs))
+            {
+                a.Open();
+                NonQuery(a, "CREATE TABLE \"own_t\" (\"id\" INTEGER NOT NULL)");
+                NonQuery(a, "INSERT INTO \"own_t\" VALUES (1), (2)");
+                Assert.Equal(2, Convert.ToInt32(Scalar(a, "SELECT COUNT(*) FROM \"own_t\"")));
+
+                using var b = new CalciteConnection(cs);
+                b.Open();
+                Assert.Throws<CalciteException>(() => Scalar(b, "SELECT COUNT(*) FROM \"own_t\""));
+            }
+
+            using var c = new CalciteConnection(cs);
+            c.Open();
+            Assert.Throws<CalciteException>(() => Scalar(c, "SELECT COUNT(*) FROM \"own_t\""));
+            Assert.Equal(1, CountingSchemaFactory.Builds[token]);
+        }
+
+        /// <summary>
+        /// A recursive query registers its working table at its connection's root, and removes it when
+        /// closed; on roots of their own, two connections running the same one at once do not meet.
+        /// </summary>
+        [Fact]
+        public async Task Recursive_queries_on_two_connections_should_not_share_a_working_table()
+        {
+            var cs = ConnectionString(out _);
+            const string sql = "WITH RECURSIVE t(n) AS (VALUES (1) UNION ALL SELECT n + 1 FROM t WHERE n < 200) SELECT SUM(n) FROM t";
+
+            var tasks = Enumerable.Range(0, 4).Select(_ => Task.Run(() =>
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    using var c = new CalciteConnection(cs);
+                    c.Open();
+                    Assert.Equal(20100L, Convert.ToInt64(Scalar(c, sql)));
+                }
+            }));
+
+            await Task.WhenAll(tasks);
+        }
+
+        [Fact]
+        public void DDL_on_a_shared_root_should_be_visible_on_another_connection()
+        {
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
+
+            using var a = dataSource.OpenConnection();
             NonQuery(a, "CREATE TABLE \"shared_t\" (\"id\" INTEGER NOT NULL)");
             NonQuery(a, "INSERT INTO \"shared_t\" VALUES (1), (2)");
 
-            using var b = new CalciteConnection(cs);
-            b.Open();
+            using var b = dataSource.OpenConnection();
 
             Assert.Equal(2, Convert.ToInt32(Scalar(b, "SELECT COUNT(*) FROM \"shared_t\"")));
         }
 
         /// <summary>
-        /// Connections used at once over one root: each plans with a type factory of its own, so the
+        /// A shared root lasts as long as its data source, whether or not a connection is open on it.
+        /// </summary>
+        [Fact]
+        public void DDL_on_a_shared_root_should_outlive_the_connection_that_ran_it()
+        {
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
+
+            using (var a = dataSource.OpenConnection())
+                NonQuery(a, "CREATE TABLE \"kept_t\" (\"id\" INTEGER NOT NULL)");
+
+            using var b = dataSource.OpenConnection();
+
+            Assert.Equal(0, Convert.ToInt32(Scalar(b, "SELECT COUNT(*) FROM \"kept_t\"")));
+        }
+
+        [Fact]
+        public void A_shared_root_should_be_refused_with_pooling_false()
+        {
+            Assert.Throws<ArgumentException>(() => new CalciteDataSourceBuilder(TestModels.InlineEmptyModelConnectionString + ";Pooling=false").UseSharedRootSchema().Build());
+        }
+
+        /// <summary>
+        /// Connections used at once over one shared root: each plans with a type factory of its own, so the
         /// grouped aggregates and windows here, which register synthetic types in the factory, do not race,
         /// and the root is only read.
         /// </summary>
         [Fact]
         public async Task Concurrent_connections_on_one_root_should_plan_and_read()
         {
-            var cs = ConnectionString(out _, Ddl);
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
 
-            using (var setup = new CalciteConnection(cs))
+            using (var setup = dataSource.OpenConnection())
             {
-                setup.Open();
                 NonQuery(setup, "CREATE TABLE \"conc_t\" (\"g\" INTEGER NOT NULL, \"v\" INTEGER NOT NULL)");
                 NonQuery(setup, "INSERT INTO \"conc_t\" VALUES (1, 10), (1, 20), (2, 30), (2, 40), (3, 50)");
             }
@@ -307,8 +377,7 @@ namespace Apache.Calcite.Data.Tests
             {
                 for (int i = 0; i < 10; i++)
                 {
-                    await using var c = new CalciteConnection(cs);
-                    await c.OpenAsync();
+                    await using var c = await dataSource.OpenConnectionAsync();
 
                     await using (var cmd = c.CreateCommand())
                     {
@@ -453,20 +522,19 @@ namespace Apache.Calcite.Data.Tests
         }
 
         /// <summary>
-        /// Planning holds the root's read lock and DDL wants its write lock, so a DDL statement on one
+        /// Planning holds a shared root's read lock and DDL wants its write lock, so a DDL statement on one
         /// connection waits for a statement planning on another. The hook fires inside planning, which is
         /// how the test holds a plan open.
         /// </summary>
         [Fact]
-        public async Task DDL_should_wait_for_a_statement_planning_on_another_connection()
+        public async Task DDL_on_a_shared_root_should_wait_for_a_statement_planning_on_another_connection()
         {
-            var cs = ConnectionString(out _, Ddl);
+            using var dataSource = new CalciteDataSourceBuilder(ConnectionString(out _, Ddl)).UseSharedRootSchema().Build();
 
             using var inPlan = new ManualResetEventSlim();
             using var release = new ManualResetEventSlim();
 
-            using var a = new CalciteConnection(cs);
-            a.Open();
+            using var a = dataSource.OpenConnection();
             a.RegisterHook(Hook.PLAN_BEFORE_IMPLEMENTATION, _ =>
             {
                 inPlan.Set();
@@ -476,8 +544,7 @@ namespace Apache.Calcite.Data.Tests
             var planning = Task.Run(() => Scalar(a, "SELECT COUNT(*) FROM (VALUES (1), (2)) AS t(x)"));
             Assert.True(inPlan.Wait(TimeSpan.FromSeconds(30)));
 
-            using var b = new CalciteConnection(cs);
-            b.Open();
+            using var b = dataSource.OpenConnection();
             var ddl = Task.Run(() => NonQuery(b, "CREATE TABLE \"waits_t\" (\"id\" INTEGER NOT NULL)"));
 
             Assert.False(ddl.Wait(TimeSpan.FromMilliseconds(750)));
