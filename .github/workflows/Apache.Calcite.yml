@@ -191,6 +191,12 @@ jobs:
     needs:
     - test
     runs-on: ubuntu-latest
+    # id-token lets the NuGet login step trade the job's OIDC token for a short-lived nuget.org API key.
+    # Naming any permission drops the others to none, so the release and GitHub Packages need theirs listed.
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
     env:
       # Gates both the GitHub release and the nuget.org push: true for a tag build or a manual run that
       # asks to publish. The GitHub Packages push is not gated and runs on every non-PR build.
@@ -240,10 +246,17 @@ jobs:
         GITHUB_REPOS: https://nuget.pkg.github.com/${{ github.repository_owner }}/index.json
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
     # --skip-duplicate makes pushing a version nuget.org already has a no-op.
+    # NUGET_USER is the nuget.org username, not an organization, that created the trusted publishing policy
+    - name: NuGet Login
+      if: env.PUBLISH == 'true'
+      id: NuGetLogin
+      uses: NuGet/login@v1
+      with:
+        user: ${{ secrets.NUGET_USER }}
     - name: Push NuGet
       if: env.PUBLISH == 'true'
       shell: pwsh
       run: dotnet nuget push dist/nuget/*.nupkg --source $env:NUGET_REPOS --api-key $env:NUGET_TOKEN --skip-duplicate
       env:
         NUGET_REPOS: https://api.nuget.org/v3/index.json
-        NUGET_TOKEN: ${{ secrets.NUGET_TOKEN }}
+        NUGET_TOKEN: ${{ steps.NuGetLogin.outputs.NUGET_API_KEY }}
