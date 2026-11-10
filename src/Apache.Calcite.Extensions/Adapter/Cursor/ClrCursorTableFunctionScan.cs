@@ -205,14 +205,18 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
         {
             var typeFactory = implementor.TypeFactory;
 
-            // the row format follows Calcite's choice; an element type that is not an array is read as CUSTOM
+            // the row format follows Calcite's choice; an element type that is not an array is read as CUSTOM, and
+            // array rows of one field are read as SCALAR, their first element sliced out
             var elementType = getElementType();
+            var arrayRows = elementType is java.lang.Class clazz && ((java.lang.Class)typeof(object[])).isAssignableFrom(clazz);
             JavaRowFormat format;
-            if (elementType == null)
+            if (arrayRows && getRowType().getFieldCount() == 1)
+                format = JavaRowFormat.SCALAR;
+            else if (elementType == null)
                 format = JavaRowFormat.ARRAY;
             else if (getRowType().getFieldCount() == 1 && IsQueryable())
                 format = JavaRowFormat.SCALAR;
-            else if (elementType is java.lang.Class clazz && ((java.lang.Class)typeof(object[])).isAssignableFrom(clazz))
+            else if (arrayRows)
                 format = JavaRowFormat.ARRAY;
             else
                 format = JavaRowFormat.CUSTOM;
@@ -224,7 +228,11 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
                 .forAggregation((JavaTypeFactory)getCluster().getTypeFactory(), block, null, implementor.Conformance)
                 .setCorrelates(implementor.AllCorrelateVariables);
 
-            block.add(ClrEnumUtils.Translate(translator, getCall(), null));
+            var expression = ClrEnumUtils.Translate(translator, getCall(), null);
+            if (arrayRows && format == JavaRowFormat.SCALAR)
+                expression = J.Expressions.call(org.apache.calcite.util.BuiltInMethod.SLICE0.method, expression);
+
+            block.add(expression);
 
             var rowType = physType.RowType;
 

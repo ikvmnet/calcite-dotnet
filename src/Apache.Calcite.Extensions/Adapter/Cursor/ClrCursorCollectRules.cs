@@ -86,7 +86,7 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var input = uncollect.getInput();
             var newInput = convert(input, input.getTraitSet().replace(ClrCursorConvention.Instance));
 
-            return ClrCursorUncollect.Create(traitSet, newInput, uncollect.withOrdinality, uncollect.expandStructFields, uncollect.isOuter);
+            return ClrCursorUncollect.Create(traitSet, newInput, uncollect.withOrdinality, uncollect.getItemAliases(), uncollect.getPassthroughFieldIndices(), uncollect.getCollectionFieldIndices(), uncollect.expandStructFields, uncollect.isOuter);
         }
 
     }

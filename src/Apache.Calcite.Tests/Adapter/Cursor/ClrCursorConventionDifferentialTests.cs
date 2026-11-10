@@ -1951,31 +1951,12 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
         public void ShouldAgreeOnARangeFrameWithAnOffset() => Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"ID\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
 
         /// <summary>
-        /// A RANGE bound with an offset over a nullable order key fails, here as in Calcite.
+        /// A RANGE bound with an offset over a nullable order key bounds a null key by its peer group, as
+        /// <c>EnumerableWindow.translateBound</c> does.
         /// </summary>
-        /// <remarks>
-        /// <c>EnumerableWindow.translateBound</c> boxes the key type only where the bound has no offset --
-        /// <c>if (bound.getOffset() == null) desiredKeyType = Primitive.box(desiredKeyType)</c> -- so with an
-        /// offset the key stays whatever the type factory gave, which for a nullable column is
-        /// <c>java.lang.Integer</c>. The <c>subtract</c> built on it then unboxes, and a null key is a
-        /// <c>NullPointerException</c>.
-        ///
-        /// <para>This convention uses the same translation and fails the same way: IKVM maps the Java exception
-        /// onto <see cref="NullReferenceException"/>, which is also what the expression tree's unboxing raises.
-        /// Both sides are asserted, so that if Calcite changes this the test fails and this convention should
-        /// follow.</para>
-        /// </remarks>
         [Fact]
-        public void ShouldAgreeOnFailingARangeFrameWithAnOffsetOverANullableKey()
-        {
-            const string sql = "SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"AMOUNT\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"";
-
-            var calcite = () => Run(sql, false);
-            var mine = () => Run(sql, true);
-
-            calcite.Should().Throw<NullReferenceException>("Calcite unboxes a null order key");
-            mine.Should().Throw<NullReferenceException>("and so do we, from the same translation");
-        }
+        public void ShouldAgreeOnARangeFrameWithAnOffsetOverANullableKey() =>
+            Same("SELECT \"ID\", SUM(\"AMOUNT\") OVER (ORDER BY \"AMOUNT\" RANGE BETWEEN 2 PRECEDING AND CURRENT ROW) FROM \"SALES\" ORDER BY \"ID\"");
 
         [Fact]
         public void ShouldAgreeOnLeadAndLag() => Same("SELECT \"ID\", LAG(\"AMOUNT\") OVER (ORDER BY \"ID\"), LEAD(\"AMOUNT\") OVER (ORDER BY \"ID\") FROM \"SALES\" ORDER BY \"ID\"");
@@ -2332,23 +2313,16 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Gives(sql, "1", "2", "3");
         }
 
-        // A merge join over a one-column table function puts a sort on it, which hits EnumerableSort's defect:
-        // it optimises the scan's ARRAY format to SCALAR and passes the Object[] rows on unchanged. This
-        // convention reproduces Calcite and refuses the plan; ClrCursorSortTests has the detail. When
-        // EnumerableSort is fixed, expect the rows "1", "2" instead. The hash join rule is removed on both
-        // sides, because otherwise the planner hashes this join and there is no sort.
+        // A merge join over a one-column table function puts a sort on it, above a scan that reads its one-field
+        // array rows as SCALAR; ClrCursorSortTests has the detail. The hash join rule is removed, because
+        // otherwise the planner hashes this join and there is no sort.
         [Fact]
-        public void ShouldRefuseATableFunctionInAJoin()
+        public void ShouldRunATableFunctionInAJoin()
         {
             const string sql = "SELECT \"S\".\"ID\" FROM \"SALES\" AS \"S\", TABLE(NUMBERS(2)) AS \"N\" WHERE \"S\".\"ID\" = \"N\".\"N\" ORDER BY 1";
 
             Run(sql, true, planOnly: true, excludeHashJoin: true)[0].Should().Contain("ClrCursorMergeJoin");
-
-            var act = () => Run(sql, true, excludeHashJoin: true);
-
-            act.Should().Throw<java.lang.IllegalStateException>()
-                .WithInnerException<java.lang.IllegalStateException>()
-                .WithMessage("*ClrCursorSort handed up an open of System.Object[] where its row type is java.lang.Integer*");
+            Run(sql, true, excludeHashJoin: true).Should().Equal("1", "2");
         }
 
         // the same join as Calcite plans it, hashed, with no sort under it

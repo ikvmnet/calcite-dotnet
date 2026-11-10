@@ -954,8 +954,20 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor
             var val = ClrEnumUtils.Translate(translator, new RexInputRef(orderKey, keyType), desiredKeyType);
             if (bound.isCurrentRow() == false)
             {
+                var key = val;
                 var offs = ClrEnumUtils.Translate(translator, bound.getOffset(), null);
                 val = bound.isFollowing() ? J.Expressions.add(val, offs) : J.Expressions.subtract(val, offs);
+
+                // a null key's offset bounds are the edges of its peer group: the arithmetic stays in the non-null
+                // branch, boxed so the condition does not unbox the null
+                if (keyType.isNullable())
+                {
+                    var boundType = J.Primitive.box(val.getType());
+                    val = J.Expressions.condition(
+                        J.Expressions.equal(key, J.Expressions.constant(null)),
+                        J.Expressions.constant(null, boundType),
+                        EnumUtils.convert(val, boundType));
+                }
             }
 
             return J.Expressions.call(

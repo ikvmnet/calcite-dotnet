@@ -846,26 +846,23 @@ namespace Apache.Calcite.Extensions.Adapter.Cursor.Tests
             Same("SELECT \"window_start\", COUNT(*) FROM TABLE(TUMBLE(TABLE \"EVENTS\", DESCRIPTOR(\"ROWTIME\"), INTERVAL '1' HOUR)) GROUP BY \"window_start\" ORDER BY 1");
 
         /// <summary>
-        /// A table function joined to a table, sorted for a merge join, is refused while the plan is
-        /// implemented, naming the sort and both types.
+        /// A table function joined to a table, sorted for a merge join, gives the rows the hash join gives.
         /// </summary>
         /// <returns>A task that completes when the test has run.</returns>
         /// <remarks>
-        /// This is the Calcite defect <c>ShouldRefuseATableFunctionInAJoin</c> records: <c>EnumerableSort</c>
-        /// optimises the scan's ARRAY format to SCALAR but passes the <c>Object[]</c> rows on unchanged, so the
-        /// rows are arrays where the row type says <c>java.lang.Integer</c>. The implementor's row type check
-        /// catches it here exactly as it does for a plan opened synchronously. The convention reproduces
-        /// Calcite; the fix belongs in <c>EnumerableSort</c>.
+        /// The sort sits above a scan that reads its one-field array rows as SCALAR, as
+        /// <c>ShouldRunATableFunctionInAJoin</c> records for a plan opened synchronously.
         /// </remarks>
         [Fact]
-        public async Task ShouldRefuseATableFunctionJoinedToATable()
+        public async Task ShouldRunATableFunctionJoinedToATable()
         {
-            // the hash join rule is removed; with it the planner chooses a hash join and there is no sort
-            var act = async () => await Run("SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1", true, excludeHashJoin: true);
+            const string sql = "SELECT s.ID FROM SALES s, TABLE(NUMBERS(6)) n WHERE s.ID = n.N ORDER BY 1";
 
-            (await act.Should().ThrowAsync<java.lang.IllegalStateException>())
-                .WithInnerException<java.lang.IllegalStateException>()
-                .WithMessage("*ClrCursorSort handed up an open of System.Object[] where its row type is java.lang.Integer*");
+            // the hash join rule is removed; with it the planner chooses a hash join and there is no sort
+            var merged = await Run(sql, true, excludeHashJoin: true);
+
+            merged.Should().NotBeEmpty();
+            merged.Should().Equal(await Run(sql, true));
         }
 
         /// <summary>
