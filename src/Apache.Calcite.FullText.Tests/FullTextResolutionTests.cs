@@ -72,8 +72,7 @@ namespace Apache.Calcite.FullText.Tests
         /// alone.
         /// </summary>
         /// <remarks>
-        /// <see cref="ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth"/> covers the case where both
-        /// routes together fail.
+        /// <see cref="ShouldSearchAnArrayColumnThroughEitherRouteOrBoth"/> covers an array column.
         /// </remarks>
         [Fact]
         public void ShouldLetAHostDoBoth()
@@ -343,8 +342,8 @@ namespace Apache.Calcite.FullText.Tests
         /// The searched position takes a character, an <c>ANY</c> or an array column.
         /// </summary>
         /// <remarks>
-        /// The array column is checked through the chained table only; through both routes at once it fails,
-        /// as <see cref="ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth"/> shows.
+        /// The array column is checked through the chained table only; the other routes are
+        /// <see cref="ShouldSearchAnArrayColumnThroughEitherRouteOrBoth"/>'s.
         /// </remarks>
         [Fact]
         public void ShouldSearchAColumnOfAnyType()
@@ -368,21 +367,15 @@ namespace Apache.Calcite.FullText.Tests
         }
 
         /// <summary>
-        /// An array column is searchable through either route alone, and not through both at once.
+        /// An array column is searchable through either route alone, and through both at once.
         /// </summary>
         /// <remarks>
-        /// <para><c>SqlUtil.lookupSubjectRoutines</c> returns before its type-precedence pass when fewer than
-        /// two candidates remain (<c>if (list.size() &lt; 2 || coerce)</c>). One route leaves one candidate;
-        /// both leave two, and <c>filterRoutinesByTypePrecedence</c> then compares each parameter type using
-        /// the argument's precedence list. <c>ArraySqlType</c>'s list accepts only a comparable <c>ARRAY</c>
-        /// and throws <c>IllegalArgumentException</c> for anything else.</para>
-        ///
-        /// <para>Any parameter type but a matching <c>ARRAY</c> fails the same way, and an <c>ARRAY</c>
-        /// parameter would refuse a character column, so no declaration avoids it. This is a Calcite defect;
-        /// the test fails if Calcite stops throwing here.</para>
+        /// <c>SqlUtil.lookupSubjectRoutines</c> runs its type-precedence pass only when two candidates remain,
+        /// which both routes together leave. Since CALCITE-7845 that pass no longer throws for an <c>ARRAY</c>
+        /// argument against a parameter it cannot rank.
         /// </remarks>
         [Fact]
-        public void ShouldSearchAnArrayColumnThroughEitherRouteButNotBoth()
+        public void ShouldSearchAnArrayColumnThroughEitherRouteOrBoth()
         {
             FullTextFixture.Call(
                     FullTextFixture.Plan("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(TAGS, 'steel')"),
@@ -394,11 +387,10 @@ namespace Apache.Calcite.FullText.Tests
                     "CLR_FT_CONTAINS")
                 .Should().NotBeNull("and so does a chained operator table alone");
 
-            var both = () => FullTextFixture.Plan("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(TAGS, 'steel')", chain: true, declare: true);
-
-            FullTextFixture.Describe(both.Should().Throw<java.lang.IllegalArgumentException>(
-                    "two candidates reach a pass that cannot compare an ARRAY argument").Which)
-                .Should().Contain("must contain type");
+            FullTextFixture.Call(
+                    FullTextFixture.Plan("SELECT ID FROM DOCS WHERE CLR_FT_CONTAINS(TAGS, 'steel')", chain: true, declare: true),
+                    "CLR_FT_CONTAINS")
+                .Should().NotBeNull("and both at once, where the type-precedence pass runs over two candidates");
         }
 
         /// <summary>
